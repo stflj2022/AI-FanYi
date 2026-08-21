@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -197,7 +199,8 @@ class M04Worker:
             for se in embeddings
         ]
 
-        return labels
+        # 转换为 numpy 数组，保证下游 numpy 布尔索引/evaluate_clustering 正确工作
+        return np.array(labels, dtype=int)
 
 
 async def main():

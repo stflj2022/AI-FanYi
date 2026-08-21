@@ -219,7 +219,7 @@ class SpeakerClustering:
 
         clusters = [
             Cluster(
-                cluster_id=cluster_id,
+                cluster_id=int(cluster_id),
                 speaker_embeddings=embeddings
             )
             for cluster_id, embeddings in cluster_dict.items()
