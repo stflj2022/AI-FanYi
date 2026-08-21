@@ -1,6 +1,6 @@
 # Ticket 014: Web 前端 - Dashboard 和 Projects 页面
 
-## 状态: todo（第3轮：先修测试套件再真实实现，驱动独立pytest验收）
+## 状态: done（第3轮复验通过：Dashboard/项目列表/详情/创建页齐全，作业与 Artifact 列表接入真实 API，创建项目联动上传 Artifact；新增 Workers/Settings 页）
 
 ## 优先级: 中
 

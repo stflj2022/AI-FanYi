@@ -25,10 +25,10 @@ apiClient.interceptors.request.use(
   }
 )
 
-// 响应拦截器
+// 响应拦截器（保留完整响应对象，供组件访问 response.data）
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
-    return response.data
+    return response
   },
   (error: AxiosError) => {
     if (error.response) {

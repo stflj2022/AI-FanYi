@@ -47,7 +47,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   // 连接
   const connect = useCallback(async () => {
     try {
-      const socket = await websocketService.connect('/ws', token)
+      websocketService.setReconnectDelay(reconnectInterval)
+      await websocketService.connect('/ws', token)
       setIsConnected(true)
       setError(null)
       callbacksRef.current.onConnect?.()
@@ -56,7 +57,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       setIsConnected(false)
       callbacksRef.current.onError?.(err)
     }
-  }, [token])
+  }, [token, reconnectInterval])
 
   // 断开连接
   const disconnect = useCallback(() => {

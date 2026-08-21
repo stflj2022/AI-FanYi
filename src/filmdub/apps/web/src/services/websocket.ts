@@ -46,6 +46,12 @@ class WebSocketService {
     })
   }
 
+  setReconnectDelay(delayMs: number) {
+    if (delayMs > 0) {
+      this.reconnectDelay = delayMs
+    }
+  }
+
   disconnect() {
     if (this.socket) {
       this.socket.disconnect()

@@ -1,6 +1,9 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import Layout from '@/layout/Layout'
 import Dashboard from '@/components/Dashboard'
+import Projects from '@/components/Projects'
+import Workers from '@/components/Workers'
+import Settings from '@/components/Settings'
 
 const router = createBrowserRouter([
   {
@@ -13,19 +16,19 @@ const router = createBrowserRouter([
       },
       {
         path: 'projects',
-        lazy: () => import('@/components/Projects'),
+        element: <Projects />,
       },
       {
         path: 'projects/:id',
-        lazy: () => import('@/components/ProjectDetail'),
+        element: <Projects />,
       },
       {
         path: 'workers',
-        lazy: () => import('@/components/Workers'),
+        element: <Workers />,
       },
       {
         path: 'settings',
-        lazy: () => import('@/components/Settings'),
+        element: <Settings />,
       },
     ],
   },

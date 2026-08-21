@@ -1,6 +1,6 @@
 # Ticket 013: Web 前端框架搭建
 
-## 状态: todo（第3轮：先修测试套件再真实实现，驱动独立pytest验收）
+## 状态: done（第3轮复验通过：Vite+React+TS 项目可构建（npm run build 通过）、路由/布局/API 客户端/状态管理齐全；补齐 Workers/Settings 页面，清理重复死代码 pages/ 与 components/Layout，修复 apiClient 响应解包 bug 与全量 TS 错误）
 
 ## 优先级: 中
 

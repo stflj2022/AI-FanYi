@@ -11,11 +11,6 @@ import {
   Upload,
   Form,
   Card,
-  Row,
-  Col,
-  Statistic,
-  List,
-  Progress,
   Tabs,
   Descriptions,
 } from 'antd'
@@ -25,11 +20,11 @@ import {
   UploadOutlined,
   DownloadOutlined,
   PlayCircleOutlined,
-  StopOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, useParams } from 'react-router-dom'
-import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
+import type { ColumnsType } from 'antd/es/table'
 import { projectService, type Project, type Job, type Artifact } from '@/services/project'
+import apiClient from '@/services/api'
 
 const { Search } = Input
 const { Option } = Select
@@ -42,7 +37,6 @@ const ProjectList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 })
   const [createModalVisible, setCreateModalVisible] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
 
   const [form] = Form.useForm()
 
@@ -82,7 +76,24 @@ const ProjectList: React.FC = () => {
 
   const handleCreateProject = async (values: any) => {
     try {
-      await projectService.createProject(values)
+      const created: any = await projectService.createProject(values)
+      // 创建成功后若携带文件，上传到新项目（真实 Artifact 上传）
+      if (values.files && values.files.length > 0 && created.data?.id) {
+        const file = values.files[0]
+        const formData = new FormData()
+        formData.append('project_id', created.data.id)
+        formData.append('file', file)
+        formData.append('name', file.name)
+        formData.append('artifact_type', 'video')
+        try {
+          await apiClient.post('/artifacts/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+          message.success('视频上传成功')
+        } catch (uploadError) {
+          message.warning('项目已创建，但视频上传失败')
+        }
+      }
       message.success('项目创建成功')
       setCreateModalVisible(false)
       form.resetFields()
@@ -92,18 +103,12 @@ const ProjectList: React.FC = () => {
     }
   }
 
-  const handleUpload = async (file: File) => {
-    try {
-      await projectService.uploadFile(file, (progress) => {
-        setUploadProgress(progress)
-      })
-      message.success('文件上传成功')
-      setUploadProgress(0)
-    } catch (error) {
-      message.error('文件上传失败')
-    }
+  const handleUpload = async (_file: File) => {
+    // 项目列表中上传：提示先创建项目
+    message.info('请先在项目中上传视频')
     return false
   }
+
 
   const statusColors: Record<string, string> = {
     pending: 'default',
@@ -302,7 +307,7 @@ const ProjectDetail: React.FC = () => {
         projectService.listArtifacts(id!),
       ])
 
-      setProject(projectData)
+      setProject((projectData as any).data || projectData)
       setJobs(jobsData.data || [])
       setArtifacts(artifactsData.data || [])
     } catch (error) {
