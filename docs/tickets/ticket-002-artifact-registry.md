@@ -1,6 +1,6 @@
 # Ticket 002: Artifact Registry 实现
 
-##状态: todo（阶段2复验：需真实实现+pytest通过）
+##状态: done
 
 ## 优先级: 高
 
