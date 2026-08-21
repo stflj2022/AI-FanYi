@@ -55,6 +55,7 @@ class VideoAssembler:
         audio_segments: List[AudioSegment],
         output_path: str,
         subtitles: Optional[List[SubtitleEntry]] = None,
+        project_id: str = "",
         progress_callback: Optional[Callable[[float], None]] = None
     ) -> AssemblyResult:
         """
@@ -65,12 +66,16 @@ class VideoAssembler:
             audio_segments: 音频片段列表
             output_path: 输出路径
             subtitles: 字幕列表（可选）
+            project_id: 项目 ID（写入结果）
             progress_callback: 进度回调
 
         Returns:
             组装结果
         """
         logger.info(f"Assembling video: {source_video_path} -> {output_path}")
+
+        temp_video_path: Optional[str] = None
+        combined_audio_path: Optional[str] = None
 
         try:
             # 1. 获取视频信息
@@ -83,16 +88,22 @@ class VideoAssembler:
                 progress_callback
             )
 
-            # 3. 替换音频
-            temp_video_path = await self._replace_audio(
+            # 3. 替换音频 → 写入临时文件（避免与最终输出同路径，字幕嵌入阶段才能安全覆盖）
+            with tempfile.NamedTemporaryFile(
+                suffix=Path(output_path).suffix or ".mp4", delete=False
+            ) as tmp:
+                temp_video_path = tmp.name
+
+            await self._replace_audio(
                 source_video_path,
                 combined_audio_path,
-                output_path,
+                temp_video_path,
                 progress_callback
             )
 
             # 4. 嵌入字幕（如果需要）
             final_video_path = temp_video_path
+            subtitle_path = None
 
             if subtitles:
                 subtitle_path = await self._embed_subtitles(
@@ -103,21 +114,17 @@ class VideoAssembler:
                 )
                 final_video_path = output_path
             else:
-                subtitle_path = None
+                # 无字幕时直接把临时文件移动到最终路径
+                os.replace(temp_video_path, output_path)
+                temp_video_path = None  # 已移动，无需清理
+                final_video_path = output_path
 
             # 5. 获取最终视频信息
             final_info = await self._get_video_info(final_video_path)
 
-            # 6. 清理临时文件
-            if combined_audio_path and os.path.exists(combined_audio_path):
-                os.remove(combined_audio_path)
-
-            if temp_video_path != final_video_path and os.path.exists(temp_video_path):
-                os.remove(temp_video_path)
-
-            # 7. 构建结果
+            # 6. 构建结果
             result = AssemblyResult(
-                project_id="",  # TODO: 从上下文获取
+                project_id=project_id,
                 video_path=final_video_path,
                 duration=float(final_info["duration"]),
                 resolution=f"{final_info['width']}x{final_info['height']}",
@@ -134,6 +141,15 @@ class VideoAssembler:
         except Exception as e:
             logger.error(f"Video assembly failed: {e}")
             raise
+
+        finally:
+            # 7. 清理临时文件
+            for path in (combined_audio_path, temp_video_path):
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
 
     async def _get_video_info(self, video_path: str) -> Dict[str, Any]:
         """
