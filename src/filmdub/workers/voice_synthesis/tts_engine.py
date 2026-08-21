@@ -3,6 +3,7 @@ TTS 引擎
 
 语音合成引擎，支持音高变换和时间拉伸
 """
+import re
 import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -72,11 +73,11 @@ class TTSEngine:
                 return None
 
             # 3. 应用韵律处理
-            if self.config.enable_pitch_shift:
-                audio = self._apply_pitch_shift(
-                    audio,
-                    prosody.get("pitch", 0.0)
-                )
+            # 注意：M08 的 pitch 是倍率因子（1.0=中性），此处转换为半音数（st）
+            pitch_factor = prosody.get("pitch", 1.0)
+            if self.config.enable_pitch_shift and pitch_factor != 1.0:
+                pitch_st = 12.0 * np.log2(max(pitch_factor, 1e-6))
+                audio = self._apply_pitch_shift(audio, pitch_st)
 
             if self.config.enable_time_stretch:
                 audio = self._apply_time_stretch(
@@ -121,19 +122,32 @@ class TTSEngine:
         """
         前处理文本
 
-        Args:
-            text: 原始文本
-
-        Returns:
-            处理后的文本
+        - 折叠空白与控制字符
+        - 规范省略号（.../.. → ……）
+        - 统一引号（弯引号 → 直引号）
+        - 统一括号（半角 → 全角）
+        - 去除不可见字符
         """
-        # 移除多余空格
+        import unicodedata
+
+        # 折叠空白
         text = " ".join(text.split())
 
-        # TODO: 添加更多前处理
-        # - 标点符号规范化
-        # - 数字转换
-        # - 缩写展开
+        # 去除控制字符（保留 \n 用于分段）
+        text = "".join(
+            ch for ch in text
+            if ch == "\n" or unicodedata.category(ch) not in ("Cc", "Cf")
+        )
+
+        # 省略号规范化
+        text = re.sub(r"\.{2,}", "……", text)
+
+        # 引号统一：弯引号 → 直引号
+        text = text.replace("“", "\"").replace("”", "\"")
+        text = text.replace("‘", "'").replace("’", "'")
+
+        # 括号统一：半角括号 → 全角
+        text = text.replace("(", "（").replace(")", "）")
 
         return text
 

@@ -150,9 +150,12 @@ class TTSModelManager:
             logger.warning(f"Model {model_name} not loaded")
             return False
 
+        # 先记录是否为当前模型（删除后无法再查询名称映射）
+        was_current = self.get_current_model_name() == model_name
+
         del self.models[model_name]
 
-        if self.current_model is not None and model_name == self.get_current_model_name():
+        if was_current:
             # 找到另一个模型作为当前模型
             if self.models:
                 self.current_model = next(iter(self.models.values()))
