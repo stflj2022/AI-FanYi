@@ -14,10 +14,6 @@ from filmdub.core.config import settings
 from filmdub.core.database import close_all_databases, get_database_manager
 from filmdub.core.models import Episode, Job, JobEvent, MediaAsset, Project
 from filmdub.core.schemas import (
-    EpisodeCreate,
-    EpisodeResponse,
-    JobCreate,
-    JobResponse,
     MediaResponse,
     ProjectCreate,
     ProjectResponse,
@@ -26,7 +22,11 @@ from filmdub.core.storage import StorageManager
 from filmdub.workers.media_intake.probe import FFprobeError, FFprobeParser
 from filmdub.workers.media_intake.runner import MediaIntakeWorker
 from filmdub.apps.api import research, subtitle
-from filmdub.apps.api.routers import jobs as jobs_router, projects as projects_router
+from filmdub.apps.api.routers import (
+    jobs as jobs_router,
+    projects as projects_router,
+    artifacts as artifacts_router,
+)
 from filmdub.apps.api.websocket import handler as websocket_handler
 from filmdub.orchestrator.config import orchestrator_settings
 
@@ -69,6 +69,7 @@ app.include_router(subtitle.router)
 # Layer 0 Orchestrator REST API
 app.include_router(projects_router.router, prefix=orchestrator_settings.api_v1_prefix)
 app.include_router(jobs_router.router, prefix=orchestrator_settings.api_v1_prefix)
+app.include_router(artifacts_router.router, prefix=orchestrator_settings.api_v1_prefix)
 
 # WebSocket 实时通信
 app.include_router(websocket_handler.router)
@@ -264,51 +265,7 @@ async def upload_media(
 # ==================== Episodes ====================
 
 
-@app.get("/api/episodes/{episode_id}", response_model=EpisodeResponse)
-async def get_episode(episode_id: str):
-    """Get episode by ID.
-
-    Args:
-        episode_id: Episode ID.
-
-    Returns:
-        EpisodeResponse: Episode details.
-    """
-    # Need to find project_id first from episode
-    # For now, we'll search across databases
-    # In production, maintain a central registry
-
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not yet implemented")
-
-
 # ==================== Jobs ====================
-
-
-@app.get("/api/jobs/{job_id}", response_model=JobResponse)
-async def get_job(job_id: str):
-    """Get job by ID.
-
-    Args:
-        job_id: Job ID.
-
-    Returns:
-        JobResponse: Job details.
-    """
-    # Need to find project_id first
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not yet implemented")
-
-
-@app.post("/api/jobs/{job_id}/retry", response_model=JobResponse)
-async def retry_job(job_id: str):
-    """Retry a failed job.
-
-    Args:
-        job_id: Job ID.
-
-    Returns:
-        JobResponse: Updated job.
-    """
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not yet implemented")
 
 
 if __name__ == "__main__":

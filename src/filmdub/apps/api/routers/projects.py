@@ -158,6 +158,7 @@ async def get_project(
     return ProjectResponse.model_validate(project)
 
 
+@router.put("/{project_id}", response_model=ProjectResponse)
 @router.patch("/{project_id}", response_model=ProjectResponse)
 async def update_project(
     project_id: UUID,

@@ -67,12 +67,15 @@ class ArtifactRegistry:
 
     def _create_default_storage(self) -> ArtifactStorage:
         """创建默认存储后端"""
-        # 根据配置选择存储后端
-        if orchestrator_settings.minio_endpoint:
+        backend = orchestrator_settings.artifact_storage_backend
+        if backend == "minio":
             return MinioStorage()
-        else:
-            # 开发环境使用本地存储
+        if backend == "local":
             return LocalStorage()
+        # auto: 仅当显式配置了 MinIO 端点（非默认 localhost:9000）时使用 MinIO，否则使用本地存储
+        if orchestrator_settings.minio_endpoint and orchestrator_settings.minio_endpoint != "localhost:9000":
+            return MinioStorage()
+        return LocalStorage()
 
     async def create(
         self,

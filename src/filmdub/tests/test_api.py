@@ -410,3 +410,102 @@ async def test_get_job_logs(client):
 async def test_get_job_logs_not_found(client):
     resp = await client.get(f"/api/v1/jobs/{uuid.uuid4()}/logs")
     assert resp.status_code == 404
+
+
+# ==================== Artifacts API ====================
+
+
+async def test_create_artifact_via_api(client):
+    """通过 API 创建 Artifact 元数据记录。"""
+    project = await _create_project(client, "Artifact API Project")
+    resp = await client.post(
+        "/api/v1/artifacts",
+        json={
+            "name": "test-artifact.bin",
+            "type": "video",
+            "project_id": project["id"],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["name"] == "test-artifact.bin"
+    assert data["type"] == "video"
+    assert data["status"] == "pending"
+    assert data["version"] == 1
+
+
+async def test_list_project_artifacts(client):
+    """列出项目的 Artifact。"""
+    project = await _create_project(client, "Artifact List Project")
+    for i in range(2):
+        resp = await client.post(
+            "/api/v1/artifacts",
+            json={
+                "name": f"a-{i}.bin",
+                "type": "audio",
+                "project_id": project["id"],
+            },
+        )
+        assert resp.status_code == 201
+
+    resp = await client.get(f"/api/v1/projects/{project['id']}/artifacts")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 2
+
+    # 类型过滤
+    resp_filtered = await client.get(
+        f"/api/v1/projects/{project['id']}/artifacts",
+        params={"type": "audio"},
+    )
+    assert len(resp_filtered.json()) == 2
+    resp_empty = await client.get(
+        f"/api/v1/projects/{project['id']}/artifacts",
+        params={"type": "video"},
+    )
+    assert len(resp_empty.json()) == 0
+
+    # 非法类型 → 400
+    resp_bad = await client.get(
+        f"/api/v1/projects/{project['id']}/artifacts",
+        params={"type": "bogus"},
+    )
+    assert resp_bad.status_code == 400
+
+
+async def test_upload_and_download_artifact(client):
+    """上传并下载 Artifact（走真实存储后端）。"""
+    project = await _create_project(client, "Artifact Upload Project")
+    resp = await client.post(
+        "/api/v1/artifacts/upload",
+        files={"file": ("hello.bin", b"hello-artifact-bytes", "application/octet-stream")},
+        data={"project_id": project["id"], "name": "hello.bin", "artifact_type": "other"},
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["status"] == "ready"
+    assert data["size_bytes"] == len(b"hello-artifact-bytes")
+
+    # 下载并校验内容
+    dl = await client.get(f"/api/v1/artifacts/{data['id']}/download")
+    assert dl.status_code == 200
+    assert dl.content == b"hello-artifact-bytes"
+
+    # 获取详情
+    detail = await client.get(f"/api/v1/artifacts/{data['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["id"] == data["id"]
+
+    # 删除（软删除）
+    rm = await client.delete(f"/api/v1/artifacts/{data['id']}")
+    assert rm.status_code == 204
+
+
+async def test_update_project_put_alias(client):
+    """PUT 与 PATCH 等价（前端使用 PUT）。"""
+    created = await _create_project(client, "PUT Alias Project")
+    resp = await client.put(
+        f"/api/v1/projects/{created['id']}",
+        json={"description": "updated via PUT"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["description"] == "updated via PUT"

@@ -26,6 +26,9 @@ class OrchestratorSettings(BaseSettings):
     minio_bucket: str = "filmdub-artifacts"
     minio_secure: bool = False
 
+    # Artifact 存储后端: local | minio | auto（auto=仅当显式设置 MINIO_ENDPOINT 时使用 MinIO）
+    artifact_storage_backend: str = "auto"
+
     # JWT
     jwt_secret_key: str = "your-secret-key-change-in-production"
     jwt_algorithm: str = "HS256"
