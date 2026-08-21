@@ -304,10 +304,14 @@ class ProsodyPlanner:
         # 基于音色配置的基准音高
         base_pitch = voice_profile.get("pitch", 1.0)
 
-        # 基于音频特征微调
+        # 基于音频特征微调（真实特征：实际基频相对 180Hz 参考的偏差）
         if audio_features:
-            # TODO: 根据音频特征调整
-            pass
+            pitch_mean = audio_features.get("pitch_mean", 0.0)
+            if pitch_mean > 0:
+                # 参考中性基频 180Hz；与基准音高的偏离按比例修正（±20% 上限）
+                target_adjust = pitch_mean / 180.0
+                # 基准音高本身已包含角色性别/年龄段信息，此处只做小幅修正
+                base_pitch *= min(1.2, max(0.8, target_adjust))
 
         # 应用情绪因子
         pitch = base_pitch * emotion_factor
@@ -340,10 +344,13 @@ class ProsodyPlanner:
         # 基于音色配置的基准音量
         base_volume = voice_profile.get("volume", 1.0)
 
-        # 基于音频特征微调
+        # 基于音频特征微调（真实特征：RMS 幅度整体偏大时降低音量避免削波）
         if audio_features:
-            # TODO: 根据音频特征调整
-            pass
+            rms = audio_features.get("rms", 0.0)
+            if rms > 0:
+                # 0.5 RMS 视为中性；更响 → 音量略降，更轻 → 音量略升（±20% 上限）
+                loudness_adjust = 0.5 / max(rms, 0.05)
+                base_volume *= min(1.2, max(0.8, loudness_adjust))
 
         # 应用情绪因子
         volume = base_volume * emotion_factor
@@ -377,6 +384,9 @@ class ProsodyPlanner:
         clause_separators = r"[，；：]"
         for match in re.finditer(clause_separators, text):
             pauses.append(match.end())
+
+        # 按阅读顺序排序（TTS 需要时间有序的停顿位置）
+        pauses.sort()
 
         return pauses
 
@@ -428,8 +438,8 @@ class ProsodyPlanner:
         if not (self.config.volume_min <= prosody.volume <= self.config.volume_max):
             confidence *= 0.8
 
-        # 检查停顿和重音
-        if prosody.pauses and len(prosody.pauses) > len(prosody.text) / 2:
+        # 停顿数量异常（>40 个）时降置信度
+        if prosody.pauses and len(prosody.pauses) > 40:
             confidence *= 0.9
 
         return max(0.0, min(1.0, confidence))

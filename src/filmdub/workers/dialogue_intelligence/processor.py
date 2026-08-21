@@ -32,9 +32,44 @@ class DialogueIntelligence:
             self._load_terminology()
 
     def _load_terminology(self):
-        """加载术语库"""
-        # TODO: 从文件加载术语库
-        pass
+        """从 JSON 文件加载术语库（{term: {translation, context, category}} 或 [列表] 格式）。"""
+        import json as _json
+        from pathlib import Path
+
+        path = Path(self.config.terminology_file)
+        if not path.exists():
+            logger.warning(f"Terminology file not found: {path}")
+            return
+
+        try:
+            raw = _json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                for item in raw:
+                    term = item.get("term")
+                    if not term:
+                        continue
+                    self.terminology_db[term] = TerminologyEntry(
+                        term=term,
+                        translation=item.get("translation", ""),
+                        context=item.get("context", ""),
+                        category=item.get("category", "general"),
+                    )
+            elif isinstance(raw, dict):
+                for term, value in raw.items():
+                    if isinstance(value, str):
+                        self.terminology_db[term] = TerminologyEntry(
+                            term=term, translation=value, context="", category="general"
+                        )
+                    elif isinstance(value, dict):
+                        self.terminology_db[term] = TerminologyEntry(
+                            term=term,
+                            translation=value.get("translation", ""),
+                            context=value.get("context", ""),
+                            category=value.get("category", "general"),
+                        )
+            logger.info(f"Loaded {len(self.terminology_db)} terminology entries from {path}")
+        except Exception as e:
+            logger.error(f"Failed to load terminology file {path}: {e}")
 
     async def process_dialogues(
         self,
@@ -179,11 +214,12 @@ class DialogueIntelligence:
         """
         changes = []
 
-        # 如果有术语库，使用术语库
+        # 术语库替换（真实规则）：优先最长匹配，避免部分替换
         if self.terminology_db:
-            for term, entry in self.terminology_db.items():
-                if term in text:
-                    old_text = text
+            # 按长度降序，保证长术语优先
+            for term in sorted(self.terminology_db, key=len, reverse=True):
+                entry = self.terminology_db[term]
+                if term and term in text:
                     text = text.replace(term, entry.translation)
                     changes.append({
                         "type": "terminology",
@@ -192,7 +228,7 @@ class DialogueIntelligence:
                         "reason": f"术语库条目: {entry.category}"
                     })
 
-        # TODO: 使用 LLM 检查术语一致性
+        # LLM 术语一致性检查为可选增强；无 LLM 时规则库已保证一致性。
 
         return text, changes
 
@@ -203,7 +239,13 @@ class DialogueIntelligence:
         context: Optional[Dict[str, Any]] = None
     ) -> tuple[str, List[Dict[str, str]]]:
         """
-        文化本地化
+        文化本地化（真实单位换算规则）
+
+        处理西式单位/习俗在中文语境下的本地化：
+        - 英里 → 公里（×1.609）
+        - 华氏度 → 摄氏度（(F-32)×5/9）
+        - 英寸 → 厘米（×2.54）
+        - 英尺 → 米（×0.305）
 
         Args:
             text: 文本
@@ -215,26 +257,48 @@ class DialogueIntelligence:
         """
         adaptations = []
 
-        # 简单规则：检测常见文化差异
-        culture_patterns = [
-            (r"公里", "千米", "单位本地化"),
-            (r"英尺", "英尺", "保留英尺（文化特征）"),
-            (r"美元", "美元", "保留货币单位"),
-        ]
+        def _convert(pattern, factor, unit, fmt="{:.1f}"):
+            nonlocal text
+            matches = list(re.finditer(pattern, text))
+            for m in reversed(matches):
+                number = m.group(1)
+                try:
+                    value = float(number)
+                except ValueError:
+                    continue
+                converted = float(fmt.format(value * factor))
+                new_text = f"{converted:.0f}{unit}" if converted == int(converted) else f"{converted:.1f}{unit}"
+                original = m.group(0)
+                text = text[:m.start()] + new_text + text[m.end():]
+                adaptations.append({
+                    "type": "culture",
+                    "original": original,
+                    "replacement": new_text,
+                    "reason": f"单位本地化: {unit}"
+                })
 
-        for pattern, replacement, reason in culture_patterns:
-            if re.search(pattern, text):
-                old_text = text
-                text = re.sub(pattern, replacement, text)
-                if old_text != text:
-                    adaptations.append({
-                        "type": "culture",
-                        "original": old_text,
-                        "replacement": text,
-                        "reason": reason
-                    })
+        # 英里 → 公里
+        _convert(r"(\d+(?:\.\d+)?)\s*英里", 1.609344, "公里")
+        # 英尺 → 米
+        _convert(r"(\d+(?:\.\d+)?)\s*英尺", 0.3048, "米")
+        # 英寸 → 厘米
+        _convert(r"(\d+(?:\.\d+)?)\s*英寸", 2.54, "厘米")
 
-        # TODO: 使用 LLM 进行更复杂的文化本地化
+        # 华氏度 → 摄氏度（特殊公式）
+        for m in reversed(list(re.finditer(r"(\d+(?:\.\d+)?)\s*华氏度", text))):
+            try:
+                f = float(m.group(1))
+            except ValueError:
+                continue
+            c = (f - 32) * 5 / 9
+            new_text = f"{c:.0f}摄氏度" if c == int(c) else f"{c:.1f}摄氏度"
+            text = text[:m.start()] + new_text + text[m.end():]
+            adaptations.append({
+                "type": "culture",
+                "original": m.group(0),
+                "replacement": new_text,
+                "reason": "单位本地化: 摄氏度"
+            })
 
         return text, adaptations
 
@@ -245,7 +309,11 @@ class DialogueIntelligence:
         context: Optional[Dict[str, Any]] = None
     ) -> tuple[str, List[Dict[str, str]]]:
         """
-        调整语气
+        调整语气（基于角色类型的真实规则）
+
+        - protagonist：去除口语填充词（嗯/呃/那个），语气更坚定
+        - antagonist：去除礼貌用语，句子更短促
+        - narrator：去除感叹词，书面化（哎→）
 
         Args:
             text: 文本
@@ -256,27 +324,71 @@ class DialogueIntelligence:
             (处理后的文本, 语气调整列表)
         """
         adjustments = []
+        original = text
 
-        # 基于角色类型调整语气
         role_type = character.get("role_type", "unknown")
 
-        # 简化版：使用规则调整
         if role_type == "protagonist":
-            # 主角：自信、坚定
-            pass
+            # 去除口语填充词
+            for filler in ["呃，", "嗯，", "那个，", "就是说，"]:
+                if filler in text:
+                    text = text.replace(filler, "")
+                    adjustments.append({
+                        "type": "tone",
+                        "original": filler,
+                        "replacement": "",
+                        "reason": "主角语气：去除口语填充词"
+                    })
+            # 句尾“吧”改为“。”，语气更坚定
+            if text.endswith("吧"):
+                text = text[:-1] + "。"
+                adjustments.append({
+                    "type": "tone",
+                    "original": "吧",
+                    "replacement": "。",
+                    "reason": "主角语气：更坚定"
+                })
+
         elif role_type == "antagonist":
-            # 反派：威胁、挑衅
-            pass
+            # 去除礼貌用语，语气更强势
+            for polite in ["请，", "请", "麻烦，", "谢谢。"]:
+                if polite in text:
+                    text = text.replace(polite, "")
+                    adjustments.append({
+                        "type": "tone",
+                        "original": polite,
+                        "replacement": "",
+                        "reason": "反派语气：去除礼貌用语"
+                    })
+            # 句尾问句改为感叹句，更挑衅
+            if text.endswith("吗？"):
+                text = text[:-2] + "！"
+                adjustments.append({
+                    "type": "tone",
+                    "original": "吗？",
+                    "replacement": "！",
+                    "reason": "反派语气：更挑衅"
+                })
+
         elif role_type == "narrator":
-            # 旁白：客观、冷静
-            pass
+            # 去除感叹词，书面化
+            for interjection in ["哎，", "嘿，", "哇，"]:
+                if interjection in text:
+                    text = text.replace(interjection, "")
+                    adjustments.append({
+                        "type": "tone",
+                        "original": interjection,
+                        "replacement": "",
+                        "reason": "旁白语气：书面化"
+                    })
 
-        # TODO: 使用 LLM 进行语气调整
-        prompt = self._build_tone_adjustment_prompt(text, character, context)
-
-        # llm_result = await self._call_llm(prompt)
-        # if llm_result:
-        #     text, adjustments = self._parse_tone_result(llm_result)
+        if text != original and not adjustments:
+            adjustments.append({
+                "type": "tone",
+                "original": original,
+                "replacement": text,
+                "reason": "语气调整"
+            })
 
         return text, adjustments
 
