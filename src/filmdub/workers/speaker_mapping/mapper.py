@@ -154,17 +154,43 @@ class SpeakerToCharacterMapper:
             if character_id not in character_map:
                 continue
 
-            # 验证相似度（跨集一致性检查）
-            # TODO: 计算当前说话人与人物引用音色的相似度
+            # 跨集一致性验证：若说话人带嵌入且人物有参考嵌入，
+            # 计算余弦相似度，低于阈值时放弃该已有映射（交由新映射流程处理）
+            character = character_map[character_id]
+            speaker = next(
+                (s for s in speakers if s["speaker_id"] == speaker_id),
+                None,
+            )
+            if speaker and "embedding" in speaker and character.get("reference_embedding"):
+                embedding = np.array(speaker["embedding"])
+                ref_embedding = np.array(character["reference_embedding"])
+                denom = np.linalg.norm(embedding) * np.linalg.norm(ref_embedding)
+                if denom == 0:
+                    continue
+                similarity = float(np.dot(embedding, ref_embedding) / denom)
+                if similarity < self.config.similarity_threshold:
+                    logger.info(
+                        f"Existing mapping {speaker_id}->{character_id} "
+                        f"below threshold ({similarity:.3f}), skipped"
+                    )
+                    continue
+                mapping_similarity = similarity
+                mapping_confidence = min(
+                    existing.get("confidence", 0.0),
+                    similarity,
+                )
+            else:
+                mapping_similarity = existing.get("similarity", 0.0)
+                mapping_confidence = existing.get("confidence", 0.0)
 
             # 添加映射
             mapping = SpeakerToCharacterMapping(
                 speaker_id=speaker_id,
                 character_id=character_id,
-                similarity=existing.get("similarity", 0.0),
-                confidence=existing.get("confidence", 0.0),
+                similarity=mapping_similarity,
+                confidence=mapping_confidence,
                 manual_override=existing.get("manual_override", False),
-                notes="从已有映射继承"
+                notes="从已有映射继承（跨集一致性）",
             )
 
             mappings.append(mapping)
@@ -280,7 +306,7 @@ class SpeakerToCharacterMapper:
             return 0.0, 0.0
 
         total_weight = sum(weight for _, _, weight in similarity_scores)
-        weighted_sum = sum(score * weight for score, _, weight in similarity_scores)
+        weighted_sum = sum(score * weight for _, score, weight in similarity_scores)
 
         similarity = weighted_sum / total_weight
 
@@ -386,5 +412,18 @@ class SpeakerToCharacterMapper:
         Returns:
             新人物建议列表
         """
-        # TODO: 实现新人物检测和建议
-        return []
+        suggestions = []
+        for speaker_id in unmapped_speakers:
+            suggestions.append({
+                "suggested_character_id": f"new_char_{speaker_id}",
+                "source_speaker_id": speaker_id,
+                "confidence": 0.0,  # 需要人工确认或 M04 重新聚类
+                "requires_review": True,
+                "reason": "未匹配到现有人物，建议作为新人物候选",
+            })
+        if suggestions:
+            logger.info(
+                f"Suggested {len(suggestions)} new character candidates "
+                f"for unmapped speakers"
+            )
+        return suggestions
