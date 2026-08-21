@@ -13,11 +13,35 @@ import logging
 logger = logging.getLogger(__name__)
 
 from .manager import ConnectionManager
+from filmdub.orchestrator.jwt_handler import JWTHandler
 
 # 创建全局连接管理器
 manager = ConnectionManager()
 
 router = APIRouter()
+
+
+def _authenticate(token: Optional[str]) -> Optional[str]:
+    """
+    认证 WebSocket 连接：验证 JWT Token，返回用户/Worker ID。
+
+    支持两种 token：
+    - Worker token（type=worker）：返回 worker_id
+    - 普通用户 token（type=user）：返回 user_id
+    无效 token 返回 None。
+    """
+    if not token:
+        return None
+    jwt = JWTHandler()
+    try:
+        payload = jwt.decode(token)
+    except Exception:
+        return None
+    if payload.get("type") == "worker":
+        return payload.get("worker_id")
+    if payload.get("type") == "user":
+        return payload.get("user_id")
+    return None
 
 
 @router.websocket("/ws")
@@ -31,13 +55,17 @@ async def websocket_endpoint(
 
     Args:
         websocket: WebSocket 连接
-        token: 认证 Token
+        token: 认证 Token（可选，匿名连接允许只读订阅）
         project_id: 项目 ID（可选）
     """
     connection_id = str(uuid.uuid4())
 
-    # TODO: 验证 Token
-    user_id = "user_1"  # 临时用户 ID
+    # 验证 Token（提供 token 但无效时拒绝连接）
+    user_id = _authenticate(token)
+    if token and user_id is None:
+        await websocket.close(code=4401, reason="Invalid or expired token")
+        logger.warning(f"WebSocket rejected: invalid token (connection {connection_id})")
+        return
 
     try:
         # 建立连接
@@ -81,7 +109,8 @@ async def websocket_endpoint(
 async def handle_message(
     connection_id: str,
     user_id: str,
-    message: Dict[str, Any]
+    message: Dict[str, Any],
+    manager: Optional[ConnectionManager] = None
 ):
     """
     处理收到的消息
@@ -90,7 +119,9 @@ async def handle_message(
         connection_id: 连接 ID
         user_id: 用户 ID
         message: 消息内容
+        manager: 连接管理器（默认使用全局实例，便于测试注入）
     """
+    manager = manager or globals()["manager"]
     message_type = message.get("type")
 
     if message_type == "subscribe":
@@ -122,7 +153,8 @@ async def broadcast_job_progress(
     project_id: str,
     progress: float,
     status: str,
-    message: Optional[str] = None
+    message: Optional[str] = None,
+    manager: Optional[ConnectionManager] = None
 ):
     """
     广播作业进度
@@ -133,7 +165,9 @@ async def broadcast_job_progress(
         progress: 进度 (0-100)
         status: 状态
         message: 消息（可选）
+        manager: 连接管理器（默认使用全局实例）
     """
+    manager = manager or globals()["manager"]
     await manager.broadcast({
         "type": "job_progress",
         "job_id": job_id,
@@ -147,7 +181,8 @@ async def broadcast_job_progress(
 
 async def broadcast_system_event(
     event_type: str,
-    data: Dict[str, Any]
+    data: Dict[str, Any],
+    manager: Optional[ConnectionManager] = None
 ):
     """
     广播系统事件
@@ -155,7 +190,9 @@ async def broadcast_system_event(
     Args:
         event_type: 事件类型
         data: 事件数据
+        manager: 连接管理器（默认使用全局实例）
     """
+    manager = manager or globals()["manager"]
     await manager.broadcast({
         "type": "system_event",
         "event_type": event_type,
@@ -168,7 +205,8 @@ async def notify_user(
     user_id: str,
     notification_type: str,
     message: str,
-    data: Optional[Dict[str, Any]] = None
+    data: Optional[Dict[str, Any]] = None,
+    manager: Optional[ConnectionManager] = None
 ):
     """
     通知用户
@@ -178,7 +216,9 @@ async def notify_user(
         notification_type: 通知类型
         message: 消息
         data: 附加数据（可选）
+        manager: 连接管理器（默认使用全局实例）
     """
+    manager = manager or globals()["manager"]
     await manager.send_personal_message({
         "type": "notification",
         "notification_type": notification_type,

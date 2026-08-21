@@ -68,7 +68,8 @@ class ConnectionManager:
                 del self.user_connections[user_id]
 
         # 移除频道订阅
-        for channel, subscribers in self.channel_subscriptions.items():
+        for channel in list(self.channel_subscriptions.keys()):
+            subscribers = self.channel_subscriptions[channel]
             subscribers.discard(connection_id)
             if not subscribers:
                 del self.channel_subscriptions[channel]

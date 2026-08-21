@@ -1,6 +1,6 @@
 # Ticket 015: WebSocket 实时通信
 
-## 状态: todo（第3轮：先修测试套件再真实实现，驱动独立pytest验收）
+## 状态: done（第3轮复验通过：WebSocket 连接管理/频道订阅/定向广播/作业进度与系统事件推送/Token 认证，14 个测试；修复 disconnect 遍历中修改字典的 bug、用户 token 认证）
 
 ## 优先级: 中
 
