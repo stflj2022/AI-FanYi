@@ -17,7 +17,7 @@ if pgrep -f "scripts/pi-unattended[.]sh" >/dev/null; then
   # 卡死检测：日志 60 分钟无更新 → 杀掉挂起的 pi 轮次，让驱动自动进下一轮
   if [ -f "$DRV_LOG" ]; then
     AGE=$(( $(date +%s) - $(stat -c %Y "$DRV_LOG") ))
-    if [ $AGE -gt 3600 ]; then
+    if [ $AGE -gt 2700 ]; then
       PIPID=$(pgrep -f "^timeout 7200 pi" | head -1)
       if [ -n "$PIPID" ]; then
         log "🚨 日志 $((AGE/60)) 分钟无更新且 pi 挂起 → 杀掉卡死轮次"

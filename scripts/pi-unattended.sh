@@ -23,7 +23,7 @@ quota_hit() { tail -80 "$LOG" | grep -qiE "quota|额度|429|rate.?limit|insuffic
 run_pi() {
   local cont=(-c)
   if [ -f "$REPO/.claude/FRESH_NEXT" ]; then cont=(); rm -f "$REPO/.claude/FRESH_NEXT"; fi
-  timeout 7200 pi --provider "$1" --model "$2" "${cont[@]}" -p "$3" >> "$LOG" 2>&1
+  timeout 7200 pi --provider "$1" --model "$2" "${cont[@]}" -p "$3" < /dev/null >> "$LOG" 2>&1
 }
 
 ctx_hit() { tail -30 "$LOG" | grep -qiE "context.{0,20}(length|limit|window|overflow)|maximum context|too long|token limit|context_length_exceeded|prompt is too long"; }
