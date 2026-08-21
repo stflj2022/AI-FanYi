@@ -84,3 +84,4 @@ models/
 # 临时文件
 .tmp/
 scratch/
+projects/
