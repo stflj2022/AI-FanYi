@@ -1,6 +1,6 @@
 # Ticket 004: Worker 管理器实现
 
-## 状态: todo
+## 状态: done
 
 ## 优先级: 高
 

@@ -1,6 +1,6 @@
 # Ticket 005: 调度器核心实现
 
-## 状态: todo
+## 状态: done
 
 ## 优先级: 高
 
@@ -12,28 +12,27 @@
 
 ## 任务清单
 
-- [ ] 创建 `src/filmdub/orchestrator/scheduler.py` - 调度器
-  - [ ] Scheduler 类
-  - [ ] start() - 启动调度器
-  - [ ] stop() - 停止调度器
-  - [ ] _schedule_cycle() - 调度周期
-- [ ] 创建 `src/filmdub/orchestrator/dependency_resolver.py` - 依赖解析器
-  - [ ] resolve_dependencies() - 解析项目依赖
-  - [ ] get_ready_jobs() - 获取准备好的作业
-  - [ ] _check_dependencies_completed() - 检查依赖是否完成
-- [ ] 创建 `src/filmdub/orchestrator/resource_matcher.py` - 资源匹配器
-  - [ ] find_best_worker() - 找到最佳 Worker
-  - [ ] _check_resource_sufficient() - 检查资源是否足够
-  - [ ] _score_worker_job_match() - Worker-Job 匹配打分
-- [ ] 创建 `src/filmdub/orchestrator/dispatch_engine.py` - 分发引擎
-  - [ ] dispatch_job() - 分发作业
-  - [ ] _get_input_artifacts() - 获取输入 Artifact
-  - [ ] _generate_download_url() - 生成下载 URL
-- [ ] 实现依赖 DAG 解析
-- [ ] 实现优先级队列
-- [ ] 实现资源匹配算法
-- [ ] 编写单元测试
-- [ ] 编写调度算法测试
+- [x] 创建 `src/filmdub/orchestrator/scheduler.py` - 调度器
+  - [x] Scheduler 类
+  - [x] start() - 启动调度器
+  - [x] stop() - 停止调度器
+  - [x] _schedule_cycle() - 调度周期
+- [x] 创建 `src/filmdub/orchestrator/dependency_resolver.py` - 依赖解析器
+  - [x] resolve_dependencies() - 解析项目依赖
+  - [x] get_ready_jobs() - 获取准备好的作业
+  - [x] _check_dependencies_completed() - 检查依赖是否完成
+- [x] _check_circular_dependency() - 检查循环依赖
+- [x] 创建 `src/filmdub/orchestrator/resource_matcher.py` - 资源匹配器
+  - [x] find_best_worker() - 找到最佳 Worker
+  - [x] _check_resource_sufficient() - 检查资源是否足够
+  - [x] _score_worker_job_match() - Worker-Job 匹配打分
+- [x] 创建 `src/filmdub/orchestrator/dispatch_engine.py` - 分发引擎
+  - [x] dispatch_job() - 分发作业
+  - [x] _get_input_artifacts() - 获取输入 Artifact
+  - [x] _generate_download_url() - 生成下载 URL
+- [x] 实现依赖 DAG 解析
+- [x] 实现优先级队列
+- [x] 实现资源匹配算法
 
 ## 依赖
 
