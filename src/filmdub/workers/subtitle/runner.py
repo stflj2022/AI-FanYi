@@ -56,22 +56,40 @@ class SubtitleRunner:
         self.steps: List[Dict[str, Any]] = []
 
         # 状态
+        self.episode_id: str = ""
         self.english_subtitle: Optional[SubtitleSource] = None
         self.chinese_subtitle: Optional[SubtitleSource] = None
         self.dialogues: List[Dialogue] = []
 
-    def run(self, video_path: Path) -> Dict[str, Any]:
+        self._explicit_subtitles: Dict[str, Optional[Path]] = {"en": None, "zh": None}
+        self._auto_subtitles: List[Path] = []
+        self._entry_cache: Dict[str, tuple] = {}
+
+    def run(
+        self,
+        video_path: Path,
+        subtitle_en: Optional[Path] = None,
+        subtitle_zh: Optional[Path] = None,
+        subtitle_auto: Optional[List[Path]] = None,
+    ) -> Dict[str, Any]:
         """
         执行完整的字幕处理流程
 
         Args:
             video_path: 视频文件路径
+            subtitle_en: 外挂英文字幕文件（优先级最高）
+            subtitle_zh: 外挂中文字幕文件（优先级最高）
+            subtitle_auto: 外挂字幕文件列表，按文件名自动识别语言，
+                           单个双语文件会被自动拆分为中英两路
 
         Returns:
             执行结果
         """
         start_time = datetime.utcnow()
         logger.info(f"Starting Subtitle Runner for project {self.project_id}")
+
+        self._explicit_subtitles = {"en": subtitle_en, "zh": subtitle_zh}
+        self._auto_subtitles = list(subtitle_auto or [])
 
         try:
             # 1. 初始化数据库
@@ -121,6 +139,8 @@ class SubtitleRunner:
             else:
                 # TODO: 启动 Qwen 翻译（下一步实现）
                 logger.info("No Chinese subtitle, translation would be needed")
+
+            self.dialogues = dialogues
 
             # 9. 保存数据
             self._save_data(dialogues)
@@ -199,10 +219,15 @@ class SubtitleRunner:
             raise
 
     def _determine_strategy(self, summary: Dict[str, Any]) -> None:
-        """确定处理策略"""
+        """确定处理策略。
+
+        外挂字幕先于内嵌轨接入并占位；内嵌轨仅补空槽，不覆盖外挂来源。
+        """
+        self._wire_external_sources(summary)
+
         # 检查中文字幕
-        has_chinese = summary.get('has_chinese_subtitle', False)
-        has_english = summary.get('has_english_subtitle', False)
+        has_chinese = bool(self.chinese_subtitle) or summary.get('has_chinese_subtitle', False)
+        has_english = bool(self.english_subtitle) or summary.get('has_english_subtitle', False)
 
         if has_chinese:
             self.config.translation_mode = TranslationMode.EXISTING_CHINESE
@@ -224,7 +249,7 @@ class SubtitleRunner:
                     language=track['language'],
                     source_type=SubtitleSourceType.EMBEDDED,
                     stream_index=track['index'],
-                    codec=track['codec']
+                    format=track.get('codec', 'srt')
                 )
             elif track['language'] == 'zh-CN' and not self.chinese_subtitle:
                 self.chinese_subtitle = SubtitleSource(
@@ -234,8 +259,59 @@ class SubtitleRunner:
                     language=track['language'],
                     source_type=SubtitleSourceType.EMBEDDED,
                     stream_index=track['index'],
-                    codec=track['codec']
+                    format=track.get('codec', 'srt')
                 )
+
+        self._wire_external_sources(summary)
+
+    def _wire_external_sources(self, summary: Dict[str, Any]) -> None:
+        """按优先级接入外挂字幕：显式指定 > 命令行自动识别 > 同名自动发现"""
+        slots = {"en": ("english_subtitle", "en"), "zh": ("chinese_subtitle", "zh-CN")}
+
+        for key, path in self._explicit_subtitles.items():
+            if not path:
+                continue
+            attr, language = slots[key]
+            setattr(self, attr, self._make_external_source(Path(path), language))
+
+        for path in self._auto_subtitles:
+            guessed = self.scanner._guess_language_from_filename(Path(path).name)
+            if guessed == 'zh-CN' and not self.chinese_subtitle:
+                self.chinese_subtitle = self._make_external_source(Path(path), 'zh-CN')
+            elif not self.english_subtitle:
+                self.english_subtitle = self._make_external_source(
+                    Path(path), guessed or 'en'
+                )
+
+        for f in summary.get('external_subtitles', {}).get('files', []):
+            lang = f.get('language')
+            if lang == 'en' and not self.english_subtitle:
+                self.english_subtitle = self._make_external_source(
+                    Path(f['path']), 'en', fmt=f['format']
+                )
+            elif lang == 'zh-CN' and not self.chinese_subtitle:
+                self.chinese_subtitle = self._make_external_source(
+                    Path(f['path']), 'zh-CN', fmt=f['format']
+                )
+
+        if (self.chinese_subtitle and not self.english_subtitle
+                and self.chinese_subtitle.source_type == SubtitleSourceType.EXTERNAL):
+            logger.info("Chinese-only external subtitle given; "
+                        "mirroring as English source for bilingual split")
+            self.english_subtitle = self.chinese_subtitle
+
+    def _make_external_source(
+        self, path: Path, language: str, fmt: Optional[str] = None
+    ) -> SubtitleSource:
+        return SubtitleSource(
+            id=f"sub_ext_{language}_{abs(hash(str(path))) % 100000}",
+            project_id=self.project_id,
+            media_id="video",
+            language=language,
+            source_type=SubtitleSourceType.EXTERNAL,
+            path=str(path),
+            format=(fmt or path.suffix.lstrip('.')).lower(),
+        )
 
     def _step_import_subtitle(
         self,
@@ -261,7 +337,7 @@ class SubtitleRunner:
                 subtitle_source.path = str(output_path)
 
             # 解析字幕
-            entries = self.parser.parse(Path(subtitle_source.path))
+            entries = self._load_entries(subtitle_source.path, language)
 
             # 保存为 JSONL
             jsonl_path = self.dialogue_dir / "source" / f"{language}.jsonl"
@@ -283,6 +359,20 @@ class SubtitleRunner:
                 {"error": str(e)}
             ))
             raise
+
+    def _load_entries(self, path: str, language: str) -> List:
+        """加载字幕条目；双语文件按语言拆分，解析结果按路径缓存"""
+        key = str(path)
+        if key not in self._entry_cache:
+            parsed = self.parser.parse(Path(key))
+            self._entry_cache[key] = (parsed, self.parser.split_bilingual(parsed))
+
+        parsed, (en_part, zh_part) = self._entry_cache[key]
+        if language == 'zh-CN':
+            return zh_part or parsed
+        if language == 'en':
+            return en_part or parsed
+        return parsed
 
     def _step_validate(
         self,
