@@ -52,10 +52,10 @@ class SpeakerDiarization:
 
             logger.info(f"Loading diarization model: {self.config.diarization_model}")
 
-            # 创建 Pipeline
+            # 创建 Pipeline（token 从配置读取，gated 模型需要）
             self.model = Pipeline.from_pretrained(
                 self.config.diarization_model,
-                use_auth_token=False  # TODO: 添加 HF token
+                use_auth_token=self.config.hf_token or False,
             )
 
             # 移动到设备

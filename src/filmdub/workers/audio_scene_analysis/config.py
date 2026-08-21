@@ -12,6 +12,8 @@ class M05Config:
     # 模型路径
     diarization_model: str = "pyannote/speaker-diarization-3.1"
     embedding_model: str = "speechbrain/spkrec-ecapa-voxceleb"
+    # HuggingFace token（访问 gated 模型时需要，如 pyannote 系列）
+    hf_token: Optional[str] = None
 
     # 音频参数
     sample_rate: int = 16000
