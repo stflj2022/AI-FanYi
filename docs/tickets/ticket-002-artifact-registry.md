@@ -1,6 +1,6 @@
 # Ticket 002: Artifact Registry 实现
 
-##状态: done
+## 状态: todo（第3轮：先修测试套件再真实实现，驱动独立pytest验收）
 
 ## 优先级: 高
 
