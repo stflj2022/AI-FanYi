@@ -1,7 +1,7 @@
 """
 Pydantic 模型用于请求/响应验证
 """
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
