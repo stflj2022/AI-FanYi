@@ -82,31 +82,39 @@ def test_alembic_migration_matches_models(tmp_path):
     import filmdub.orchestrator.config as orch_config
     import filmdub.orchestrator.database as orch_db
 
-    # 重新加载模块以应用新的 DATABASE_URL
-    importlib.reload(orch_config)
-    importlib.reload(orch_db)
+    # 重新加载模块以应用新的 DATABASE_URL（注意：必须先写入 os.environ）
+    old_database_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{tmp_db}"
+    try:
+        importlib.reload(orch_config)
+        importlib.reload(orch_db)
 
-    from filmdub.orchestrator.models import Project, ProjectStatus
-    from sqlalchemy import select
+        from filmdub.orchestrator.models import Project, ProjectStatus
+        from sqlalchemy import select
 
-    async def _run():
-        async with orch_db.get_db_context() as db:
-            project = Project(
-                name="Migration Test",
-                status=ProjectStatus.PENDING,
-                title="Migration Test Title",
-                target_language="zh-CN",
-            )
-            db.add(project)
-            await db.flush()
-            assert project.id is not None
+        async def _run():
+            async with orch_db.get_db_context() as db:
+                project = Project(
+                    name="Migration Test",
+                    status=ProjectStatus.PENDING,
+                    title="Migration Test Title",
+                    target_language="zh-CN",
+                )
+                db.add(project)
+                await db.flush()
+                assert project.id is not None
 
-            result = await db.execute(
-                select(Project).where(Project.name == "Migration Test")
-            )
-            assert result.scalar_one().id == project.id
+                result = await db.execute(
+                    select(Project).where(Project.name == "Migration Test")
+                )
+                assert result.scalar_one().id == project.id
 
-    import asyncio
-    asyncio.run(_run())
+        import asyncio
+        asyncio.run(_run())
+    finally:
+        if old_database_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = old_database_url
     importlib.reload(orch_config)
     importlib.reload(orch_db)

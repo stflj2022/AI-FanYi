@@ -1,13 +1,14 @@
 """
 依赖注入
 """
-from fastapi import Depends
+from typing import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.filmdub.orchestrator.database import get_db
+from filmdub.orchestrator.database import AsyncSessionLocal
 
 
-async def get_db_session() -> AsyncSession:
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     获取数据库会话的依赖注入
 
@@ -20,5 +21,12 @@ async def get_db_session() -> AsyncSession:
         return result.scalars().all()
     ```
     """
-    async with get_db() as db:
-        yield db
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()

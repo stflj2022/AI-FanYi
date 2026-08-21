@@ -17,9 +17,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.filmdub.orchestrator.config import orchestrator_settings
-from src.filmdub.orchestrator.database import Base
-from src.filmdub.orchestrator.models import *  # 导入所有模型
+from filmdub.orchestrator.config import orchestrator_settings
+from filmdub.orchestrator.database import Base
+from filmdub.orchestrator.models import *  # 导入所有模型
 
 # this is the Alembic Config object
 config = context.config
