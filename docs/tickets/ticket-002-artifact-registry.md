@@ -1,6 +1,6 @@
 # Ticket 002: Artifact Registry 实现
 
-## 状态: todo
+## 状态: done
 
 ## 优先级: 高
 
