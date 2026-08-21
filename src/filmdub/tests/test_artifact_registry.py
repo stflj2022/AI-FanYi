@@ -397,3 +397,56 @@ def test_checksum_calculation():
     # 校验和应该是 SHA256 格式（64 个十六进制字符）
     assert len(checksum1) == 64
     assert all(c in "0123456789abcdef" for c in checksum1)
+
+
+@pytest.mark.asyncio
+async def test_artifact_versioning(setup_database):
+    """测试 Artifact 版本管理（父子版本链）"""
+    async with get_db_context() as db:
+        # 创建项目
+        project = Project(
+            name="Test Project",
+            status="pending",
+        )
+        db.add(project)
+        await db.flush()
+
+        # 创建 Artifact Registry
+        storage = LocalStorage(base_path="/tmp/test_artifacts")
+        registry = ArtifactRegistry(db, storage)
+
+        # 创建 v1
+        metadata = ArtifactMetadata(
+            name="test_video.mp4",
+            type=ArtifactType.VIDEO,
+            project_id=project.id,
+            module_id="M01",
+        )
+
+        ref_v1 = await registry.create(metadata)
+        assert ref_v1.version == 1
+
+        data_v1 = io.BytesIO(b"version one content")
+        await registry.upload(ref_v1.id, data_v1)
+
+        # 基于 v1 创建 v2
+        ref_v2 = await registry.create(metadata, parent_artifact_id=ref_v1.id)
+        assert ref_v2.version == 2
+
+        data_v2 = io.BytesIO(b"version two content")
+        await registry.upload(ref_v2.id, data_v2)
+
+        # 验证版本链
+        result = await db.execute(
+            select(Artifact).where(Artifact.id == ref_v2.id)
+        )
+        artifact_v2 = result.scalar_one()
+        assert artifact_v2.parent_artifact_id == ref_v1.id
+
+        # 新版本内容独立存储
+        content_v1 = await registry.download(ref_v1.id)
+        content_v2 = await registry.download(ref_v2.id)
+        assert content_v1.read() == b"version one content"
+        assert content_v2.read() == b"version two content"
+
+        await db.rollback()
