@@ -8,8 +8,14 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.orm import DeclarativeBase
 
-from core.config import settings
+from filmdub.core.config import settings
+
+# Create Base for models
+class Base(DeclarativeBase):
+    """所有 SQLAlchemy 模型的基类"""
+    pass
 
 
 class DatabaseManager:

@@ -8,10 +8,10 @@ from typing import Any, Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel
 
-from core.config import settings
-from core.database import get_database_manager
-from workers.research.models import Character, Actor, Evidence, ResearchJob
-from workers.research.runner import ResearchWorker
+from filmdub.core.config import settings
+from filmdub.core.database import get_database_manager
+from filmdub.workers.research.models import Character, Actor, Evidence, ResearchJob
+from filmdub.workers.research.runner import ResearchWorker
 
 logger = logging.getLogger(__name__)
 

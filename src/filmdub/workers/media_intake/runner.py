@@ -6,9 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from core.config import settings
-from core.database import get_database_manager
-from core.models import (
+from filmdub.core.config import settings
+from filmdub.core.database import get_database_manager
+from filmdub.core.models import (
     Episode,
     Job,
     JobEvent,
@@ -17,12 +17,12 @@ from core.models import (
     Project,
     SubtitleAsset,
 )
-from core.storage import StorageManager
-from workers.media_intake.filename_parser import FilenameParseResult, parse_filename, sanitize_filename
-from workers.media_intake.hashing import compute_sha256
-from workers.media_intake.manifest import build_media_manifest
-from workers.media_intake.probe import FFprobeError, FFprobeParser
-from workers.media_intake.validator import MediaValidationError, MediaValidator
+from filmdub.core.storage import StorageManager
+from filmdub.workers.media_intake.filename_parser import FilenameParseResult, parse_filename, sanitize_filename
+from filmdub.workers.media_intake.hashing import compute_sha256
+from filmdub.workers.media_intake.manifest import build_media_manifest
+from filmdub.workers.media_intake.probe import FFprobeError, FFprobeParser
+from filmdub.workers.media_intake.validator import MediaValidationError, MediaValidator
 
 logger = logging.getLogger(__name__)
 

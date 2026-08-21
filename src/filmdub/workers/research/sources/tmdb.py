@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 import httpx
 
-from workers.research.config import get_research_config
+from filmdub.workers.research.config import get_research_config
 
 logger = logging.getLogger(__name__)
 

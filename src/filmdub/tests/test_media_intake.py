@@ -8,13 +8,22 @@ from pathlib import Path
 import pytest
 from httpx import AsyncClient
 
-from core.config import settings
-from core.database import get_database_manager
-from core.models import Base, Job, MediaAsset, Project
-from workers.media_intake.filename_parser import parse_filename
-from workers.media_intake.hashing import compute_sha256
-from workers.media_intake.probe import FFprobeParser, FFprobeError
-from workers.media_intake.validator import MediaValidator, MediaValidationError
+try:
+    from filmdub.core.config import settings
+    from filmdub.core.database import get_database_manager
+    from filmdub.core.models import Base, Job, MediaAsset, Project
+    from filmdub.workers.media_intake.filename_parser import parse_filename
+    from filmdub.workers.media_intake.hashing import compute_sha256
+    from filmdub.workers.media_intake.probe import FFprobeParser, FFprobeError
+    from filmdub.workers.media_intake.validator import MediaValidator, MediaValidationError
+except ImportError:
+    from filmdub.core.config import settings
+    from filmdub.core.database import get_database_manager
+    from filmdub.core.models import Base, Job, MediaAsset, Project
+    from filmdub.workers.media_intake.filename_parser import parse_filename
+    from filmdub.workers.media_intake.hashing import compute_sha256
+    from filmdub.workers.media_intake.probe import FFprobeParser, FFprobeError
+    from filmdub.workers.media_intake.validator import MediaValidator, MediaValidationError
 
 
 # ==================== Filename Parser Tests ====================
@@ -77,7 +86,7 @@ def test_compute_sha256():
 
 def test_verify_sha256():
     """Test SHA-256 verification."""
-    from workers.media_intake.hashing import verify_sha256
+    from filmdub.workers.media_intake.hashing import verify_sha256
 
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
         f.write("Hello, World!")
@@ -199,7 +208,7 @@ def test_ffprobe_get_duration():
 async def test_create_project():
     """Test creating a project."""
     import uuid
-    from core.storage import StorageManager
+    from filmdub.core.storage import StorageManager
 
     project_id = f"proj_{uuid.uuid4().hex[:12]}"
 
@@ -237,7 +246,7 @@ async def test_create_project():
 @pytest.mark.asyncio
 async def test_api_health_check():
     """Test API health check endpoint."""
-    from apps.api.main import app
+    from filmdub.apps.api.main import app
 
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.get("/health")
@@ -248,7 +257,7 @@ async def test_api_health_check():
 @pytest.mark.asyncio
 async def test_api_create_project():
     """Test API create project endpoint."""
-    from apps.api.main import app
+    from filmdub.apps.api.main import app
 
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.post(

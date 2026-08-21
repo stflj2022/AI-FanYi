@@ -7,11 +7,18 @@ from pathlib import Path
 
 import pytest
 
-from workers.research.config import ResearchConfig, get_research_config
-from workers.research.identity import IdentityResolver
-from workers.research.init_db import init_research_database
-from workers.research.manifest import ResearchManifestBuilder
-from workers.research.runner import ResearchWorker
+try:
+    from filmdub.workers.research.config import ResearchConfig, get_research_config
+    from filmdub.workers.research.identity import IdentityResolver
+    from filmdub.workers.research.init_db import init_research_database
+    from filmdub.workers.research.manifest import ResearchManifestBuilder
+    from filmdub.workers.research.runner import ResearchWorker
+except ImportError:
+    from filmdub.workers.research.config import ResearchConfig, get_research_config
+    from filmdub.workers.research.identity import IdentityResolver
+    from filmdub.workers.research.init_db import init_research_database
+    from filmdub.workers.research.manifest import ResearchManifestBuilder
+    from filmdub.workers.research.runner import ResearchWorker
 
 
 class TestResearchConfig:
@@ -89,7 +96,7 @@ class TestManifestBuilder:
 
     def test_build_basic_manifest(self):
         """Test building basic manifest."""
-        from workers.research.models import Project
+        from filmdub.workers.research.models import Project
 
         project = Project(
             id="test_project",

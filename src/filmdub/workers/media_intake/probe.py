@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Optional
 
-from core.config import settings
+from filmdub.core.config import settings
 
 
 class FFprobeError(Exception):

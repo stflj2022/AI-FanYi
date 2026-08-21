@@ -8,13 +8,22 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-from workers.subtitle import SubtitleConfig, TranslationMode
-from workers.subtitle.models import SubtitleSource, Dialogue, SubtitleSourceType
-from workers.subtitle.discovery import SubtitleScanner, SubtitleMatcher
-from workers.subtitle.importer import SubtitleParser, DialogueNormalizer
-from workers.subtitle.validator import SubtitleValidator, ValidationSeverity
-from workers.subtitle.alignment import SubtitleAligner
-from workers.subtitle.extractor import DialogueExtractor, DialogueType
+try:
+    from filmdub.workers.subtitle import SubtitleConfig, TranslationMode
+    from filmdub.workers.subtitle.models import SubtitleSource, Dialogue, SubtitleSourceType
+    from filmdub.workers.subtitle.discovery import SubtitleScanner, SubtitleMatcher
+    from filmdub.workers.subtitle.importer import SubtitleParser, DialogueNormalizer
+    from filmdub.workers.subtitle.validator import SubtitleValidator, ValidationSeverity
+    from filmdub.workers.subtitle.alignment import SubtitleAligner
+    from filmdub.workers.subtitle.extractor import DialogueExtractor, DialogueType
+except ImportError:
+    from filmdub.workers.subtitle import SubtitleConfig, TranslationMode
+    from filmdub.workers.subtitle.models import SubtitleSource, Dialogue, SubtitleSourceType
+    from filmdub.workers.subtitle.discovery import SubtitleScanner, SubtitleMatcher
+    from filmdub.workers.subtitle.importer import SubtitleParser, DialogueNormalizer
+    from filmdub.workers.subtitle.validator import SubtitleValidator, ValidationSeverity
+    from filmdub.workers.subtitle.alignment import SubtitleAligner
+    from filmdub.workers.subtitle.extractor import DialogueExtractor, DialogueType
 
 
 class TestSubtitleConfig(unittest.TestCase):
@@ -146,7 +155,7 @@ This is a test.
 
     def test_to_jsonl(self):
         """测试导出为JSONL"""
-        from workers.subtitle.importer.parser import SubtitleEntry
+        from filmdub.workers.subtitle.importer.parser import SubtitleEntry
 
         entries = [
             SubtitleEntry(index=0, start=1.0, end=3.0, text="Hello"),
@@ -178,7 +187,7 @@ class TestSubtitleValidator(unittest.TestCase):
 
     def test_validate_valid_entries(self):
         """测试验证有效的字幕"""
-        from workers.subtitle.importer.parser import SubtitleEntry
+        from filmdub.workers.subtitle.importer.parser import SubtitleEntry
 
         entries = [
             SubtitleEntry(index=0, start=1.0, end=3.0, text="Hello"),
@@ -193,7 +202,7 @@ class TestSubtitleValidator(unittest.TestCase):
 
     def test_validate_invalid_time(self):
         """测试验证无效时间"""
-        from workers.subtitle.importer.parser import SubtitleEntry
+        from filmdub.workers.subtitle.importer.parser import SubtitleEntry
 
         entries = [
             SubtitleEntry(index=0, start=5.0, end=3.0, text="Invalid time")
@@ -206,7 +215,7 @@ class TestSubtitleValidator(unittest.TestCase):
 
     def test_validate_empty_text(self):
         """测试验证空文本"""
-        from workers.subtitle.importer.parser import SubtitleEntry
+        from filmdub.workers.subtitle.importer.parser import SubtitleEntry
 
         entries = [
             SubtitleEntry(index=0, start=1.0, end=3.0, text="")
@@ -227,7 +236,7 @@ class TestSubtitleAligner(unittest.TestCase):
 
     def test_align_no_offset_needed(self):
         """测试不需要偏移的对齐"""
-        from workers.subtitle.importer.parser import SubtitleEntry
+        from filmdub.workers.subtitle.importer.parser import SubtitleEntry
 
         entries = [
             SubtitleEntry(index=0, start=1.0, end=3.0, text="Hello"),
@@ -242,7 +251,7 @@ class TestSubtitleAligner(unittest.TestCase):
 
     def test_align_with_scaling(self):
         """测试需要缩放的对齐"""
-        from workers.subtitle.importer.parser import SubtitleEntry
+        from filmdub.workers.subtitle.importer.parser import SubtitleEntry
 
         entries = [
             SubtitleEntry(index=0, start=1.0, end=3.0, text="Hello"),
@@ -265,7 +274,7 @@ class TestDialogueExtractor(unittest.TestCase):
 
     def test_extract_dialogue(self):
         """测试提取对话"""
-        from workers.subtitle.importer.parser import SubtitleEntry
+        from filmdub.workers.subtitle.importer.parser import SubtitleEntry
 
         entries = [
             SubtitleEntry(index=0, start=1.0, end=3.0, text="Hello, how are you?"),
@@ -279,7 +288,7 @@ class TestDialogueExtractor(unittest.TestCase):
 
     def test_extract_music(self):
         """测试识别音乐"""
-        from workers.subtitle.importer.parser import SubtitleEntry
+        from filmdub.workers.subtitle.importer.parser import SubtitleEntry
 
         entries = [
             SubtitleEntry(index=0, start=1.0, end=3.0, text="♪ La la la ♪")
@@ -292,7 +301,7 @@ class TestDialogueExtractor(unittest.TestCase):
 
     def test_filter_dialogues(self):
         """测试过滤对话"""
-        from workers.subtitle.importer.parser import SubtitleEntry
+        from filmdub.workers.subtitle.importer.parser import SubtitleEntry
 
         entries = [
             SubtitleEntry(index=0, start=1.0, end=3.0, text="Hello"),
@@ -318,7 +327,7 @@ class TestSubtitleMatcher(unittest.TestCase):
 
     def test_match_perfect_filename(self):
         """测试完美文件名匹配"""
-        from workers.subtitle.discovery.scanner import ExternalSubtitle, SubtitleFormat
+        from filmdub.workers.subtitle.discovery.scanner import ExternalSubtitle, SubtitleFormat
 
         subtitle = ExternalSubtitle(
             path=Path("Breaking.Bad.S01E01.chi.srt"),
@@ -339,7 +348,7 @@ class TestSubtitleMatcher(unittest.TestCase):
 
     def test_find_best_subtitle(self):
         """测试找到最佳字幕"""
-        from workers.subtitle.discovery.scanner import ExternalSubtitle, SubtitleFormat
+        from filmdub.workers.subtitle.discovery.scanner import ExternalSubtitle, SubtitleFormat
 
         subtitles = [
             ExternalSubtitle(

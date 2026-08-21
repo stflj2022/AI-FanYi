@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from workers.media_intake.probe import FFprobeParser
+from filmdub.workers.media_intake.probe import FFprobeParser
 
 
 def build_media_manifest(

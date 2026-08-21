@@ -10,8 +10,8 @@ from typing import Any, Optional
 import httpx
 from bs4 import BeautifulSoup
 
-from core.config import settings
-from workers.research.config import get_research_config
+from filmdub.core.config import settings
+from filmdub.workers.research.config import get_research_config
 
 logger = logging.getLogger(__name__)
 

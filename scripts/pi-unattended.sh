@@ -14,7 +14,7 @@ cd "$REPO" || exit 1
 P_PROVIDER="zai-coding-cn"; P_MODEL="glm-4.7"
 F_PROVIDER="deepseek";      F_MODEL="deepseek-v4-pro"
 
-CONT_PROMPT="阶段2-深度化复验。上一阶段产出的实现多为骨架，不算完成。逐张处理 docs/tickets/ 工单：1) 审查现有代码，补齐真实业务逻辑（禁止空壳/TODO/假数据充数）；2) 为核心功能编写有意义的 pytest 测试；3) 运行 pytest 全部通过后，才能把工单标为 done 并 commit+push；4) 测试不过就继续修，不许降低标准。禁止提问等待确认，自主决策直接执行。所有工单都真正达标后，最后一行只输出 ALL_DONE。"
+CONT_PROMPT="阶段2-深度化复验（第3轮）。前两轮均虚报完工被驱动打回：测试套件实际处于损坏状态。本轮规则：1) 测试命令固定为 cd ~/AI-FanYi && .venv/bin/python -m pytest src/filmdub/tests/ -q，先修复全部收集错误（已知问题：test_media_intake/test_research/test_subtitle 的 import 路径断链，No module named 'core'/'workers'）；2) 全量测试绿了之后，逐张审查 docs/tickets/ 工单，补齐真实业务逻辑（禁止空壳/TODO/假数据），新功能必须配测试；3) 每完成一张工单：跑全量测试→绿→标done→commit；4) 驱动会独立复跑 pytest 验证，测试不过的 ALL_DONE 会被打回，虚报无效；5) 禁止提问等待确认，自主决策直接执行。所有工单真正达标后，最后一行只输出 ALL_DONE。"
 
 log() { echo "[$(date '+%F %T')] $*" >> "$LOG"; }
 
@@ -25,7 +25,14 @@ if ! flock -n 9; then
   exit 1
 fi
 
-done_check() { [ "$(tail -1 "$LOG" | tr -d '[:space:]')" = "ALL_DONE" ]; }
+tests_pass() { (cd "$REPO" && timeout 600 .venv/bin/python -m pytest src/filmdub/tests/ -q >/dev/null 2>&1); }
+done_check() {
+  [ "$(tail -1 "$LOG" | tr -d '[:space:]')" = "ALL_DONE" ] || return 1
+  if tests_pass; then return 0; fi
+  log "❌ 声称完工但 pytest 未通过 → 打回重做"
+  touch "$REPO/.claude/FRESH_NEXT"
+  return 1
+}
 quota_hit() { tail -80 "$LOG" | grep -qiE "quota|额度|429|rate.?limit|insufficient|exceeded|余额不足|balance"; }
 
 run_pi() {

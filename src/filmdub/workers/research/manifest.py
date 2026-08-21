@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from workers.research.models import (
+from filmdub.workers.research.models import (
     Actor,
     Appearance,
     Character,

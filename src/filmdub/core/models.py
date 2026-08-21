@@ -6,6 +6,7 @@ SQLAlchemy 数据模型
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
+from typing import Optional, List, Dict, Any
 
 from sqlalchemy import (
     JSON,
@@ -23,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .database import Base
+from filmdub.core.database import Base
 
 
 # ==================== 枚举类型 ====================
@@ -324,7 +325,7 @@ class Artifact(Base):
     size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     checksum: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    metadata: Mapped[dict] = mapped_column(JSON, nullable=True)
+    extra_metadata: Mapped[dict] = mapped_column(JSON, nullable=True)
 
     # 版本
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -565,3 +566,150 @@ class ErrorLog(Base):
         Index("idx_error_log_job", "job_id"),
         Index("idx_error_log_project", "project_id"),
     )
+
+
+# ==================== M01-M03 专用模型 ====================
+# 这些模型使用字符串 ID，用于媒体摄入、研究和字幕处理
+
+
+class ProjectM01(Base):
+    """项目信息（M01-M03 专用）"""
+    __tablename__ = "m01_projects"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    target_language: Mapped[str] = mapped_column(String(10), default="zh-CN", nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="CREATED", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # 关系
+    episodes: Mapped[list["EpisodeM01"]] = relationship("EpisodeM01", back_populates="project")
+
+    __table_args__ = (
+        Index("idx_m01_project_status", "status"),
+        Index("idx_m01_project_title", "title"),
+    )
+
+
+class EpisodeM01(Base):
+    """剧集信息（M01 专用）"""
+    __tablename__ = "episodes"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    season_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    episode_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="PENDING", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # 关系
+    project: Mapped["ProjectM01"] = relationship("ProjectM01", back_populates="episodes")
+    media_assets: Mapped[list["MediaAsset"]] = relationship("MediaAsset", back_populates="episode")
+
+    __table_args__ = (
+        Index("idx_episode_project", "project_id"),
+        Index("idx_episode_season_episode", "season_number", "episode_number"),
+    )
+
+
+class MediaAsset(Base):
+    """媒体资产（M01 专用）"""
+    __tablename__ = "media_assets"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    episode_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    duration_seconds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    container_format: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="PENDING", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # 关系
+    episode: Mapped[Optional["EpisodeM01"]] = relationship("EpisodeM01", back_populates="media_assets")
+    streams: Mapped[list["MediaStream"]] = relationship("MediaStream", back_populates="media_asset", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("idx_media_asset_episode", "episode_id"),
+        Index("idx_media_asset_sha256", "sha256"),
+    )
+
+
+class MediaStream(Base):
+    """媒体流信息（M01 专用）"""
+    __tablename__ = "media_streams"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    media_id: Mapped[str] = mapped_column(String(50), ForeignKey("media_assets.id", ondelete="CASCADE"), nullable=False)
+    stream_type: Mapped[str] = mapped_column(String(20), nullable=False)  # video, audio, subtitle
+    index: Mapped[int] = mapped_column(Integer, nullable=False)
+    codec: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    codec_long: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    profile: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    width: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    height: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    frame_rate: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    bit_rate: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    channels: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    sample_rate: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
+    # 关系
+    media_asset: Mapped["MediaAsset"] = relationship("MediaAsset", back_populates="streams")
+
+    __table_args__ = (
+        Index("idx_media_stream_media", "media_id"),
+        Index("idx_media_stream_type", "stream_type"),
+    )
+
+
+class SubtitleAsset(Base):
+    """字幕资产（M03 专用）"""
+    __tablename__ = "subtitle_assets"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    episode_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    language: Mapped[str] = mapped_column(String(10), nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    format: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    encoding: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="PENDING", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("idx_subtitle_asset_episode", "episode_id"),
+        Index("idx_subtitle_asset_language", "language"),
+    )
+
+
+class JobEvent(Base):
+    """作业事件（通用）"""
+    __tablename__ = "job_events"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    level: Mapped[str] = mapped_column(String(20), nullable=False)  # INFO, WARNING, ERROR
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("idx_job_event_job", "job_id"),
+        Index("idx_job_event_timestamp", "timestamp"),
+    )
+
+
+# 为测试兼容性创建别名
+Episode = EpisodeM01
+Project = ProjectM01

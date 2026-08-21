@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from core.schemas import FilenameParseResult
+from filmdub.core.schemas import FilenameParseResult
 
 
 # Patterns for detecting season/episode numbers

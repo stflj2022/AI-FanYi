@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from core.config import settings
+from filmdub.core.config import settings
 
 
 class StorageManager:

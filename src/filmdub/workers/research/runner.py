@@ -9,13 +9,13 @@ from typing import Any, Optional
 
 from sqlalchemy import select
 
-from core.config import settings
-from core.database import get_database_manager
-from workers.research.config import get_research_config
-from workers.research.identity import IdentityResolver
-from workers.research.init_db import init_research_database
-from workers.research.manifest import ResearchManifestBuilder
-from workers.research.models import (
+from filmdub.core.config import settings
+from filmdub.core.database import get_database_manager
+from filmdub.workers.research.config import get_research_config
+from filmdub.workers.research.identity import IdentityResolver
+from filmdub.workers.research.init_db import init_research_database
+from filmdub.workers.research.manifest import ResearchManifestBuilder
+from filmdub.workers.research.models import (
     Actor,
     Appearance,
     Character,
@@ -27,12 +27,12 @@ from workers.research.models import (
     Source,
     Evidence,
 )
-from workers.research.sources.tmdb import get_tmdb_adapter
-from workers.research.sources.wikidata import get_wikidata_adapter
-from workers.research.sources.web_search import get_web_search_adapter
-from workers.research.extract import get_qwen_extractor
-from workers.research.resolve import get_entity_resolver
-from workers.research.verify import get_research_verifier
+from filmdub.workers.research.sources.tmdb import get_tmdb_adapter
+from filmdub.workers.research.sources.wikidata import get_wikidata_adapter
+from filmdub.workers.research.sources.web_search import get_web_search_adapter
+from filmdub.workers.research.extract import get_qwen_extractor
+from filmdub.workers.research.resolve import get_entity_resolver
+from filmdub.workers.research.verify import get_research_verifier
 
 logger = logging.getLogger(__name__)
 

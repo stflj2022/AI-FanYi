@@ -1,6 +1,6 @@
 """Research module."""
 
-from workers.research.models import (
+from filmdub.workers.research.models import (
     Actor,
     Appearance,
     Base,

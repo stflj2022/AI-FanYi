@@ -10,11 +10,11 @@ from typing import Optional
 import click
 from dotenv import load_dotenv
 
-from core.config import settings
-from core.database import get_database_manager
-from core.database.init_db import init_database
-from core.models import Episode, Job, MediaAsset, Project
-from core.storage import StorageManager
+from filmdub.core.config import settings
+from filmdub.core.database import get_database_manager
+from filmdub.core.database.init_db import init_database
+from filmdub.core.models import Episode, Job, MediaAsset, Project
+from filmdub.core.storage import StorageManager
 from workers.media_intake.runner import MediaIntakeWorker
 from workers.research.cli import research as research_cli
 from workers.subtitle.cli import subtitle as subtitle_cli

@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from workers.research.config import get_research_config
+from filmdub.workers.research.config import get_research_config
 
 logger = logging.getLogger(__name__)
 

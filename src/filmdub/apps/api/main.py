@@ -10,10 +10,10 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from core.config import settings
-from core.database import close_all_databases, get_database_manager
-from core.models import Episode, Job, JobEvent, MediaAsset, Project
-from core.schemas import (
+from filmdub.core.config import settings
+from filmdub.core.database import close_all_databases, get_database_manager
+from filmdub.core.models import Episode, Job, JobEvent, MediaAsset, Project
+from filmdub.core.schemas import (
     EpisodeCreate,
     EpisodeResponse,
     JobCreate,
@@ -22,10 +22,10 @@ from core.schemas import (
     ProjectCreate,
     ProjectResponse,
 )
-from core.storage import StorageManager
-from workers.media_intake.probe import FFprobeError, FFprobeParser
-from workers.media_intake.runner import MediaIntakeWorker
-from apps.api import research, subtitle
+from filmdub.core.storage import StorageManager
+from filmdub.workers.media_intake.probe import FFprobeError, FFprobeParser
+from filmdub.workers.media_intake.runner import MediaIntakeWorker
+from filmdub.apps.api import research, subtitle
 
 logger = logging.getLogger(__name__)
 

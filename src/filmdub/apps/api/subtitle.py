@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
-from workers.subtitle import SubtitleRunner, SubtitleConfig, TranslationMode
+from filmdub.workers.subtitle import SubtitleRunner, SubtitleConfig, TranslationMode
 
 logger = logging.getLogger(__name__)
 
