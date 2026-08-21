@@ -1,0 +1,68 @@
+# GPU Worker Docker 镜像
+# 用于需要 GPU 加速的任务（TTS、视频处理等）
+
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 AS base
+
+# 安装 Python 和基础依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3-pip \
+    python3.11-dev \
+    # FFmpeg
+    ffmpeg \
+    libavcodec-extra \
+    libavdevice-extra \
+    libavfilter-extra \
+    libavformat-extra \
+    libavutil-extra \
+    libswresample-extra \
+    libswscale-extra \
+    # 音频处理
+    sox \
+    libsox-dev \
+    # 图像处理
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    # 其他工具
+    curl \
+    git \
+    wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# 设置 Python 别名
+RUN ln -s /usr/bin/python3.11 /usr/bin/python
+
+WORKDIR /app
+
+# 复制并安装依赖
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip3 install --no-cache-dir -r requirements.txt
+
+# 复制源代码
+COPY src/ /app/src/
+COPY scripts/ /app/scripts/
+
+# 创建目录
+RUN mkdir -p /app/artifacts \
+             /app/uploads \
+             /app/logs \
+             /app/models \
+             /app/temp
+
+# 环境变量
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CUDA_VISIBLE_DEVICES=0
+
+# 暴露端口
+EXPOSE 8001
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8001/health || exit 1
+
+# Worker 启动命令
+CMD ["celery", "-A", "src.worker", "worker", "--loglevel=info", "--concurrency", "1"]

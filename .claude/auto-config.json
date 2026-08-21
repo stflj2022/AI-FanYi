@@ -1,0 +1,15 @@
+{
+  "check_interval": 300,
+  "quota_threshold": 80,
+  "max_cycles": null,
+  "auto_commit": false,
+  "notification": {
+    "enabled": false,
+    "webhook": null
+  },
+  "task_config": {
+    "max_session_duration": 7200,
+    "checkpoint_on_file_change": true,
+    "auto_backup": true
+  }
+}
