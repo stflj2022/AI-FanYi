@@ -14,7 +14,7 @@ cd "$REPO" || exit 1
 P_PROVIDER="zai-coding-cn"; P_MODEL="glm-4.7"
 F_PROVIDER="deepseek";      F_MODEL="deepseek-v4-pro"
 
-CONT_PROMPT="继续推进。读 docs/tickets/ 下工单状态，挑一个未阻塞的 todo 工单立即实施；完成→测试→git commit→更新工单状态。若上一轮有未完成工作先接着做。全部工单完成后只输出 ALL_DONE。"
+CONT_PROMPT="继续推进。读 docs/tickets/ 下工单状态，挑一个未阻塞的 todo 工单立即实施；完成→测试→git commit→更新工单状态。若上一轮有未完成工作先接着做。禁止向用户提问或等待确认，一切自主决策直接执行。全部工单完成后只输出 ALL_DONE。"
 
 log() { echo "[$(date '+%F %T')] $*" >> "$LOG"; }
 done_check() { tail -100 "$LOG" | grep -q "ALL_DONE"; }

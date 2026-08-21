@@ -13,10 +13,18 @@ if [ -f "$DRV_LOG" ] && tail -50 "$DRV_LOG" | grep -q "ALL_DONE"; then
 fi
 
 # 2) 驱动进程存活检查
-if pgrep -f "pi-unattended.sh" >/dev/null; then
-  # 存活但日志超过 40 分钟无更新 → 记录观察（不贸然杀）
-  if [ -f "$DRV_LOG" ] && [ $(( $(date +%s) - $(stat -c %Y "$DRV_LOG") )) -gt 2400 ]; then
-    log "⚠️ 驱动存活但日志 40 分钟无更新，继续观察"
+if pgrep -f "scripts/pi-unattended[.]sh" >/dev/null; then
+  # 卡死检测：日志 60 分钟无更新 → 杀掉挂起的 pi 轮次，让驱动自动进下一轮
+  if [ -f "$DRV_LOG" ]; then
+    AGE=$(( $(date +%s) - $(stat -c %Y "$DRV_LOG") ))
+    if [ $AGE -gt 3600 ]; then
+      PIPID=$(pgrep -f "^timeout 7200 pi" | head -1)
+      if [ -n "$PIPID" ]; then
+        log "🚨 日志 $((AGE/60)) 分钟无更新且 pi 挂起 → 杀掉卡死轮次"
+        pkill -P "$PIPID" 2>/dev/null
+        kill "$PIPID" 2>/dev/null
+      fi
+    fi
   fi
   exit 0
 fi
