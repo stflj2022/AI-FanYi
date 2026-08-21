@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 
 try:
     from filmdub.core.config import settings
@@ -248,7 +248,8 @@ async def test_api_health_check():
     """Test API health check endpoint."""
     from filmdub.apps.api.main import app
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/health")
         assert response.status_code == 200
         assert response.json()["status"] == "healthy"
@@ -259,7 +260,8 @@ async def test_api_create_project():
     """Test API create project endpoint."""
     from filmdub.apps.api.main import app
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/projects",
             json={"title": "Test Project", "target_language": "zh-CN"}

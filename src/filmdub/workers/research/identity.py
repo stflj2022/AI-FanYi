@@ -103,6 +103,8 @@ class IdentityResolver:
         title = re.sub(r'Chinese|English|Chi|Eng', '', title, flags=re.IGNORECASE)
 
         # Season indicators
+        title = re.sub(r'[Ss](\d{1,2})[Ee](\d{1,2})', '', title)
+        title = re.sub(r'(\d{1,2})x(\d{1,2})', '', title)
         title = re.sub(r'Season|Series', '', title, flags=re.IGNORECASE)
 
         # Release group (usually in brackets)

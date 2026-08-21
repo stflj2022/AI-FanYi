@@ -1,6 +1,8 @@
 """Database connection and session management."""
 
+import re
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -40,6 +42,14 @@ class DatabaseManager:
         url = database_url or self._database_url
         if not url:
             raise ValueError("Database URL must be provided")
+
+        # For SQLite, ensure the parent directory exists
+        if "sqlite" in url:
+            # Extract path from sqlite+aiosqlite:///path/to/db.sqlite
+            match = re.search(r'sqlite\+aiosqlite:///(.+)', url)
+            if match:
+                db_path = Path(match.group(1))
+                db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._engine = create_async_engine(
             url,

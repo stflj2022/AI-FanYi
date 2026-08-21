@@ -97,8 +97,9 @@ class SubtitleValidator:
         overlap_issues = self._validate_overlaps(entries)
         issues.extend(overlap_issues)
 
-        # 计算质量评分
-        valid_count = len(entries) - self.error_count
+        # 计算错误数量
+        error_count = sum(1 for i in issues if i.severity == ValidationSeverity.ERROR)
+        valid_count = len(entries) - error_count
         quality_score = valid_count / len(entries) if entries else 0.0
 
         report = ValidationReport(

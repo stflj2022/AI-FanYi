@@ -243,7 +243,8 @@ class TestSubtitleAligner(unittest.TestCase):
             SubtitleEntry(index=1, start=4.0, end=6.0, text="World")
         ]
 
-        result = self.aligner.align(entries, video_duration=3600.0)
+        # 使用接近字幕时长的视频时长（差异在阈值内）
+        result = self.aligner.align(entries, video_duration=7.0)
 
         self.assertEqual(result.method, "none")
         self.assertEqual(result.offset, 0.0)

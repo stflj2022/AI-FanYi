@@ -44,8 +44,8 @@ CODEC_PATTERNS = [
     r"XviD|DivX",
 ]
 
-# Pattern for release group (usually at end in brackets)
-RELEASE_GROUP_PATTERN = r"\[([^\]]+)\]$|\(([^\)]+)\)$"
+# Pattern for release group (usually at end in brackets or after dash)
+RELEASE_GROUP_PATTERN = r"\[([^\]]+)\]$|\(([^\)]+)\)$|-([A-Za-z0-9]+)$"
 
 
 def parse_filename(filename: str) -> FilenameParseResult:
@@ -93,7 +93,7 @@ def parse_filename(filename: str) -> FilenameParseResult:
     # Try to extract release group
     match = re.search(RELEASE_GROUP_PATTERN, stem)
     if match:
-        result.release_group = match.group(1) or match.group(2)
+        result.release_group = match.group(1) or match.group(2) or match.group(3)
 
     # Extract title candidate (everything before first S/E/pattern)
     title_parts = []

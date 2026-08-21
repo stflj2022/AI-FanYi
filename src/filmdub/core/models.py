@@ -241,7 +241,8 @@ class Job(Base):
     error_stack: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # 关系
-    project: Mapped["Project"] = relationship("Project", back_populates="jobs")
+    # 注意：Project (UUID) 和 ProjectM01 (string) 是不同的表
+    # Job 属于 Project (UUID)，不与 ProjectM01 建立关系
     worker: Mapped[Optional["Worker"]] = relationship("Worker", back_populates="jobs")
 
     # 索引
@@ -572,6 +573,8 @@ class ErrorLog(Base):
 # 这些模型使用字符串 ID，用于媒体摄入、研究和字幕处理
 
 
+# 为测试兼容性创建别名（移到前面，避免关系解析错误）
+# 注意：实际使用时这些别名指向 M01-M03 专用模型
 class ProjectM01(Base):
     """项目信息（M01-M03 专用）"""
     __tablename__ = "m01_projects"

@@ -48,8 +48,9 @@ class DialogueExtractor:
 
         # 编译对话模式
         self.patterns = {
-            'music': re.compile(pattern, re.IGNORECASE)
-            for pattern in config.dialogue_patterns['music'].split('|')
+            'music': re.compile(config.dialogue_patterns['music'], re.IGNORECASE),
+            'sfx': re.compile(config.dialogue_patterns['sfx'], re.IGNORECASE),
+            'description': re.compile(config.dialogue_patterns['description'], re.IGNORECASE),
         }
 
     def extract(self, entries: List[SubtitleEntry]) -> List[DialogueItem]:
