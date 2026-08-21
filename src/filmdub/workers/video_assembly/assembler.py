@@ -223,14 +223,18 @@ class VideoAssembler:
         # 构建复杂滤镜
         filter_complex = []
 
-        # 输入文件
-        inputs = []
+        # 输入文件：首输入为覆盖全片时长的静音底床，保证混音输出与视频等长
+        inputs: list[str] = [
+            "-f", "lavfi",
+            "-t", str(max(1.0, video_duration)),
+            "-i", f"anullsrc=r={self.config.audio_sample_rate}:cl=stereo",
+        ]
 
-        for segment in audio_segments:
+        for offset, segment in enumerate(audio_segments):
             inputs.extend(["-i", segment.audio_path])
 
-        # 创建输入标签
-        input_labels = [f"[{i}a]" for i in range(len(audio_segments))]
+        # 创建输入标签（跳过索引 0 的静音底床）
+        input_labels = [f"[{i + 1}a]" for i in range(len(audio_segments))]
 
         # 为每个片段创建淡入淡出
         for i, (segment, label) in enumerate(zip(audio_segments, input_labels)):
@@ -241,11 +245,13 @@ class VideoAssembler:
             delayed_label = f"[d{i}a]"
             filter_complex.append(f"{label}adelay={int(delay * 1000)}|{int(delay * 1000)}{delayed_label}")
 
-        # 混合所有音频
+        # 混合所有音频：以静音底床 [0a] 为时长基准；normalize=0 避免
+        # 多路语音互相衰减（amix 默认会把每路音量除以输入数）
         mixed_label = "[mixed]"
-        all_delayed = [f"[d{i}a]" for i in range(len(audio_segments))]
-        mix_inputs = "".join(all_delayed)
-        filter_complex.append(f"{mix_inputs}amix=inputs={len(audio_segments)}:duration=first{mixed_label}")
+        all_delayed = "".join(["[0a]"] + [f"[d{i}a]" for i in range(len(audio_segments))])
+        filter_complex.append(
+            f"{all_delayed}amix=inputs={len(audio_segments) + 1}:duration=first:normalize=0{mixed_label}"
+        )
 
         # 构建命令
         cmd = [
@@ -254,8 +260,7 @@ class VideoAssembler:
         ]
 
         # 添加输入
-        for segment in audio_segments:
-            cmd.extend(["-i", segment.audio_path])
+        cmd.extend(inputs)
 
         # 添加滤镜
         filter_str = ";".join(filter_complex)
@@ -310,7 +315,6 @@ class VideoAssembler:
             "-ar", str(self.config.audio_sample_rate),  # 音频采样率
             "-map", "0:v:0",  # 使用第一个视频流
             "-map", "1:a:0",  # 使用第二个音频流
-            "-shortest",  # 以最短的流为准
             output_path
         ]
 

@@ -91,7 +91,8 @@ def test_replace_audio(tmp_path):
 
     info = asyncio.run(VideoAssembler(M11Config())._get_video_info(str(output)))
     assert info["audio_codec"] == "aac"
-    assert abs(info["duration"] - 1.5) < 0.3  # 以新音频为准（-shortest）
+    # 视频为时长基准：音轨短于视频时不得截断画面（配音音轨短于影片是常态）
+    assert abs(info["duration"] - 2.0) < 0.3
 
 
 # ==================== 字幕嵌入 ====================
