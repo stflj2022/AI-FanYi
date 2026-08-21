@@ -1,6 +1,6 @@
 # Ticket 014: Web 前端 - Dashboard 和 Projects 页面
 
-## 状态: todo
+## 状态: done
 
 ## 优先级: 中
 

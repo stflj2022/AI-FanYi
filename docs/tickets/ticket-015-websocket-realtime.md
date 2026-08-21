@@ -1,6 +1,6 @@
 # Ticket 015: WebSocket 实时通信
 
-## 状态: todo
+## 状态: done
 
 ## 优先级: 中
 
