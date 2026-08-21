@@ -1,14 +1,14 @@
 """
 Pytest 配置和 fixtures
+
+统一从 `filmdub.*` 导入，避免 `src.filmdub` 命名空间包与 `filmdub`
+产生两套独立的 Base/metadata 注册表（会导致建表与模型注册不一致）。
 """
 import pytest
 import asyncio
 from typing import AsyncGenerator
 
-try:
-    from src.filmdub.orchestrator.database import engine, Base, AsyncSessionLocal
-except ImportError:
-    from filmdub.orchestrator.database import engine, Base, AsyncSessionLocal
+from filmdub.orchestrator.database import engine, Base, AsyncSessionLocal
 
 
 @pytest.fixture(scope="session")

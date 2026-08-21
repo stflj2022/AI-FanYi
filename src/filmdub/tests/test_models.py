@@ -7,38 +7,21 @@ from datetime import datetime
 from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
 
-try:
-    from src.filmdub.orchestrator.database import AsyncSessionLocal, get_db_context
-    from src.filmdub.orchestrator.models import (
-        Project,
-        ProjectStatus,
-        Job,
-        JobStatus,
-        Artifact,
-        ArtifactType,
-        ArtifactStatus,
-        Worker,
-        WorkerStatus,
-        Character,
-        VoiceProfile,
-        ErrorLog,
-    )
-except ImportError:
-    from filmdub.orchestrator.database import AsyncSessionLocal, get_db_context
-    from filmdub.orchestrator.models import (
-        Project,
-        ProjectStatus,
-        Job,
-        JobStatus,
-        Artifact,
-        ArtifactType,
-        ArtifactStatus,
-        Worker,
-        WorkerStatus,
-        Character,
-        VoiceProfile,
-        ErrorLog,
-    )
+from filmdub.orchestrator.database import AsyncSessionLocal, get_db_context
+from filmdub.orchestrator.models import (
+    Project,
+    ProjectStatus,
+    Job,
+    JobStatus,
+    Artifact,
+    ArtifactType,
+    ArtifactStatus,
+    Worker,
+    WorkerStatus,
+    Character,
+    VoiceProfile,
+    ErrorLog,
+)
 
 
 @pytest.mark.asyncio

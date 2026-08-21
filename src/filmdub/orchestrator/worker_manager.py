@@ -119,7 +119,7 @@ class WorkerManager:
             host=host,
             port=port,
             last_heartbeat=datetime.utcnow(),
-            heartbeat_interval_seconds=heartbeat_interval
+            heartbeat_interval_seconds=self.heartbeat_interval
         )
 
         self.db.add(worker)
@@ -131,7 +131,7 @@ class WorkerManager:
 
         logger.info(f"Worker registered: {name} ({worker.id})")
 
-        return self._worker_to_dict(worker, worker_token=worker_token)
+        return self._worker_to_dict(worker, token=worker_token)
 
     async def handle_heartbeat(
         self,
