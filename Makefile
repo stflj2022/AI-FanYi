@@ -1,7 +1,7 @@
 # 影视AI配音平台 - Makefile
 # 便捷的命令集合
 
-.PHONY: help build up down restart logs shell test lint db-migrate db-upgrade db-downgrade clean install deps task-start task-save task-resume task-status task-quota
+.PHONY: help build up down restart logs shell test lint db-migrate db-upgrade db-downgrade clean install deps task-start task-save task-resume task-status task-quota auto-help
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -306,6 +306,9 @@ wait-reset: ## 等待额度重置后继续
 # ============================================
 # 自动任务执行（无人值守）
 # ============================================
+auto-help: ## 显示自动编排器快速参考
+	@bash .claude/scripts/quick-ref.sh
+
 auto-start: ## 启动自动任务编排器
 	@echo "$(GREEN)启动自动任务编排器...$(NC)"
 	@chmod +x .claude/scripts/*.sh .claude/scripts/*.py
