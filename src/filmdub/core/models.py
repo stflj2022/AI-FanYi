@@ -21,7 +21,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from filmdub.core.database import Base
@@ -218,12 +218,16 @@ class Job(Base):
 
     # 执行信息
     module_id: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    worker_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID, nullable=True)
+    worker_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID,
+        ForeignKey("workers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     max_retries: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
 
-    # 依赖
-    depends_on: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID), nullable=True)
+    # 依赖 (存储为 JSON 数组，兼容 SQLite 与 PostgreSQL)
+    depends_on: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     # 时间
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
@@ -232,17 +236,16 @@ class Job(Base):
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    # 输入输出
-    input_artifacts: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID), nullable=True)
-    output_artifacts: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID), nullable=True)
+    # 输入输出 (存储为 JSON 数组，兼容 SQLite 与 PostgreSQL)
+    input_artifacts: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    output_artifacts: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     # 错误信息
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error_stack: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # 关系
-    # 注意：Project (UUID) 和 ProjectM01 (string) 是不同的表
-    # Job 属于 Project (UUID)，不与 ProjectM01 建立关系
+    project: Mapped["Project"] = relationship("Project", back_populates="jobs")
     worker: Mapped[Optional["Worker"]] = relationship("Worker", back_populates="jobs")
 
     # 索引
@@ -430,7 +433,7 @@ class Character(Base):
     # 基本信息
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     name_en: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    aliases: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
+    aliases: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
 
     # 属性
     gender: Mapped[Optional[Gender]] = mapped_column(Enum(Gender), nullable=True)
@@ -499,7 +502,7 @@ class VoiceProfile(Base):
     # 声音特征 (参考值)
     pitch_range: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     speed_range: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    emotional_range: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
+    emotional_range: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
 
     # 参考音频
     reference_audio_artifact_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID, nullable=True)
@@ -601,7 +604,11 @@ class EpisodeM01(Base):
     __tablename__ = "episodes"
 
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
-    project_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    project_id: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey("m01_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     season_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     episode_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -624,7 +631,11 @@ class MediaAsset(Base):
     __tablename__ = "media_assets"
 
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
-    episode_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    episode_id: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        ForeignKey("episodes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)

@@ -30,6 +30,8 @@ fi
 
 cur() { echo "${PROVIDERS[$PI]}"; }
 
+MARK_FILE="$REPO/.claude/.round_mark"
+
 tests_pass() { (cd "$REPO" && timeout 600 .venv/bin/python -m pytest src/filmdub/tests/ -q >/dev/null 2>&1); }
 
 done_check() {
@@ -40,13 +42,14 @@ done_check() {
   return 1
 }
 
-quota_hit() { tail -80 "$LOG" | grep -qiE "quota|额度|429|rate.?limit|insufficient|exceeded|余额不足|balance"; }
+# 只检查本轮新增输出，避免匹配到日志里的历史错误（tail -c +N 从 N 字节起）
+round_out() { local m; m=$(cat "$MARK_FILE" 2>/dev/null || echo 0); tail -c +$((m+1)) "$LOG" 2>/dev/null; }
 
-ctx_hit() { tail -30 "$LOG" | grep -qiE "context.{0,20}(length|limit|window|overflow)|maximum context|too long|token limit|context_length_exceeded|prompt is too long|exceeds max length"; }
+quota_hit() { round_out | grep -qiE "quota|额度|429|rate.?limit|insufficient|exceeded|余额不足|balance"; }
 
-# 主力健康探测：仅在轮换到备用时才实际发请求（1 token ping，成本可忽略）
-primary_alive() {
-  [ "$PI" -eq 0 ] && return 0
+ctx_hit() { round_out | grep -qiE "context.{0,20}(length|limit|window|overflow)|maximum context|too long|token limit|context_length_exceeded|prompt is too long|exceeds max length"; }
+
+zai_alive() {
   [ -n "$ZAI_KEY" ] || return 1
   local code
   code=$(curl -sS -m 10 -o /dev/null -w "%{http_code}" \
@@ -56,11 +59,14 @@ primary_alive() {
   [ "$code" = "200" ]
 }
 
+primary_alive() { [ "$PI" -ne 0 ] && zai_alive; }
+
 run_pi() {
   local cont=(-c)
   if [ -f "$REPO/.claude/FRESH_NEXT" ]; then cont=(); rm -f "$REPO/.claude/FRESH_NEXT"; fi
   echo "[$(date '+%F %T')] ▶ pi 启动" >> "$LOG"
   local mark; mark=$(stat -c %s "$LOG")
+  echo "$mark" > "$MARK_FILE"
   timeout 7200 pi --provider "${1%%/*}" --model "${1##*/}" "${cont[@]}" -p "$2" < /dev/null >> "$LOG" 2>&1 &
   local pid=$!
   local zeros=0
@@ -105,6 +111,12 @@ if [ ! -f "$REPO/.claude/KICKOFF_DONE" ]; then
   run_pi "$(cur)" "$(cat "$REPO/.claude/KICKOFF.md")"
   touch "$REPO/.claude/KICKOFF_DONE"
   log "=== KICKOFF 结束 ==="
+fi
+
+# ---- 启动探测：主力不可用直接从备用起步 ----
+if ! zai_alive; then
+  PI=1
+  log "🚀 启动探测：zai 不可用，从 $(cur) 起步"
 fi
 
 # ---- 主循环 ----
