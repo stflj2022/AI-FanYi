@@ -1,8 +1,8 @@
-import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios'
+import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
 import { message } from 'antd'
 
 // 创建 axios 实例
-const api = axios.create({
+const apiClient = axios.create({
   baseURL: '/api/v1',
   timeout: 30000,
   headers: {
@@ -11,43 +11,44 @@ const api = axios.create({
 })
 
 // 请求拦截器
-api.interceptors.request.use(
-  (config) => {
+apiClient.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
     // 添加 token
     const token = localStorage.getItem('token')
-    if (token) {
+    if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
   },
-  (error) => {
+  (error: AxiosError) => {
     return Promise.reject(error)
   }
 )
 
 // 响应拦截器
-api.interceptors.response.use(
+apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
     return response.data
   },
   (error: AxiosError) => {
     if (error.response) {
-      const { status, data } = error.response as any
+      const status = error.response.status
+      const data = error.response.data as any
 
       switch (status) {
         case 401:
-          message.error('未授权，请登录')
+          message.error('未授权，请重新登录')
           localStorage.removeItem('token')
           window.location.href = '/login'
           break
         case 403:
-          message.error('没有权限访问')
+          message.error('没有权限访问此资源')
           break
         case 404:
           message.error('请求的资源不存在')
           break
         case 500:
-          message.error('服务器错误')
+          message.error('服务器错误，请稍后重试')
           break
         default:
           message.error(data?.message || '请求失败')
@@ -62,4 +63,4 @@ api.interceptors.response.use(
   }
 )
 
-export default api
+export default apiClient
