@@ -1,16 +1,18 @@
 """
 视频组装器
 
-使用 FFmpeg 替换音频、同步音视频、嵌入字幕
+使用 FFmpeg 替换视频音频、嵌入字幕并最终编码
 """
 import subprocess
 import json
+import os
+import tempfile
+from typing import List, Optional, Dict, Any, Callable
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Callable
 from loguru import logger
 
+from .models import AudioSegment, SubtitleEntry, AssemblyResult
 from .config import M11Config
-from .models import VideoArtifact, AudioSyncPoint, AssemblyResult
 
 
 class VideoAssembler:
@@ -25,105 +27,11 @@ class VideoAssembler:
         """
         self.config = config or M11Config()
 
-        # 验证 FFmpeg
-        self._verify_ffmpeg()
+        # 验证 FFmpeg 是否可用
+        self._check_ffmpeg()
 
-    def assemble_video(
-        self,
-        input_video_path: str,
-        audio_artifacts: List[Dict[str, Any]],
-        output_video_path: str,
-        subtitles: Optional[List[Dict[str, Any]]] = None,
-        progress_callback: Optional[Callable[[float], None]] = None
-    ) -> AssemblyResult:
-        """
-        组装视频
-
-        Args:
-            input_video_path: 输入视频路径
-            audio_artifacts: 音频 Artifact 列表
-            output_video_path: 输出视频路径
-            subtitles: 字幕列表
-            progress_callback: 进度回调
-
-        Returns:
-            组装结果
-        """
-        logger.info(
-            f"Assembling video: {input_video_path} -> {output_video_path}"
-        )
-
-        try:
-            # 1. 获取视频信息
-            video_info = self._get_video_info(input_video_path)
-            logger.info(f"Video info: {video_info}")
-
-            # 2. 合并音频
-            merged_audio_path = self._merge_audio_tracks(
-                audio_artifacts,
-                video_info["duration"]
-            )
-
-            if not merged_audio_path:
-                raise RuntimeError("Failed to merge audio tracks")
-
-            # 3. 替换音频轨道
-            intermediate_video = self._replace_audio(
-                input_video_path,
-                merged_audio_path,
-                output_video_path
-            )
-
-            if not intermediate_video:
-                raise RuntimeError("Failed to replace audio")
-
-            # 4. 嵌入字幕（如果启用）
-            if subtitles and self.config.enable_subtitles:
-                final_video = self._embed_subtitles(
-                    intermediate_video,
-                    subtitles,
-                    output_video_path
-                )
-
-                # 清理中间文件
-                if final_video != intermediate_video:
-                    Path(intermediate_video).unlink(missing_ok=True)
-            else:
-                final_video = intermediate_video
-
-            # 5. 获取最终视频信息
-            final_info = self._get_video_info(final_video)
-            file_size = Path(final_video).stat().st_size
-
-            # 6. 创建 Artifact
-            artifact = VideoArtifact(
-                artifact_id=f"video_{Path(output_video_path).stem}",
-                project_id="",  # TODO: 从上下文获取
-                file_path=final_video,
-                duration=final_info["duration"],
-                width=final_info["width"],
-                height=final_info["height"],
-                fps=final_info["fps"],
-                file_size=file_size
-            )
-
-            logger.info(f"Video assembly completed: {final_video}")
-
-            return AssemblyResult(
-                status="success",
-                video_artifact=artifact,
-                metadata=final_info
-            )
-
-        except Exception as e:
-            logger.error(f"Video assembly failed: {e}")
-            return AssemblyResult(
-                status="error",
-                error=str(e)
-            )
-
-    def _verify_ffmpeg(self):
-        """验证 FFmpeg 是否可用"""
+    def _check_ffmpeg(self):
+        """检查 FFmpeg 是否可用"""
         try:
             result = subprocess.run(
                 [self.config.ffmpeg_path, "-version"],
@@ -131,18 +39,101 @@ class VideoAssembler:
                 text=True
             )
 
-            if result.returncode == 0:
-                logger.info(f"FFmpeg found: {result.stdout.splitlines()[0]}")
-            else:
+            if result.returncode != 0:
                 raise RuntimeError("FFmpeg not found")
 
+            logger.info(f"FFmpeg detected: {result.stdout.split()[2]}")
+
         except FileNotFoundError:
-            raise RuntimeError(
-                f"FFmpeg not found at {self.config.ffmpeg_path}. "
-                "Please install FFmpeg and ensure it's in your PATH."
+            raise RuntimeError("FFmpeg not found. Please install FFmpeg.")
+
+    async def assemble_video(
+        self,
+        source_video_path: str,
+        audio_segments: List[AudioSegment],
+        output_path: str,
+        subtitles: Optional[List[SubtitleEntry]] = None,
+        progress_callback: Optional[Callable[[float], None]] = None
+    ) -> AssemblyResult:
+        """
+        组装视频
+
+        Args:
+            source_video_path: 源视频路径
+            audio_segments: 音频片段列表
+            output_path: 输出路径
+            subtitles: 字幕列表（可选）
+            progress_callback: 进度回调
+
+        Returns:
+            组装结果
+        """
+        logger.info(f"Assembling video: {source_video_path} -> {output_path}")
+
+        try:
+            # 1. 获取视频信息
+            video_info = await self._get_video_info(source_video_path)
+
+            # 2. 创建合成音频轨道
+            combined_audio_path = await self._create_combined_audio(
+                audio_segments,
+                video_info["duration"],
+                progress_callback
             )
 
-    def _get_video_info(self, video_path: str) -> Dict[str, Any]:
+            # 3. 替换音频
+            temp_video_path = await self._replace_audio(
+                source_video_path,
+                combined_audio_path,
+                output_path,
+                progress_callback
+            )
+
+            # 4. 嵌入字幕（如果需要）
+            final_video_path = temp_video_path
+
+            if subtitles:
+                subtitle_path = await self._embed_subtitles(
+                    temp_video_path,
+                    subtitles,
+                    output_path,
+                    progress_callback
+                )
+                final_video_path = output_path
+            else:
+                subtitle_path = None
+
+            # 5. 获取最终视频信息
+            final_info = await self._get_video_info(final_video_path)
+
+            # 6. 清理临时文件
+            if combined_audio_path and os.path.exists(combined_audio_path):
+                os.remove(combined_audio_path)
+
+            if temp_video_path != final_video_path and os.path.exists(temp_video_path):
+                os.remove(temp_video_path)
+
+            # 7. 构建结果
+            result = AssemblyResult(
+                project_id="",  # TODO: 从上下文获取
+                video_path=final_video_path,
+                duration=float(final_info["duration"]),
+                resolution=f"{final_info['width']}x{final_info['height']}",
+                file_size=os.path.getsize(final_video_path),
+                audio_codec=self.config.audio_codec,
+                video_codec=self.config.video_codec,
+                subtitle_path=subtitle_path
+            )
+
+            logger.info(f"Video assembled successfully: {final_video_path}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Video assembly failed: {e}")
+            raise
+
+    async def _get_video_info(self, video_path: str) -> Dict[str, Any]:
         """
         获取视频信息
 
@@ -150,7 +141,7 @@ class VideoAssembler:
             video_path: 视频路径
 
         Returns:
-            视频信息
+            视频信息字典
         """
         cmd = [
             self.config.ffprobe_path,
@@ -169,135 +160,159 @@ class VideoAssembler:
         info = json.loads(result.stdout)
 
         # 提取关键信息
+        format_info = info.get("format", {})
+
+        # 查找视频流
         video_stream = next(
-            (s for s in info["streams"] if s["codec_type"] == "video"),
-            None
-        )
-        audio_stream = next(
-            (s for s in info["streams"] if s["codec_type"] == "audio"),
-            None
+            (s for s in info.get("streams", []) if s.get("codec_type") == "video"),
+            {}
         )
 
         return {
-            "duration": float(info["format"].get("duration", 0)),
-            "width": video_stream.get("width", 0) if video_stream else 0,
-            "height": video_stream.get("height", 0) if video_stream else 0,
-            "fps": eval(video_stream.get("r_frame_rate", "0/1")) if video_stream else 0,
-            "video_codec": video_stream.get("codec_name", "") if video_stream else "",
-            "audio_codec": audio_stream.get("codec_name", "") if audio_stream else ""
+            "duration": float(format_info.get("duration", 0)),
+            "width": int(video_stream.get("width", 0)),
+            "height": int(video_stream.get("height", 0)),
+            "video_codec": video_stream.get("codec_name", ""),
+            "audio_codec": next(
+                (s.get("codec_name", "") for s in info.get("streams", [])
+                if s.get("codec_type") == "audio"
+            , "")
         }
 
-    def _merge_audio_tracks(
+    async def _create_combined_audio(
         self,
-        audio_artifacts: List[Dict[str, Any]],
-        target_duration: float
-    ) -> Optional[str]:
+        audio_segments: List[AudioSegment],
+        video_duration: float,
+        progress_callback: Optional[Callable[[float], None]] = None
+    ) -> str:
         """
-        合并音频轨道
+        创建合成音频轨道
 
         Args:
-            audio_artifacts: 音频 Artifact 列表
-            target_duration: 目标时长
+            audio_segments: 音频片段列表
+            video_duration: 视频时长
+            progress_callback: 进度回调
 
         Returns:
-            合并后的音频路径
+            合成音频路径
         """
-        if not audio_artifacts:
-            return None
+        # 创建临时文件
+        temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        temp_path = temp_file.name
+        temp_file.close()
 
-        # 按时间排序
-        sorted_artifacts = sorted(
-            audio_artifacts,
-            key=lambda x: x.get("start_time", 0)
-        )
+        # 构建复杂滤镜
+        filter_complex = []
 
-        # 创建 concat 列表
-        concat_file = "/tmp/ffmpeg_concat.txt"
-        with open(concat_file, "w") as f:
-            for artifact in sorted_artifacts:
-                file_path = artifact.get("file_path")
-                duration = artifact.get("duration", 0)
+        # 输入文件
+        inputs = []
 
-                if file_path and Path(file_path).exists():
-                    f.write(f"file '{file_path}'\n")
-                    f.write(f"duration {duration}\n")
+        for segment in audio_segments:
+            inputs.extend(["-i", segment.audio_path])
 
-        # 输出路径
-        output_path = "/tmp/merged_audio.wav"
+        # 创建输入标签
+        input_labels = [f"[{i}a]" for i in range(len(audio_segments))]
 
-        # FFmpeg 命令
+        # 为每个片段创建淡入淡出
+        for i, (segment, label) in enumerate(zip(audio_segments, input_labels)):
+            # 计算延迟
+            delay = segment.target_start_time
+
+            # 添加延迟滤镜
+            delayed_label = f"[d{i}a]"
+            filter_complex.append(f"{label}adelay={int(delay * 1000)}|{int(delay * 1000)}{delayed_label}")
+
+        # 混合所有音频
+        mixed_label = "[mixed]"
+        all_delayed = [f"[d{i}a]" for i in range(len(audio_segments))]
+        mix_inputs = "".join(all_delayed)
+        filter_complex.append(f"{mix_inputs}amix=inputs={len(audio_segments)}:duration=first{mixed_label}")
+
+        # 构建命令
         cmd = [
             self.config.ffmpeg_path,
-            "-f", "concat",
-            "-safe", "0",
-            "-i", concat_file,
+            "-y"  # 覆盖输出文件
+        ]
+
+        # 添加输入
+        for segment in audio_segments:
+            cmd.extend(["-i", segment.audio_path])
+
+        # 添加滤镜
+        filter_str = ";".join(filter_complex)
+        cmd.extend(["-filter_complex", filter_str])
+
+        # 编码设置
+        cmd.extend([
+            "-map", mixed_label,
             "-c:a", "pcm_s16le",
             "-ar", str(self.config.audio_sample_rate),
-            "-ac", str(self.config.audio_channels),
-            "-y",
-            output_path
-        ]
+            temp_path
+        ])
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # 执行命令
+        subprocess.run(cmd, check=True, capture_output=True)
 
-        if result.returncode != 0:
-            logger.error(f"Failed to merge audio: {result.stderr}")
-            return None
+        # 更新进度
+        if progress_callback:
+            progress_callback(0.5)
 
-        logger.info(f"Audio merged: {output_path}")
+        logger.info(f"Combined audio created: {temp_path}")
 
-        return output_path
+        return temp_path
 
-    def _replace_audio(
+    async def _replace_audio(
         self,
-        video_path: str,
+        source_video_path: str,
         audio_path: str,
-        output_path: str
-    ) -> Optional[str]:
+        output_path: str,
+        progress_callback: Optional[Callable[[float], None]] = None
+    ) -> str:
         """
-        替换音频轨道
+        替换视频音频
 
         Args:
-            video_path: 视频路径
+            source_video_path: 源视频路径
             audio_path: 音频路径
             output_path: 输出路径
+            progress_callback: 进度回调
 
         Returns:
-            输出视频路径
+            输出路径
         """
-        # FFmpeg 命令
         cmd = [
             self.config.ffmpeg_path,
-            "-i", video_path,
-            "-i", audio_path,
-            "-c:v", "copy",
-            "-c:a", self.config.audio_codec,
-            "-b:a", self.config.audio_bitrate,
-            "-ar", str(self.config.audio_sample_rate),
-            "-ac", str(self.config.audio_channels),
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-shortest",
-            "-y",
+            "-y",  # 覆盖输出文件
+            "-i", source_video_path,  # 视频输入
+            "-i", audio_path,  # 音频输入
+            "-c:v", "copy",  # 复制视频流（不重新编码）
+            "-c:a", self.config.audio_codec,  # 音频编码
+            "-b:a", self.config.audio_bitrate,  # 音频比特率
+            "-ar", str(self.config.audio_sample_rate),  # 音频采样率
+            "-map", "0:v:0",  # 使用第一个视频流
+            "-map", "1:a:0",  # 使用第二个音频流
+            "-shortest",  # 以最短的流为准
             output_path
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # 执行命令
+        subprocess.run(cmd, check=True, capture_output=True)
 
-        if result.returncode != 0:
-            logger.error(f"Failed to replace audio: {result.stderr}")
-            return None
+        # 更新进度
+        if progress_callback:
+            progress_callback(0.8)
 
         logger.info(f"Audio replaced: {output_path}")
 
         return output_path
 
-    def _embed_subtitles(
+    async def _embed_subtitles(
         self,
         video_path: str,
-        subtitles: List[Dict[str, Any]],
-        output_path: str
-    ) -> Optional[str]:
+        subtitles: List[SubtitleEntry],
+        output_path: str,
+        progress_callback: Optional[Callable[[float], None]] = None
+    ) -> str:
         """
         嵌入字幕
 
@@ -305,56 +320,96 @@ class VideoAssembler:
             video_path: 视频路径
             subtitles: 字幕列表
             output_path: 输出路径
+            progress_callback: 进度回调
 
         Returns:
-            输出视频路径
+            字幕文件路径
         """
-        # 创建 SRT 字幕文件
-        srt_path = "/tmp/subtitles.srt"
-        self._create_srt_file(subtitles, srt_path)
+        # 创建字幕文件
+        subtitle_file = tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".ass",
+            delete=False,
+            encoding="utf-8"
+        )
 
-        # FFmpeg 命令
+        # 写入 ASS 头部
+        subtitle_file.write(
+            "[Script Info]\n"
+            "Title: Subtitles\n"
+            "ScriptType: v4.00+\n"
+            "WrapStyle: 0\n"
+            "PlayResX: 1920\n"
+            "PlayResY: 1080\n"
+            "ScaledBorderAndShadow: yes\n\n"
+            "[V4+ Styles]\n"
+            f"Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+            f"Style: Default,{self.config.subtitle_font},{self.config.subtitle_font_size},{self.config.subtitle_color},&H000000FF,{self.config.subtitle_outline_color},&H80000000,0,0,0,0,100,100,0,0,1,{self.config.subtitle_outline_width},0,2,10,10,10,1\n\n"
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+        )
+
+        # 写入字幕条目
+        for i, subtitle in enumerate(subtitles):
+            subtitle_file.write(subtitle.to_ass() + "\n")
+
+        subtitle_file.close()
+
+        # 嵌入字幕
         cmd = [
             self.config.ffmpeg_path,
-            "-i", video_path,
-            "-vf", f"subtitles={srt_path}:force_style='FontName={self.config.subtitle_font},FontSize={self.config.subtitle_font_size},PrimaryColour=&H{self.config.subtitle_font_color}'",
-            "-c:a", "copy",
             "-y",
+            "-i", video_path,
+            "-vf", f"ass={subtitle_file.name}",
+            "-c:a", "copy",  # 不重新编码音频
+            "-c:v", self.config.video_codec,
+            "-preset", self.config.video_preset,
+            "-crf", str(self.config.crf),
             output_path
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # 执行命令
+        subprocess.run(cmd, check=True, capture_output=True)
 
-        if result.returncode != 0:
-            logger.error(f"Failed to embed subtitles: {result.stderr}")
-            return video_path  # 返回原视频
+        # 清理字幕文件
+        os.remove(subtitle_file.name)
+
+        # 更新进度
+        if progress_callback:
+            progress_callback(1.0)
 
         logger.info(f"Subtitles embedded: {output_path}")
 
         return output_path
 
-    def _create_srt_file(self, subtitles: List[Dict[str, Any]], output_path: str):
+    async def encode_video(
+        self,
+        input_path: str,
+        output_path: str,
+        progress_callback: Optional[Callable[[float], None]] = None
+    ):
         """
-        创建 SRT 字幕文件
+        重新编码视频
 
         Args:
-            subtitles: 字幕列表
+            input_path: 输入路径
             output_path: 输出路径
+            progress_callback: 进度回调
         """
-        def format_time(seconds: float) -> str:
-            """格式化时间为 SRT 格式"""
-            hours = int(seconds // 3600)
-            minutes = int((seconds % 3600) // 60)
-            secs = int(seconds % 60)
-            millis = int((seconds % 1) * 1000)
-            return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+        cmd = [
+            self.config.ffmpeg_path,
+            "-y",
+            "-i", input_path,
+            "-c:v", self.config.video_codec,
+            "-preset", self.config.video_preset,
+            "-crf", str(self.config.crf),
+            "-b:v", self.config.video_bitrate,
+            "-c:a", self.config.audio_codec,
+            "-b:a", self.config.audio_bitrate,
+            output_path
+        ]
 
-        with open(output_path, "w", encoding="utf-8") as f:
-            for i, sub in enumerate(subtitles, 1):
-                start_time = sub.get("start_time", 0)
-                end_time = sub.get("end_time", start_time)
-                text = sub.get("text", "")
+        # 执行命令
+        subprocess.run(cmd, check=True, capture_output=True)
 
-                f.write(f"{i}\n")
-                f.write(f"{format_time(start_time)} --> {format_time(end_time)}\n")
-                f.write(f"{text}\n\n")
+        logger.info(f"Video encoded: {output_path}")

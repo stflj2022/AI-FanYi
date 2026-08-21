@@ -1,12 +1,14 @@
 """
 M11 Video Assembly Worker
 
-视频组装 Worker
+视频组装与最终编码 Worker
 """
 import asyncio
 import sys
+import os
+import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from loguru import logger
 
 # 添加父目录到路径
@@ -14,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from .config import M11Config
 from .assembler import VideoAssembler
+from .models import AudioSegment, SubtitleEntry
 
 
 class M11Worker:
@@ -46,56 +49,52 @@ class M11Worker:
 
         try:
             # 1. 获取输入数据
-            input_video_path = job_data.get("input_video_path")
-            audio_artifacts = job_data.get("audio_artifacts")
-            output_video_path = job_data.get("output_video_path")
-            subtitles = job_data.get("subtitles")
+            source_video_path = job_data.get("source_video_path")
+            output_path = job_data.get("output_path")
+            audio_segments_data = job_data.get("audio_segments", [])
+            subtitles_data = job_data.get("subtitles", [])
 
-            if not input_video_path:
-                raise ValueError("Missing input_video_path in job data")
+            if not source_video_path or not output_path:
+                raise ValueError("Missing source_video_path or output_path in job data")
 
-            if not audio_artifacts:
-                raise ValueError("Missing audio_artifacts in job data")
+            if not Path(source_video_path).exists():
+                raise FileNotFoundError(f"Source video not found: {source_video_path}")
 
-            if not output_video_path:
-                # 生成默认输出路径
-                output_video_path = str(
-                    Path("./output") / project_id / "final_video.mp4"
-                )
+            # 2. 转换数据
+            audio_segments = [
+                AudioSegment(**seg)
+                for seg in audio_segments_data
+            ]
 
-            # 确保输出目录存在
-            Path(output_video_path).parent.mkdir(parents=True, exist_ok=True)
+            subtitles = [
+                SubtitleEntry(**sub)
+                for sub in subtitles_data
+            ]
 
-            # 2. 在线程池中运行组装（避免阻塞事件循环）
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                self.assembler.assemble_video,
-                input_video_path,
-                audio_artifacts,
-                output_video_path,
-                subtitles
+            # 3. 进度回调
+            async def progress_callback(progress: float):
+                logger.info(f"Assembly progress: {progress * 100:.1f}%")
+                # TODO: 向 Layer 0 报告进度
+
+            # 4. 组装视频
+            result = await self.assembler.assemble_video(
+                source_video_path=source_video_path,
+                audio_segments=audio_segments,
+                output_path=output_path,
+                subtitles=subtitles,
+                progress_callback=progress_callback
             )
 
-            # 3. 构建返回结果
+            # 5. 构建响应
             response = {
-                "status": result.status,
-                "job_id": job_id,
-                "project_id": project_id
+                "status": "success",
+                "result": result.to_dict()
             }
 
-            if result.status == "success":
-                response.update({
-                    "video_artifact": result.video_artifact.to_dict(),
-                    "output_path": result.video_artifact.file_path
-                })
-            else:
-                response["error"] = result.error
-
-            # 4. 保存 Artifact
+            # 6. 保存 Artifact
             # TODO: 保存到 Artifact Registry
 
-            logger.info(f"Job {job_id} completed with status: {result.status}")
+            logger.info(f"Job {job_id} completed successfully")
 
             return response
 
@@ -103,8 +102,6 @@ class M11Worker:
             logger.error(f"Job {job_id} failed: {e}")
             return {
                 "status": "error",
-                "job_id": job_id,
-                "project_id": project_id,
                 "error": str(e)
             }
 
@@ -117,6 +114,7 @@ async def main():
     worker = M11Worker()
 
     # TODO: 实现 Worker 通信循环
+
     logger.info("M11 Video Assembly Worker stopped")
 
 

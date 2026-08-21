@@ -13,25 +13,24 @@ class M11Config:
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
 
-    # 编码参数
+    # 视频编码参数
     video_codec: str = "libx264"
-    audio_codec: str = "aac"
     video_bitrate: str = "5M"
+    video_preset: str = "medium"
+    crf: int = 23  # Constant Rate Factor (18-28, 越低质量越高)
+
+    # 音频编码参数
+    audio_codec: str = "aac"
     audio_bitrate: str = "192k"
-    preset: str = "medium"
-    crf: int = 23
-
-    # 音频处理
     audio_sample_rate: int = 48000
-    audio_channels: int = 2
 
-    # 字幕
-    enable_subtitles: bool = True
+    # 字幕配置
     subtitle_font: str = "Arial"
     subtitle_font_size: int = 24
-    subtitle_font_color: str = "white"
+    subtitle_color: str = "&H00FFFFFF"  # 白色
+    subtitle_outline_color: str = "&H00000000"  # 黑色边框
+    subtitle_outline_width: int = 2
 
     # 性能
-    num_threads: int = 4
-    batch_size: int = 4
     max_concurrent_jobs: int = 2
+    gpu_acceleration: bool = False
