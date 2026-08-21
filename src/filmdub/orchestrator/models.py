@@ -382,7 +382,11 @@ class Worker(Base):
     gpu_memory_gb: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # 当前任务
-    current_job_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID, nullable=True)
+    current_job_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID,
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True
+    )
 
     # 统计
     jobs_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
