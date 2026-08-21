@@ -1,6 +1,6 @@
 # Ticket 014: Web 前端 - Dashboard 和 Projects 页面
 
-##状态: todo（阶段2复验：需真实实现+pytest通过）
+##状态: done
 
 ## 优先级: 中
 
