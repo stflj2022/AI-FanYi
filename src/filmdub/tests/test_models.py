@@ -4,22 +4,41 @@
 import pytest
 import uuid
 from datetime import datetime
+from sqlalchemy import select, text
+from sqlalchemy.orm import selectinload
 
-from src.filmdub.orchestrator.database import AsyncSessionLocal, get_db_context
-from src.filmdub.orchestrator.models import (
-    Project,
-    ProjectStatus,
-    Job,
-    JobStatus,
-    Artifact,
-    ArtifactType,
-    ArtifactStatus,
-    Worker,
-    WorkerStatus,
-    Character,
-    VoiceProfile,
-    ErrorLog,
-)
+try:
+    from src.filmdub.orchestrator.database import AsyncSessionLocal, get_db_context
+    from src.filmdub.orchestrator.models import (
+        Project,
+        ProjectStatus,
+        Job,
+        JobStatus,
+        Artifact,
+        ArtifactType,
+        ArtifactStatus,
+        Worker,
+        WorkerStatus,
+        Character,
+        VoiceProfile,
+        ErrorLog,
+    )
+except ImportError:
+    from filmdub.orchestrator.database import AsyncSessionLocal, get_db_context
+    from filmdub.orchestrator.models import (
+        Project,
+        ProjectStatus,
+        Job,
+        JobStatus,
+        Artifact,
+        ArtifactType,
+        ArtifactStatus,
+        Worker,
+        WorkerStatus,
+        Character,
+        VoiceProfile,
+        ErrorLog,
+    )
 
 
 @pytest.mark.asyncio
@@ -70,6 +89,9 @@ async def test_project_job_relationship():
         )
         db.add(job)
         await db.flush()
+
+        # 刷新项目以获取关系
+        await db.refresh(project, ["jobs"])
 
         # 检查关系
         assert job.project_id == project.id
@@ -267,8 +289,7 @@ async def test_cascade_delete():
 
         # 检查作业是否也被删除
         result = await db.execute(
-            "SELECT * FROM jobs WHERE id = :job_id",
-            {"job_id": job_id}
+            select(Job).where(Job.id == job_id)
         )
         assert result.first() is None
 

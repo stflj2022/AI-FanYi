@@ -9,7 +9,6 @@ from enum import Enum as PyEnum
 from typing import Optional
 
 from sqlalchemy import (
-    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -18,10 +17,22 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+
+# 根据数据库类型选择 UUID 类型
+try:
+    from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+except ImportError:
+    PG_UUID = None
+
+if PG_UUID:
+    UUID = PG_UUID
+else:
+    # SQLite 不支持原生 UUID，使用 String 代替
+    UUID = String(36)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -222,8 +233,8 @@ class Job(Base):
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     max_retries: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
 
-    # 依赖
-    depends_on: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID), nullable=True)
+    # 依赖 (存储为 JSON 数组)
+    depends_on: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
 
     # 时间
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
@@ -232,9 +243,9 @@ class Job(Base):
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    # 输入输出
-    input_artifacts: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID), nullable=True)
-    output_artifacts: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(UUID), nullable=True)
+    # 输入输出 (存储为 JSON 数组)
+    input_artifacts: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    output_artifacts: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
 
     # 错误信息
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -433,7 +444,7 @@ class Character(Base):
     # 基本信息
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     name_en: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    aliases: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
+    aliases: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
 
     # 属性
     gender: Mapped[Optional[Gender]] = mapped_column(Enum(Gender), nullable=True)
@@ -502,7 +513,7 @@ class VoiceProfile(Base):
     # 声音特征 (参考值)
     pitch_range: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     speed_range: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    emotional_range: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
+    emotional_range: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
 
     # 参考音频
     reference_audio_artifact_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID, nullable=True)

@@ -7,18 +7,32 @@ import io
 
 from sqlalchemy import select
 
-from src.filmdub.orchestrator.database import get_db_context, Base, engine
-from src.filmdub.orchestrator.models import (
-    Artifact,
-    Project,
-    ArtifactType,
-    ArtifactStatus,
-)
-from src.filmdub.orchestrator.artifact_registry import (
-    ArtifactRegistry,
-    ArtifactMetadata,
-)
-from src.filmdub.orchestrator.storage import LocalStorage, calculate_checksum
+try:
+    from src.filmdub.orchestrator.database import get_db_context, Base, engine
+    from src.filmdub.orchestrator.models import (
+        Artifact,
+        Project,
+        ArtifactType,
+        ArtifactStatus,
+    )
+    from src.filmdub.orchestrator.artifact_registry import (
+        ArtifactRegistry,
+        ArtifactMetadata,
+    )
+    from src.filmdub.orchestrator.storage import LocalStorage, calculate_checksum
+except ImportError:
+    from filmdub.orchestrator.database import get_db_context, Base, engine
+    from filmdub.orchestrator.models import (
+        Artifact,
+        Project,
+        ArtifactType,
+        ArtifactStatus,
+    )
+    from filmdub.orchestrator.artifact_registry import (
+        ArtifactRegistry,
+        ArtifactMetadata,
+    )
+    from filmdub.orchestrator.storage import LocalStorage, calculate_checksum
 
 
 # pytest 配置
