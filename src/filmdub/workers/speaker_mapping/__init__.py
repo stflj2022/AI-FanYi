@@ -5,6 +5,7 @@ M06 Speaker Mapping Worker
 """
 import asyncio
 import sys
+import os
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -50,34 +51,36 @@ class M06Worker:
 
         try:
             # 1. 获取输入数据
-            speaker_embeddings = job_data.get("speaker_embeddings")
-            characters = job_data.get("characters")
-            existing_profiles = job_data.get("existing_profiles")
+            speakers = job_data.get("speakers", [])
+            characters = job_data.get("characters", [])
+            existing_mappings = job_data.get("existing_mappings", [])
+            existing_voice_profiles = job_data.get("existing_voice_profiles", [])
 
-            if not speaker_embeddings:
-                raise ValueError("Missing speaker_embeddings in job data")
+            if not speakers or not characters:
+                raise ValueError("Missing speakers or characters in job data")
 
-            if not characters:
-                raise ValueError("Missing characters in job data")
-
-            # 2. 映射说话人到人物
-            mapping_result = self.mapper.map_speakers(
-                speaker_embeddings,
+            # 2. 执行映射
+            mapping_result = await self.mapper.map_speakers(
+                speakers,
                 characters,
-                existing_profiles
+                existing_mappings,
+                job_data.get("project_metadata")
             )
 
-            # 3. 分配音色档案
-            voice_assignments = self.voice_assigner.assign_voice_profiles(
-                mapping_result,
-                existing_profiles
+            # 3. 分配音色
+            voice_profiles = await self.voice_assigner.assign_voice_profiles(
+                mapping_result.mappings,
+                characters,
+                existing_voice_profiles,
+                job_data.get("audio_paths")
             )
+
+            mapping_result.voice_profiles = voice_profiles
 
             # 4. 构建结果
             result = {
                 "status": "success",
-                "mapping_result": mapping_result.to_dict(),
-                "voice_assignments": [v.to_dict() for v in voice_assignments]
+                "mapping": mapping_result.to_dict()
             }
 
             # 5. 保存 Artifact

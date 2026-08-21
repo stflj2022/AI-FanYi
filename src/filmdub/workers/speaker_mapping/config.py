@@ -10,16 +10,16 @@ class M06Config:
     """M06 配置"""
 
     # 相似度阈值
-    voice_similarity_threshold: float = 0.75
+    similarity_threshold: float = 0.7
+    voice_similarity_threshold: float = 0.8
 
     # 跨集一致性
     enable_cross_episode_consistency: bool = True
-    consistency_threshold: float = 0.85
+    cross_episode_similarity_threshold: float = 0.85
 
     # 音色分配
-    auto_create_profiles: bool = True
-    reuse_profiles: bool = True
+    reuse_voice_profiles: bool = True
+    max_voice_profiles_per_character: int = 3
 
     # 性能
-    batch_size: int = 32
     max_concurrent_jobs: int = 4

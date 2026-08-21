@@ -1,13 +1,13 @@
 """
-说话人到人物的映射器
+说话人到人物映射器
 
-基于嵌入相似度和上下文信息将说话人映射到人物
+将 M05 提取的说话人映射到 M04 识别的人物
 """
 import numpy as np
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set, Tuple
 from loguru import logger
 
-from .models import SpeakerToCharacterMapping, MappingStatus, MappingResult
+from .models import SpeakerToCharacterMapping, MappingResult
 from .config import M06Config
 
 
@@ -23,321 +23,366 @@ class SpeakerToCharacterMapper:
         """
         self.config = config or M06Config()
 
-    def map_speakers(
+    async def map_speakers(
         self,
-        speaker_embeddings: List[Dict[str, Any]],
+        speakers: List[Dict[str, Any]],
         characters: List[Dict[str, Any]],
-        existing_profiles: Optional[List[Dict[str, Any]]] = None
+        existing_mappings: Optional[List[Dict[str, Any]]] = None,
+        project_metadata: Optional[Dict[str, Any]] = None
     ) -> MappingResult:
         """
         将说话人映射到人物
 
         Args:
-            speaker_embeddings: 说话人嵌入列表
-                [{"speaker_id": str, "embedding": List[float], ...}]
-            characters: 人物列表
-                [{"character_id": str, "name": str, "tmdb_id": int, ...}]
-            existing_profiles: 已有音色档案
-                [{"character_id": str, "embedding": List[float], ...}]
+            speakers: 说话人列表（来自 M05）
+            characters: 人物列表（来自 M04）
+            existing_mappings: 已有映射（跨集一致性）
+            project_metadata: 项目元数据
 
         Returns:
             映射结果
         """
-        logger.info(
-            f"Mapping {len(speaker_embeddings)} speakers to "
-            f"{len(characters)} characters"
-        )
+        logger.info(f"Mapping {len(speakers)} speakers to {len(characters)} characters")
 
         mappings = []
-        used_character_ids = set()
+        unmapped_speakers = []
+        unmapped_characters = []
 
-        # 1. 计算每个说话人与每个人物的相似度
-        for speaker_info in speaker_embeddings:
-            speaker_id = speaker_info["speaker_id"]
-            speaker_embedding = np.array(speaker_info["embedding"])
-
-            # 找到最佳匹配
-            best_match = self._find_best_match(
-                speaker_embedding,
+        # 1. 尝试使用已有映射（跨集一致性）
+        if existing_mappings and self.config.enable_cross_episode_consistency:
+            mapped_speakers, mapped_characters = self._apply_existing_mappings(
+                speakers,
                 characters,
-                existing_profiles,
-                used_character_ids
+                existing_mappings,
+                mappings
+            )
+        else:
+            mapped_speakers = set()
+            mapped_characters = set()
+
+        # 2. 对未映射的说话人进行新映射
+        remaining_speakers = [
+            s for s in speakers
+            if s["speaker_id"] not in mapped_speakers
+        ]
+
+        remaining_characters = [
+            c for c in characters
+            if c["character_id"] not in mapped_characters
+        ]
+
+        # 3. 计算相似度并找到最佳匹配
+        for speaker in remaining_speakers:
+            best_match = await self._find_best_match(
+                speaker,
+                remaining_characters
             )
 
             if best_match:
-                # 确定状态
-                status = self._determine_status(
-                    best_match["similarity"],
-                    best_match["confidence"]
-                )
-
                 mapping = SpeakerToCharacterMapping(
-                    speaker_id=speaker_id,
+                    speaker_id=speaker["speaker_id"],
                     character_id=best_match["character_id"],
                     similarity=best_match["similarity"],
-                    confidence=best_match["confidence"],
-                    status=status,
-                    metadata=best_match.get("metadata")
+                    confidence=best_match["confidence"]
                 )
-
                 mappings.append(mapping)
-                used_character_ids.add(best_match["character_id"])
+
+                # 移除已匹配的人物
+                remaining_characters = [
+                    c for c in remaining_characters
+                    if c["character_id"] != best_match["character_id"]
+                ]
+
+                mapped_speakers.add(speaker["speaker_id"])
+                mapped_characters.add(best_match["character_id"])
             else:
-                # 没有匹配，需要创建新人物
-                logger.warning(f"No match found for speaker {speaker_id}")
+                unmapped_speakers.append(speaker["speaker_id"])
 
-                # TODO: 创建新人物
-                # 这里应该创建一个临时人物 ID
-                temp_character_id = f"temp_{speaker_id}"
-
-                mapping = SpeakerToCharacterMapping(
-                    speaker_id=speaker_id,
-                    character_id=temp_character_id,
-                    similarity=0.0,
-                    confidence=0.0,
-                    status=MappingStatus.MANUAL_REVIEW,
-                    metadata={"reason": "no_match_found"}
-                )
-
-                mappings.append(mapping)
-
-        # 2. 处理未映射的人物（新说话人）
-        self._handle_unmapped_characters(characters, used_character_ids, mappings)
-
-        # 3. 统计
-        num_auto_confirmed = sum(
-            1 for m in mappings if m.status == MappingStatus.AUTO_CONFIRMED
-        )
-        num_manual_review = sum(
-            1 for m in mappings if m.status == MappingStatus.MANUAL_REVIEW
-        )
-
-        result = MappingResult(
-            mappings=mappings,
-            voice_assignments=[],  # 由 VoiceProfileAssigner 填充
-            num_speakers=len(speaker_embeddings),
-            num_characters=len(characters),
-            num_auto_confirmed=num_auto_confirmed,
-            num_manual_review=num_manual_review
-        )
+        # 4. 记录未映射的人物
+        unmapped_characters = [
+            c["character_id"] for c in remaining_characters
+        ]
 
         logger.info(
-            f"Mapping completed: {num_auto_confirmed} auto-confirmed, "
-            f"{num_manual_review} manual review"
+            f"Mapping completed: {len(mappings)} mapped, "
+            f"{len(unmapped_speakers)} unmapped speakers, "
+            f"{len(unmapped_characters)} unmapped characters"
         )
 
-        return result
+        return MappingResult(
+            mappings=mappings,
+            voice_profiles=[],
+            unmapped_speakers=unmapped_speakers,
+            unmapped_characters=unmapped_characters
+        )
 
-    def _find_best_match(
+    def _apply_existing_mappings(
         self,
-        speaker_embedding: np.ndarray,
+        speakers: List[Dict[str, Any]],
         characters: List[Dict[str, Any]],
-        existing_profiles: Optional[List[Dict[str, Any]]],
-        used_character_ids: set
-    ) -> Optional[Dict[str, Any]]:
+        existing_mappings: List[Dict[str, Any]],
+        mappings: List[SpeakerToCharacterMapping]
+    ) -> Tuple[Set[str], Set[str]]:
         """
-        找到最佳匹配
+        应用已有映射
 
         Args:
-            speaker_embedding: 说话人嵌入
+            speakers: 说话人列表
             characters: 人物列表
-            existing_profiles: 已有音色档案
-            used_character_ids: 已使用的人物 ID
+            existing_mappings: 已有映射
+            mappings: 映射列表（输出）
+
+        Returns:
+            (已映射的说话人ID集合, 已映射的人物ID集合)
+        """
+        mapped_speakers = set()
+        mapped_characters = set()
+
+        # 创建人物查找表
+        character_map = {
+            c["character_id"]: c
+            for c in characters
+        }
+
+        for existing in existing_mappings:
+            speaker_id = existing["speaker_id"]
+            character_id = existing["character_id"]
+
+            # 检查是否仍然有效
+            if character_id not in character_map:
+                continue
+
+            # 验证相似度（跨集一致性检查）
+            # TODO: 计算当前说话人与人物引用音色的相似度
+
+            # 添加映射
+            mapping = SpeakerToCharacterMapping(
+                speaker_id=speaker_id,
+                character_id=character_id,
+                similarity=existing.get("similarity", 0.0),
+                confidence=existing.get("confidence", 0.0),
+                manual_override=existing.get("manual_override", False),
+                notes="从已有映射继承"
+            )
+
+            mappings.append(mapping)
+            mapped_speakers.add(speaker_id)
+            mapped_characters.add(character_id)
+
+        logger.info(f"Applied {len(existing_mappings)} existing mappings")
+
+        return mapped_speakers, mapped_characters
+
+    async def _find_best_match(
+        self,
+        speaker: Dict[str, Any],
+        characters: List[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        为说话人找到最佳匹配的人物
+
+        Args:
+            speaker: 说话人信息
+            characters: 人物列表
 
         Returns:
             最佳匹配或 None
         """
-        best_match = None
-        best_similarity = -1.0
+        if not characters:
+            return None
+
+        # 计算与每个人物的相似度
+        similarities = []
 
         for character in characters:
-            character_id = character["character_id"]
-
-            # 跳过已使用的人物
-            if character_id in used_character_ids:
-                continue
-
-            # 计算相似度
-            similarity, confidence = self._calculate_similarity(
-                speaker_embedding,
-                character,
-                existing_profiles
+            similarity, confidence = await self._calculate_similarity(
+                speaker,
+                character
             )
 
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_match = {
-                    "character_id": character_id,
+            if similarity >= self.config.similarity_threshold:
+                similarities.append({
+                    "character_id": character["character_id"],
+                    "character_name": character["name"],
                     "similarity": similarity,
-                    "confidence": confidence,
-                    "metadata": {
-                        "character_name": character.get("name"),
-                        "tmdb_id": character.get("tmdb_id")
-                    }
-                }
+                    "confidence": confidence
+                })
 
-        # 检查是否达到阈值
-        if best_match and best_similarity >= self.config.voice_similarity_threshold:
-            return best_match
+        # 返回相似度最高的匹配
+        if similarities:
+            similarities.sort(key=lambda x: x["similarity"], reverse=True)
+            return similarities[0]
 
         return None
 
-    def _calculate_similarity(
+    async def _calculate_similarity(
         self,
-        speaker_embedding: np.ndarray,
-        character: Dict[str, Any],
-        existing_profiles: Optional[List[Dict[str, Any]]]
-    ) -> tuple[float, float]:
+        speaker: Dict[str, Any],
+        character: Dict[str, Any]
+    ) -> Tuple[float, float]:
         """
-        计算相似度
+        计算说话人与人物的相似度
 
         Args:
-            speaker_embedding: 说话人嵌入
+            speaker: 说话人信息
             character: 人物信息
-            existing_profiles: 已有音色档案
 
         Returns:
             (相似度, 置信度)
         """
-        similarity = 0.0
-        confidence = 0.5
+        similarity_scores = []
 
-        # 1. 如果有现有音色档案，使用档案嵌入计算
-        if existing_profiles:
-            character_profiles = [
-                p for p in existing_profiles
-                if p["character_id"] == character["character_id"]
-            ]
+        # 1. 基于嵌入的相似度
+        if "embedding" in speaker and "reference_embedding" in character:
+            embedding = np.array(speaker["embedding"])
+            ref_embedding = np.array(character["reference_embedding"])
 
-            if character_profiles:
-                # 使用最新的档案
-                profile = character_profiles[-1]
-                profile_embedding = np.array(profile["embedding"])
+            # 余弦相似度
+            embedding_sim = np.dot(embedding, ref_embedding) / (
+                np.linalg.norm(embedding) * np.linalg.norm(ref_embedding)
+            )
+            similarity_scores.append(("embedding", embedding_sim, 0.4))
 
-                # 计算余弦相似度
-                similarity = self._cosine_similarity(
-                    speaker_embedding,
-                    profile_embedding
+        # 2. 基于说话时间的相似度（段落数量和时长）
+        if "total_duration" in speaker and "total_duration" in character:
+            # 人物的参考时长与说话人时长的比例
+            char_duration = character["total_duration"]
+            speaker_duration = speaker["total_duration"]
+
+            if char_duration > 0:
+                duration_ratio = min(speaker_duration / char_duration, 1.0)
+                similarity_scores.append(("duration", duration_ratio, 0.2))
+
+        # 3. 基于角色类型的相似度
+        if "role_type" in speaker and "role_type" in character:
+            if speaker["role_type"] == character["role_type"]:
+                similarity_scores.append(("role_type", 1.0, 0.2))
+            else:
+                # 根据角色类型之间的相似性给分
+                role_similarity = self._calculate_role_similarity(
+                    speaker["role_type"],
+                    character["role_type"]
                 )
-                confidence = 0.9  # 基于历史档案，置信度较高
+                similarity_scores.append(("role_type", role_similarity, 0.2))
 
-                # 检查跨集一致性
-                if self.config.enable_cross_episode_consistency:
-                    consistency_score = self._check_cross_episode_consistency(
-                        speaker_embedding,
-                        character_profiles
-                    )
-                    similarity = max(similarity, consistency_score)
+        # 4. 基于音频特征的相似度
+        if "audio_features" in speaker and "reference_features" in character:
+            feature_sim = self._calculate_feature_similarity(
+                speaker["audio_features"],
+                character["reference_features"]
+            )
+            similarity_scores.append(("features", feature_sim, 0.2))
 
-        # 2. 如果没有档案，使用基础特征匹配（简化版）
-        if similarity == 0.0:
-            # TODO: 使用 TMDB 信息、文本上下文等进行匹配
-            # 临时实现：使用随机相似度
-            import random
-            similarity = random.uniform(0.3, 0.7)
-            confidence = 0.3
+        # 加权计算总相似度
+        if not similarity_scores:
+            return 0.0, 0.0
+
+        total_weight = sum(weight for _, _, weight in similarity_scores)
+        weighted_sum = sum(score * weight for score, _, weight in similarity_scores)
+
+        similarity = weighted_sum / total_weight
+
+        # 计算置信度（基于特征数量）
+        confidence = min(len(similarity_scores) / 4.0, 1.0)
 
         return similarity, confidence
 
-    def _cosine_similarity(
-        self,
-        vec1: np.ndarray,
-        vec2: np.ndarray
-    ) -> float:
-        """计算余弦相似度"""
-        norm1 = np.linalg.norm(vec1)
-        norm2 = np.linalg.norm(vec2)
-
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-
-        return float(np.dot(vec1, vec2) / (norm1 * norm2))
-
-    def _check_cross_episode_consistency(
-        self,
-        speaker_embedding: np.ndarray,
-        character_profiles: List[Dict[str, Any]]
-    ) -> float:
+    def _calculate_role_similarity(self, role_a: str, role_b: str) -> float:
         """
-        检查跨集一致性
+        计算角色类型相似度
 
         Args:
-            speaker_embedding: 说话人嵌入
-            character_profiles: 人物的所有档案
+            role_a: 角色 A 类型
+            role_b: 角色 B 类型
 
         Returns:
-            一致性分数
+            相似度 (0.0-1.0)
         """
-        if len(character_profiles) < 2:
-            return 0.0
+        # 定义角色相似性矩阵
+        role_similarity = {
+            ("protagonist", "protagonist"): 1.0,
+            ("protagonist", "supporting"): 0.7,
+            ("protagonist", "minor"): 0.5,
+            ("antagonist", "antagonist"): 1.0,
+            ("antagonist", "supporting"): 0.6,
+            ("supporting", "supporting"): 1.0,
+            ("supporting", "minor"): 0.8,
+            ("minor", "minor"): 1.0,
+            ("narrator", "narrator"): 1.0,
+        }
 
-        # 计算与所有档案的相似度
+        # 尝试获取相似度
+        key1 = (role_a, role_b)
+        key2 = (role_b, role_a)
+
+        if key1 in role_similarity:
+            return role_similarity[key1]
+        elif key2 in role_similarity:
+            return role_similarity[key2]
+        else:
+            return 0.3  # 默认低相似度
+
+    def _calculate_feature_similarity(
+        self,
+        features_a: Dict[str, Any],
+        features_b: Dict[str, Any]
+    ) -> float:
+        """
+        计算音频特征相似度
+
+        Args:
+            features_a: 特征 A
+            features_b: 特征 B
+
+        Returns:
+            相似度 (0.0-1.0)
+        """
         similarities = []
 
-        for profile in character_profiles:
-            profile_embedding = np.array(profile["embedding"])
-            similarity = self._cosine_similarity(
-                speaker_embedding,
-                profile_embedding
-            )
-            similarities.append(similarity)
+        # 音高相似度
+        if "pitch_mean" in features_a and "pitch_mean" in features_b:
+            pitch_a = features_a["pitch_mean"]
+            pitch_b = features_b["pitch_mean"]
 
-        # 计算平均相似度
-        avg_similarity = np.mean(similarities)
+            # 归一化差异
+            pitch_diff = abs(pitch_a - pitch_b) / max(pitch_a, pitch_b)
+            pitch_sim = max(0, 1 - pitch_diff)
+            similarities.append(pitch_sim)
 
-        # 计算方差（一致性）
-        variance = np.var(similarities)
-        consistency_score = avg_similarity * (1 - variance)
+        # 能量相似度
+        if "energy_mean" in features_a and "energy_mean" in features_b:
+            energy_a = features_a["energy_mean"]
+            energy_b = features_b["energy_mean"]
 
-        return float(consistency_score)
+            energy_diff = abs(energy_a - energy_b) / max(energy_a, energy_b)
+            energy_sim = max(0, 1 - energy_diff)
+            similarities.append(energy_sim)
 
-    def _determine_status(
+        # 频谱相似度
+        if "spectral_centroid_mean" in features_a and "spectral_centroid_mean" in features_b:
+            spec_a = features_a["spectral_centroid_mean"]
+            spec_b = features_b["spectral_centroid_mean"]
+
+            spec_diff = abs(spec_a - spec_b) / max(spec_a, spec_b)
+            spec_sim = max(0, 1 - spec_diff)
+            similarities.append(spec_sim)
+
+        return np.mean(similarities) if similarities else 0.0
+
+    def _handle_new_speakers(
         self,
-        similarity: float,
-        confidence: float
-    ) -> MappingStatus:
+        unmapped_speakers: List[str],
+        characters: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """
-        确定映射状态
+        处理新说话人（可能是新人物）
 
         Args:
-            similarity: 相似度
-            confidence: 置信度
+            unmapped_speakers: 未映射的说话人列表
+            characters: 人物列表
 
         Returns:
-            映射状态
+            新人物建议列表
         """
-        # 高相似度 + 高置信度 = 自动确认
-        if similarity >= self.config.consistency_threshold and confidence >= 0.8:
-            return MappingStatus.AUTO_CONFIRMED
-
-        # 中等相似度 = 人工审核
-        if similarity >= self.config.voice_similarity_threshold:
-            return MappingStatus.MANUAL_REVIEW
-
-        # 低相似度 = 失败
-        return MappingStatus.FAILED
-
-    def _handle_unmapped_characters(
-        self,
-        characters: List[Dict[str, Any]],
-        used_character_ids: set,
-        mappings: List[SpeakerToCharacterMapping]
-    ):
-        """
-        处理未映射的人物
-
-        Args:
-            characters: 人物列表
-            used_character_ids: 已使用的人物 ID
-            mappings: 映射列表
-        """
-        unmapped = [
-            c for c in characters
-            if c["character_id"] not in used_character_ids
-        ]
-
-        if unmapped:
-            logger.warning(
-                f"{len(unmapped)} characters not mapped: "
-                f"{[c['character_id'] for c in unmapped]}"
-            )
+        # TODO: 实现新人物检测和建议
+        return []
