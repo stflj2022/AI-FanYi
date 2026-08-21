@@ -12,7 +12,7 @@ LOG="$REPO/.claude/pi-driver.log"
 mkdir -p "$REPO/.claude"
 cd "$REPO" || exit 1
 
-PROVIDERS=("zai-coding-cn/glm-4.7" "deepseek/deepseek-v4-pro")
+PROVIDERS=("zai-coding-cn/glm-4.7" "deepseek/deepseek-v4-flash")
 PI=0
 FAILS=0
 ZAI_KEY=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.pi/agent/auth.json")))["zai-coding-cn"]["key"])' 2>/dev/null || true)
@@ -89,13 +89,22 @@ run_pi() {
   timeout 7200 pi --provider "${1%%/*}" --model "${1##*/}" "${cont[@]}" -p "$2" < /dev/null >> "$LOG" 2>&1 &
   local pid=$!
   local zeros=0
+  local last_cpu=""
   while kill -0 "$pid" 2>/dev/null; do
     sleep 30
+    local pic; pic=$(pgrep -P "$pid" | head -1)
+    local cpu_now=""; [ -n "$pic" ] && cpu_now=$(ps -o cputime= -p "$pic" 2>/dev/null | tr -d ' ')
     local s1; s1=$(stat -c %s "$LOG")
     if [ "$s1" -le "$mark" ]; then
-      zeros=$((zeros+1))
+      # CPU 在涨 = 进程在干活（推理模型首字慢属正常），只有输出和 CPU 双静默才计数
+      if [ -n "$cpu_now" ] && [ "$cpu_now" != "$last_cpu" ]; then
+        zeros=0
+      else
+        zeros=$((zeros+1))
+      fi
+      last_cpu="$cpu_now"
 if [ "$zeros" -ge 30 ]; then
-log "⏳ 零输出熔断（900s 无任何响应）"
+log "⏳ 零输出熔断（900s 输出与 CPU 双静默）"
         touch "$REPO/.claude/ROTATE_NEXT"
         pkill -TERM -P "$pid" 2>/dev/null
         kill "$pid" 2>/dev/null

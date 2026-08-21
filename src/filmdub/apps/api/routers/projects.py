@@ -10,7 +10,14 @@ from sqlalchemy import select, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from filmdub.orchestrator.database import get_db
-from filmdub.orchestrator.models import Project, ProjectStatus, Job, Artifact
+from filmdub.orchestrator.models import (
+    Project,
+    ProjectStatus,
+    Job,
+    JobStatus,
+    Artifact,
+)
+from filmdub.orchestrator.job_logs import job_log_store
 from filmdub.apps.api.schemas import (
     ProjectCreate,
     ProjectUpdate,
@@ -76,7 +83,7 @@ async def create_project(
 
 @router.get("", response_model=List[ProjectListResponse])
 async def list_projects(
-    status_filter: Optional[str] = Query(None, description="按状态过滤"),
+    status_filter: Optional[str] = Query(None, alias="status", description="按状态过滤"),
     limit: int = Query(100, ge=1, le=1000, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="偏移量"),
     db: AsyncSession = Depends(get_db)
@@ -328,12 +335,43 @@ async def start_project(
     project.started_at = datetime.utcnow()
     await db.flush()
 
-    # TODO: 触发调度器开始处理
+    # 触发调度器：解析依赖、匹配 Worker 并分发就绪作业
+    dispatched = 0
+    try:
+        from filmdub.orchestrator.scheduler import (
+            DependencyResolver,
+            ResourceMatcher,
+            DispatchEngine,
+        )
+        from filmdub.orchestrator.jwt_handler import JWTHandler
+
+        resolver = DependencyResolver(db)
+        matcher = ResourceMatcher(db)
+        engine = DispatchEngine(db, JWTHandler())
+
+        ready_jobs = await resolver.get_ready_jobs(project_id)
+        for job in ready_jobs:
+            require_gpu = job.module_id == "M09"
+            worker = await matcher.find_best_worker(job, require_gpu=require_gpu)
+            if worker:
+                await engine.dispatch_job(job, worker)
+                dispatched += 1
+
+        job_log_store.append(
+            str(project_id),
+            "project_started",
+            f"项目启动，分发 {dispatched} 个就绪作业",
+            {"dispatched": dispatched},
+        )
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("Scheduler dispatch failed on project start: %s", e)
 
     return {
         "message": "Project started",
         "project_id": str(project_id),
-        "status": project.status.value
+        "status": project.status.value,
+        "dispatched_jobs": dispatched,
     }
 
 
@@ -374,10 +412,41 @@ async def cancel_project(
     project.status = ProjectStatus.CANCELLED
     await db.flush()
 
-    # TODO: 取消运行中的作业
+    # 取消运行中的作业：将待处理/已调度/运行中/重试中的作业标记为取消
+    active_statuses = [
+        JobStatus.PENDING,
+        JobStatus.SCHEDULED,
+        JobStatus.RUNNING,
+        JobStatus.RETRYING,
+    ]
+    job_result = await db.execute(
+        select(Job).where(
+            Job.project_id == project_id,
+            Job.status.in_(active_statuses),
+        )
+    )
+    active_jobs = job_result.scalars().all()
+
+    cancelled = 0
+    for job in active_jobs:
+        job.status = JobStatus.CANCELLED
+        cancelled += 1
+        job_log_store.append(
+            str(job.id),
+            "cancelled",
+            f"项目取消，作业 '{job.name}' 被终止",
+        )
+
+    job_log_store.append(
+        str(project_id),
+        "project_cancelled",
+        f"项目取消，共终止 {cancelled} 个作业",
+        {"cancelled_jobs": cancelled},
+    )
 
     return {
         "message": "Project cancelled",
         "project_id": str(project_id),
-        "status": project.status.value
+        "status": project.status.value,
+        "cancelled_jobs": cancelled,
     }

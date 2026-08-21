@@ -4,7 +4,7 @@ Pydantic 模型用于请求/响应验证
 from typing import Optional, List, Dict
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ==================== 项目相关 ====================
@@ -37,6 +37,8 @@ class ProjectUpdate(BaseModel):
 
 class ProjectResponse(BaseModel):
     """项目响应"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     description: Optional[str]
@@ -63,6 +65,8 @@ class ProjectResponse(BaseModel):
 
 class ProjectListResponse(BaseModel):
     """项目列表响应"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     status: str
@@ -92,6 +96,8 @@ class JobCreate(BaseModel):
 
 class JobResponse(BaseModel):
     """作业响应"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     project_id: UUID
     name: str
@@ -115,6 +121,8 @@ class JobResponse(BaseModel):
 
 class JobListResponse(BaseModel):
     """作业列表响应"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     status: str
@@ -138,6 +146,8 @@ class ArtifactCreate(BaseModel):
 
 class ArtifactResponse(BaseModel):
     """Artifact 响应"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     type: str
@@ -155,6 +165,8 @@ class ArtifactResponse(BaseModel):
 
 class ArtifactListResponse(BaseModel):
     """Artifact 列表响应"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     type: str
@@ -167,6 +179,8 @@ class ArtifactListResponse(BaseModel):
 
 class WorkerResponse(BaseModel):
     """Worker 响应"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     status: str

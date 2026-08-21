@@ -10,7 +10,8 @@ from sqlalchemy import select, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from filmdub.orchestrator.database import get_db
-from filmdub.orchestrator.models import Job, JobStatus, Project
+from filmdub.orchestrator.models import Job, JobStatus, Project, Worker, WorkerStatus
+from filmdub.orchestrator.job_logs import job_log_store
 from filmdub.apps.api.schemas import JobCreate, JobResponse
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -71,14 +72,16 @@ async def create_job(
     await db.flush()
     await db.refresh(job)
 
+    job_log_store.append(str(job.id), "created", f"Job '{job.name}' 创建，模块 {job.module_id}")
+
     return JobResponse.model_validate(job)
 
 
 @router.get("/projects/{project_id}", response_model=List[JobResponse])
 async def list_project_jobs(
     project_id: UUID,
-    status_filter: Optional[str] = Query(None, description="按状态过滤"),
-    module_filter: Optional[str] = Query(None, description="按模块过滤"),
+    status_filter: Optional[str] = Query(None, alias="status", description="按状态过滤"),
+    module_filter: Optional[str] = Query(None, alias="module", description="按模块过滤"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
@@ -201,7 +204,39 @@ async def cancel_job(
     await db.flush()
     await db.refresh(job)
 
-    # TODO: 通知 Worker 停止执行
+    # 通知 Worker 停止执行：释放被占用的 Worker，并向其广播取消指令
+    released_worker = None
+    if job.worker_id:
+        worker_result = await db.execute(
+            select(Worker).where(Worker.id == job.worker_id)
+        )
+        released_worker = worker_result.scalar_one_or_none()
+        if released_worker:
+            released_worker.current_job_id = None
+            released_worker.status = WorkerStatus.IDLE
+
+    job_log_store.append(
+        str(job_id),
+        "cancelled",
+        f"Job 被取消" + (f"，Worker {released_worker.name} 已释放" if released_worker else ""),
+    )
+
+    # 通过 WebSocket 向 Worker 频道广播取消指令（尽力而为）
+    try:
+        from filmdub.apps.api.websocket.manager import ConnectionManager
+        manager = ConnectionManager()
+        await manager.broadcast(
+            {
+                "type": "job_command",
+                "command": "cancel_job",
+                "job_id": str(job_id),
+                "project_id": str(job.project_id),
+            },
+            channel=f"worker:{job.worker_id}" if job.worker_id else None,
+        )
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("Failed to broadcast cancel command: %s", e)
 
     return JobResponse.model_validate(job)
 
@@ -246,16 +281,22 @@ async def retry_job(
             detail=f"Job has reached maximum retry count ({job.max_retries})"
         )
 
-    # 更新状态
-    job.status = JobStatus.RETRYING
+    # 更新状态：回到 PENDING，由调度器下一轮重新分发
+    job.status = JobStatus.PENDING
+    job.worker_id = None
     job.retry_count += 1
     job.error_message = None
     job.error_stack = None
-    job.scheduled_at = datetime.utcnow()
+    job.scheduled_at = None
     await db.flush()
     await db.refresh(job)
 
-    # TODO: 重新调度作业
+    job_log_store.append(
+        str(job_id),
+        "retried",
+        f"Job 重试（第 {job.retry_count} 次），已回到待调度队列",
+        {"retry_count": job.retry_count},
+    )
 
     return JobResponse.model_validate(job)
 
@@ -321,13 +362,17 @@ async def get_job_logs(
             detail=f"Job {job_id} not found"
         )
 
-    # TODO: 从日志存储中获取实际日志
-    # 这里返回基本信息
+    # 从日志存储中读取实际日志
+    log_entries = job_log_store.read(str(job_id))
+
     return {
         "job_id": str(job_id),
+        "project_id": str(job.project_id),
+        "status": job.status.value,
         "error_message": job.error_message,
         "error_stack": job.error_stack,
         "created_at": job.created_at.isoformat(),
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "logs": log_entries,
     }

@@ -48,6 +48,7 @@ class ProjectStatus(str, PyEnum):
     REVIEW = "review"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
     ARCHIVED = "archived"
 
 
@@ -232,6 +233,9 @@ class Job(Base):
     worker_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     max_retries: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+
+    # 作业级配置 (存储为 JSON)
+    config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # 依赖 (存储为 JSON 数组)
     depends_on: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)

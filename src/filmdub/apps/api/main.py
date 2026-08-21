@@ -26,6 +26,9 @@ from filmdub.core.storage import StorageManager
 from filmdub.workers.media_intake.probe import FFprobeError, FFprobeParser
 from filmdub.workers.media_intake.runner import MediaIntakeWorker
 from filmdub.apps.api import research, subtitle
+from filmdub.apps.api.routers import jobs as jobs_router, projects as projects_router
+from filmdub.apps.api.websocket import handler as websocket_handler
+from filmdub.orchestrator.config import orchestrator_settings
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +65,13 @@ app.add_middleware(
 # Include routers
 app.include_router(research.router)
 app.include_router(subtitle.router)
+
+# Layer 0 Orchestrator REST API
+app.include_router(projects_router.router, prefix=orchestrator_settings.api_v1_prefix)
+app.include_router(jobs_router.router, prefix=orchestrator_settings.api_v1_prefix)
+
+# WebSocket 实时通信
+app.include_router(websocket_handler.router)
 
 
 # ==================== Health Check ====================
