@@ -5,8 +5,10 @@ M08 Prosody Planning Worker
 """
 import asyncio
 import sys
+import os
+import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from loguru import logger
 
 # 添加父目录到路径
@@ -46,28 +48,27 @@ class M08Worker:
 
         try:
             # 1. 获取输入数据
-            dialogues = job_data.get("dialogues")
-            characters = job_data.get("characters")
+            dialogues = job_data.get("dialogues", [])
+            voice_profiles = job_data.get("voice_profiles", [])
             audio_features = job_data.get("audio_features")
 
-            if not dialogues:
-                raise ValueError("Missing dialogues in job data")
-
-            if not characters:
-                raise ValueError("Missing characters in job data")
+            if not dialogues or not voice_profiles:
+                raise ValueError("Missing dialogues or voice_profiles in job data")
 
             # 2. 规划韵律
-            prepared_dialogues = self.planner.plan_prosody(
+            prepared_dialogues = await self.planner.plan_dialogues(
                 dialogues,
-                characters,
+                voice_profiles,
                 audio_features
             )
 
             # 3. 构建结果
             result = {
                 "status": "success",
-                "prepared_dialogues": [d.to_dict() for d in prepared_dialogues],
-                "num_dialogues": len(prepared_dialogues)
+                "prepared_dialogues": [
+                    d.to_dict() for d in prepared_dialogues
+                ],
+                "total": len(prepared_dialogues)
             }
 
             # 4. 保存 Artifact
@@ -93,6 +94,7 @@ async def main():
     worker = M08Worker()
 
     # TODO: 实现 Worker 通信循环
+
     logger.info("M08 Prosody Planning Worker stopped")
 
 

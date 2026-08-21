@@ -3,89 +3,77 @@ M08 数据模型
 """
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
-from enum import Enum
-
-
-class Emotion(Enum):
-    """情绪类型"""
-    NEUTRAL = "neutral"
-    HAPPY = "happy"
-    SAD = "sad"
-    ANGRY = "angry"
-    SURPRISED = "surprised"
-    FEARFUL = "fearful"
-    DISGUSTED = "disgusted"
 
 
 @dataclass
 class ProsodyParams:
     """韵律参数"""
-    # 语速 (0.5-2.0, 1.0 为正常)
     speed: float = 1.0
-    speed_variance: float = 0.1
+    pitch: float = 1.0
+    volume: float = 1.0
+    emotion: str = "neutral"
 
-    # 音高偏移 (st, -24 to +24)
-    pitch: float = 0.0
-    pitch_variance: float = 2.0
+    # 停顿位置（相对于文本的字符索引）
+    pauses: List[int] = None
 
-    # 停顿 (秒)
-    pause_before: float = 0.0
-    pause_after: float = 0.0
-    pause_internal: List[float] = None
-
-    # 能量/音量 (0.0-1.0)
-    energy: float = 1.0
-    energy_variance: float = 0.1
-
-    # 情绪
-    emotion: Emotion = Emotion.NEUTRAL
-    emotion_intensity: float = 0.5
-
-    def __post_init__(self):
-        """初始化后处理"""
-        if self.pause_internal is None:
-            self.pause_internal = []
+    # 重音位置
+    stresses: List[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
             "speed": self.speed,
-            "speed_variance": self.speed_variance,
             "pitch": self.pitch,
-            "pitch_variance": self.pitch_variance,
-            "pause_before": self.pause_before,
-            "pause_after": self.pause_after,
-            "pause_internal": self.pause_internal,
-            "energy": self.energy,
-            "energy_variance": self.energy_variance,
-            "emotion": self.emotion.value,
-            "emotion_intensity": self.emotion_intensity
+            "volume": self.volume,
+            "emotion": self.emotion,
+            "pauses": self.pauses or [],
+            "stresses": self.stresses or []
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ProsodyParams':
+        """从字典创建"""
+        return cls(
+            speed=data.get("speed", 1.0),
+            pitch=data.get("pitch", 1.0),
+            volume=data.get("volume", 1.0),
+            emotion=data.get("emotion", "neutral"),
+            pauses=data.get("pauses", []),
+            stresses=data.get("stresses", [])
+        )
 
 
 @dataclass
 class PreparedDialogue:
-    """准备好的对白"""
+    """准备好的对白（带韵律参数）"""
     dialogue_id: str
-    character_id: str
     text: str
+    character_id: str
+    speaker_id: str
+    voice_profile_id: str
+
+    # 时间信息
     start_time: float
     end_time: float
+    target_duration: float
 
     # 韵律参数
     prosody: ProsodyParams
 
     # 元数据
-    metadata: Optional[Dict[str, Any]] = None
+    confidence: float
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
             "dialogue_id": self.dialogue_id,
-            "character_id": self.character_id,
             "text": self.text,
+            "character_id": self.character_id,
+            "speaker_id": self.speaker_id,
+            "voice_profile_id": self.voice_profile_id,
             "start_time": self.start_time,
             "end_time": self.end_time,
+            "target_duration": self.target_duration,
             "prosody": self.prosody.to_dict(),
-            "metadata": self.metadata
+            "confidence": self.confidence
         }

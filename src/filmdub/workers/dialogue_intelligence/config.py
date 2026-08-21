@@ -12,16 +12,15 @@ class M07Config:
     # LLM 配置
     llm_endpoint: str = "http://localhost:8000"
     llm_model: str = "qwen"
-    llm_temperature: float = 0.7
 
-    # 对白处理
+    # 处理选项
     enable_terminology_check: bool = True
     enable_culture_localization: bool = True
     enable_tone_adjustment: bool = True
 
-    # 术语库路径
-    terminology_db_path: Optional[str] = None
+    # 术语一致性
+    terminology_file: Optional[str] = None
 
     # 性能
-    batch_size: int = 16
     max_concurrent_jobs: int = 4
+    batch_size: int = 32

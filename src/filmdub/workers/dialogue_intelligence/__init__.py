@@ -5,8 +5,10 @@ M07 Dialogue Intelligence Worker
 """
 import asyncio
 import sys
+import os
+import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from loguru import logger
 
 # 添加父目录到路径
@@ -46,26 +48,28 @@ class M07Worker:
 
         try:
             # 1. 获取输入数据
-            dialogues = job_data.get("dialogues")
-            characters = job_data.get("characters")
+            dialogues = job_data.get("dialogues", [])
+            characters = job_data.get("characters", [])
+            context = job_data.get("context", {})
 
             if not dialogues:
                 raise ValueError("Missing dialogues in job data")
 
-            if not characters:
-                raise ValueError("Missing characters in job data")
-
             # 2. 处理对白
-            processed_dialogues = self.processor.process_dialogue(
+            processed_dialogues = await self.processor.process_dialogues(
                 dialogues,
-                characters
+                characters,
+                context
             )
 
             # 3. 构建结果
             result = {
                 "status": "success",
-                "dialogues": processed_dialogues,
-                "num_dialogues": len(processed_dialogues)
+                "processed_dialogues": [
+                    d.to_dict() for d in processed_dialogues
+                ],
+                "total": len(processed_dialogues),
+                "needs_review": sum(1 for d in processed_dialogues if d.needs_manual_review)
             }
 
             # 4. 保存 Artifact
@@ -91,6 +95,7 @@ async def main():
     worker = M07Worker()
 
     # TODO: 实现 Worker 通信循环
+
     logger.info("M07 Dialogue Intelligence Worker stopped")
 
 

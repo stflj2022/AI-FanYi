@@ -10,18 +10,17 @@ class M08Config:
     """M08 配置"""
 
     # 韵律参数范围
-    min_speed: float = 0.8
-    max_speed: float = 1.3
-    min_pitch: float = -12.0
-    max_pitch: float = 12.0
-    min_pause: float = 0.1
-    max_pause: float = 2.0
+    speed_min: float = 0.5
+    speed_max: float = 2.0
+    pitch_min: float = 0.5
+    pitch_max: float = 2.0
+    volume_min: float = 0.5
+    volume_max: float = 1.5
 
-    # 情绪权重
-    emotion_pitch_weight: float = 0.7
-    emotion_speed_weight: float = 0.5
-    emotion_pause_weight: float = 0.6
+    # 停顿参数
+    sentence_pause: float = 0.5  # 句末停顿（秒）
+    clause_pause: float = 0.25   # 分句停顿（秒）
+    word_pause: float = 0.1      # 词间停顿（秒）
 
     # 性能
-    batch_size: int = 32
     max_concurrent_jobs: int = 4
