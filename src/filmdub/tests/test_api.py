@@ -509,3 +509,85 @@ async def test_update_project_put_alias(client):
     )
     assert resp.status_code == 200
     assert resp.json()["description"] == "updated via PUT"
+
+
+# ==================== Workers API ====================
+
+
+async def test_worker_register_and_lifecycle(client):
+    """Worker 注册 → 列表 → 心跳 → 注销全流程。"""
+    # 注册
+    resp = await client.post(
+        "/api/v1/workers/register",
+        json={
+            "name": "api-worker-1",
+            "worker_type": "gpu",
+            "cpu_cores": 8,
+            "memory_gb": 32,
+            "gpu_count": 2,
+            "gpu_memory_gb": 16,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["name"] == "api-worker-1"
+    assert data["type"] == "gpu"
+    assert data["status"] == "starting"
+    assert data["worker_token"]  # 真实 JWT Token
+
+    worker_id = data["id"]
+    token = data["worker_token"]
+
+    # 重复注册 → 409
+    dup = await client.post(
+        "/api/v1/workers/register",
+        json={"name": "api-worker-1"},
+    )
+    assert dup.status_code == 409
+
+    # 列表
+    lst = await client.get("/api/v1/workers")
+    assert lst.status_code == 200
+    assert any(w["id"] == worker_id for w in lst.json())
+
+    # 详情
+    detail = await client.get(f"/api/v1/workers/{worker_id}")
+    assert detail.status_code == 200
+    assert detail.json()["name"] == "api-worker-1"
+
+    # 心跳（带 Token）
+    hb = await client.post(
+        f"/api/v1/workers/{worker_id}/heartbeat",
+        json={"status": "idle", "statistics": {"jobs_completed": 3}},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert hb.status_code == 200
+    assert hb.json()["success"] is True
+
+    # 心跳不带 Token → 401
+    hb_unauth = await client.post(
+        f"/api/v1/workers/{worker_id}/heartbeat",
+        json={"status": "idle"},
+    )
+    assert hb_unauth.status_code == 401
+
+    # 心跳用错误 Token → 401
+    hb_bad = await client.post(
+        f"/api/v1/workers/{worker_id}/heartbeat",
+        json={"status": "idle"},
+        headers={"Authorization": "Bearer not-a-real-token"},
+    )
+    assert hb_bad.status_code == 401
+
+    # 注销（带 Token）
+    unreg = await client.post(
+        f"/api/v1/workers/{worker_id}/unregister",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert unreg.status_code == 200
+    assert unreg.json()["status"] == "stopping"
+
+    # 注销后详情仍可查（stopping）
+    after = await client.get(f"/api/v1/workers/{worker_id}")
+    assert after.status_code == 200
+    assert after.json()["status"] == "stopping"

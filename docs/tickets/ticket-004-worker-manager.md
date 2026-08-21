@@ -1,6 +1,6 @@
 # Ticket 004: Worker 管理器实现
 
-## 状态: todo（第3轮：先修测试套件再真实实现，驱动独立pytest验收）
+## 状态: done（第3轮复验通过：Worker 管理器真实实现+测试，补充 Worker REST API（注册/心跳/列表/详情/注销，JWT 认证），含全流程 API 测试）
 
 ## 优先级: 高
 

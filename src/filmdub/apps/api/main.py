@@ -26,6 +26,7 @@ from filmdub.apps.api.routers import (
     jobs as jobs_router,
     projects as projects_router,
     artifacts as artifacts_router,
+    workers as workers_router,
 )
 from filmdub.apps.api.websocket import handler as websocket_handler
 from filmdub.orchestrator.config import orchestrator_settings
@@ -70,6 +71,7 @@ app.include_router(subtitle.router)
 app.include_router(projects_router.router, prefix=orchestrator_settings.api_v1_prefix)
 app.include_router(jobs_router.router, prefix=orchestrator_settings.api_v1_prefix)
 app.include_router(artifacts_router.router, prefix=orchestrator_settings.api_v1_prefix)
+app.include_router(workers_router.router, prefix=orchestrator_settings.api_v1_prefix)
 
 # WebSocket 实时通信
 app.include_router(websocket_handler.router)
