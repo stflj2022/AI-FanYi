@@ -14,8 +14,8 @@ async def init_research_database(project_id: str) -> None:
     Args:
         project_id: Project ID.
     """
-    from core.database import get_database_manager
-    from workers.research import Base
+    from filmdub.core.database import get_database_manager
+    from filmdub.workers.research import Base
 
     db = get_database_manager(project_id)
     await db.initialize()
@@ -41,8 +41,8 @@ async def drop_research_tables(project_id: str) -> None:
     Args:
         project_id: Project ID.
     """
-    from core.database import get_database_manager
-    from workers.research import Base
+    from filmdub.core.database import get_database_manager
+    from filmdub.workers.research import Base
 
     db = get_database_manager(project_id)
     await db.initialize()

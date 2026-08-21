@@ -6,7 +6,9 @@ Worker 管理器
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +20,7 @@ from .models import (
     Job,
     JobStatus,
 )
+from .jwt_handler import JWTHandler
 
 
 class WorkerManager:
@@ -27,7 +30,8 @@ class WorkerManager:
         self,
         db: AsyncSession,
         heartbeat_timeout: int = 60,
-        heartbeat_interval: int = 10
+        heartbeat_interval: int = 10,
+        jwt_handler: Optional[JWTHandler] = None
     ):
         """
         初始化 Worker 管理器
@@ -36,10 +40,12 @@ class WorkerManager:
             db: 数据库会话
             heartbeat_timeout: 心跳超时时间（秒）
             heartbeat_interval: 心跳间隔（秒）
+            jwt_handler: JWT 处理器（可选）
         """
         self.db = db
         self.heartbeat_timeout = heartbeat_timeout
         self.heartbeat_interval = heartbeat_interval
+        self.jwt_handler = jwt_handler or JWTHandler()
 
     async def register_worker(
         self,
@@ -92,7 +98,8 @@ class WorkerManager:
                 )
                 await self.db.commit()
 
-                return self._worker_to_dict(existing_worker)
+                token = self.jwt_handler.generate_token(str(existing_worker.id))
+                return self._worker_to_dict(existing_worker, token=token)
             else:
                 return {
                     "error": "WORKER_ALREADY_EXISTS",
@@ -119,8 +126,8 @@ class WorkerManager:
         await self.db.flush()
         await self.db.commit()
 
-        # 生成 Token（TODO: 实现真正的 JWT）
-        worker_token = f"worker_token_{worker.id}"
+        # 生成真实 JWT Token
+        worker_token = self.jwt_handler.generate_token(str(worker.id))
 
         logger.info(f"Worker registered: {name} ({worker.id})")
 
@@ -169,9 +176,24 @@ class WorkerManager:
             )
         )
 
-        # 更新统计
+        # 更新统计字段（jobs_completed / jobs_failed / total_runtime_seconds）
         if statistics:
-            # TODO: 更新统计字段
+            update_values = {
+                "last_heartbeat": datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+            }
+            if "jobs_completed" in statistics:
+                update_values["jobs_completed"] = int(statistics["jobs_completed"])
+            if "jobs_failed" in statistics:
+                update_values["jobs_failed"] = int(statistics["jobs_failed"])
+            if "total_runtime_seconds" in statistics:
+                update_values["total_runtime_seconds"] = int(statistics["total_runtime_seconds"])
+            if update_values:
+                await self.db.execute(
+                    update(Worker)
+                    .where(Worker.id == worker_id)
+                    .values(**update_values)
+                )
 
         await self.db.commit()
 
@@ -329,7 +351,7 @@ class WorkerManager:
             update(Job)
             .where(Job.id == job_id)
             .values(
-                status="ready",
+                status=JobStatus.PENDING,
                 worker_id=None,
                 retry_count=Job.retry_count + 1
             )
@@ -354,14 +376,37 @@ class WorkerManager:
         """
         获取待处理的指令
 
+        从作业表中查询已调度给该 Worker 且尚未开始的作业，
+        将其转换为 `execute_job` 指令下发。
+
         Args:
             worker_id: Worker ID
 
         Returns:
             指令列表
         """
-        # TODO: 从指令队列查询
-        return []
+        result = await self.db.execute(
+            select(Job).where(
+                Job.worker_id == worker_id,
+                Job.status == JobStatus.SCHEDULED,
+            )
+        )
+        jobs = result.scalars().all()
+
+        commands = []
+        for job in jobs:
+            commands.append(
+                {
+                    "command": "execute_job",
+                    "job_id": str(job.id),
+                    "project_id": str(job.project_id),
+                    "module_id": job.module_id,
+                    "input_artifacts": job.input_artifacts or [],
+                    "config": {},
+                }
+            )
+
+        return commands
 
     def _worker_to_dict(
         self,

@@ -5,7 +5,9 @@
 """
 import numpy as np
 from typing import List, Optional, Dict, Any, Set, Tuple
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import SpeakerToCharacterMapping, MappingResult
 from .config import M06Config

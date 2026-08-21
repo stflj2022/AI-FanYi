@@ -6,8 +6,9 @@
 import numpy as np
 from typing import List, Optional
 from pathlib import Path
-import librosa
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import SpeakerSegment, AudioFeatures
 from .config import M05Config
@@ -44,6 +45,8 @@ class AudioFeatureExtractor:
         """
         if not Path(audio_path).exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+        import librosa
 
         sample_rate = sample_rate or self.config.sample_rate
 
@@ -136,6 +139,8 @@ class AudioFeatureExtractor:
     ) -> tuple:
         """提取音高特征"""
         try:
+            import librosa
+
             # 使用 pyin 算法提取音高
             pitches, voiced_flag, _ = librosa.pyin(
                 audio,
@@ -184,6 +189,8 @@ class AudioFeatureExtractor:
         sample_rate: int
     ) -> tuple:
         """提取频谱质心"""
+        import librosa
+
         spec_centroids = librosa.feature.spectral_centroid(
             y=audio, sr=sample_rate, hop_length=self.config.hop_length
         )[0]
@@ -199,6 +206,8 @@ class AudioFeatureExtractor:
         sample_rate: int
     ) -> tuple:
         """提取频谱滚降"""
+        import librosa
+
         spec_rolloffs = librosa.feature.spectral_rolloff(
             y=audio, sr=sample_rate, hop_length=self.config.hop_length
         )[0]
@@ -214,6 +223,8 @@ class AudioFeatureExtractor:
         sample_rate: int
     ) -> tuple:
         """提取 MFCC 特征"""
+        import librosa
+
         mfccs = librosa.feature.mfcc(
             y=audio,
             sr=sample_rate,

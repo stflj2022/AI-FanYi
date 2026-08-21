@@ -3,11 +3,14 @@
 
 使用 speechbrain ECAPA-TDNN 提取说话人嵌入
 """
+from __future__ import annotations
+
 import numpy as np
-import torch
 from typing import List, Dict
 from pathlib import Path
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import SpeakerSegment, SpeakerEmbedding
 from .config import M05Config
@@ -25,11 +28,8 @@ class SpeakerEmbeddingExtractor:
         """
         self.config = config or M05Config()
 
-        # 检查 CUDA 可用性
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() and self.config.device == "cuda"
-            else "cpu"
-        )
+        # 检查 CUDA 可用性（torch 未安装时默认为 CPU）
+        self.device = self._resolve_device()
 
         logger.info(f"Using device: {self.device}")
 
@@ -37,6 +37,16 @@ class SpeakerEmbeddingExtractor:
         self.model = None
         self.processor = None
         self._load_model()
+
+    def _resolve_device(self) -> str:
+        """解析运行设备，torch 不可用时回退到 CPU。"""
+        try:
+            import torch
+            if torch.cuda.is_available() and self.config.device == "cuda":
+                return "cuda"
+        except ImportError:
+            pass
+        return "cpu"
 
     def _load_model(self):
         """加载嵌入提取模型"""
@@ -121,6 +131,7 @@ class SpeakerEmbeddingExtractor:
     def _load_audio(self, audio_path: str, sample_rate: int) -> torch.Tensor:
         """加载音频文件"""
         try:
+            import torch
             from torchaudio import load
 
             waveform, sr = load(audio_path)
@@ -163,6 +174,8 @@ class SpeakerEmbeddingExtractor:
         sample_rate: int
     ) -> torch.Tensor:
         """拼接音频片段"""
+        import torch
+
         segments_waveforms = []
 
         for segment in segments:
@@ -180,6 +193,8 @@ class SpeakerEmbeddingExtractor:
     def _extract_embedding(self, waveform: torch.Tensor) -> np.ndarray:
         """提取嵌入"""
         try:
+            import torch
+
             with torch.no_grad():
                 # ECAPA-TDNN 期望形状: (batch, time)
                 if waveform.dim() == 1:

@@ -3,14 +3,17 @@ M09 Voice Synthesis Worker
 
 语音合成 Worker
 """
-import asyncio
-import sys
-from pathlib import Path
-from typing import Any, Dict
-from loguru import logger
+from __future__ import annotations
 
-# 添加父目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import asyncio
+from pathlib import Path
+from typing import Any, Dict, List
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+from filmdub.workers.common import save_json_artifact, run_worker_loop
 
 from .config import M09Config
 from .model_manager import TTSModelManager
@@ -21,19 +24,26 @@ from .models import M09Input
 class M09Worker:
     """M09 Worker"""
 
-    def __init__(self, config: M09Config = None):
+    def __init__(self, config: M09Config = None, projects_base_dir: str | Path = "./artifacts"):
         """
         初始化 Worker
 
         Args:
             config: M09 配置
+            projects_base_dir: 项目基目录（用于读写 Artifact）
         """
         self.config = config or M09Config()
+        self.projects_base_dir = Path(projects_base_dir)
         self.model_manager = TTSModelManager(self.config)
         self.batch_synthesizer = BatchSynthesizer(self.model_manager, self.config)
 
-        # 加载默认模型
-        self.model_manager.load_model(self.config.default_model)
+        # 加载默认模型（失败时记录警告，Worker 仍可启动）
+        loaded = self.model_manager.load_model(self.config.default_model)
+        if not loaded:
+            logger.warning(
+                f"Default model '{self.config.default_model}' failed to load; "
+                "synthesis jobs will return errors until a model is available."
+            )
 
     async def process_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -76,8 +86,13 @@ class M09Worker:
                 "output_dir": output_dir
             }
 
-            # 5. 保存 Artifact
-            # TODO: 保存到 Artifact Registry
+            # 5. 持久化结果 Artifact
+            result["artifact_path"] = save_json_artifact(
+                project_id,
+                "synthesis",
+                result,
+                self.projects_base_dir
+            )
 
             logger.info(f"Job {job_id} completed successfully")
 
@@ -93,7 +108,7 @@ class M09Worker:
     def _convert_to_inputs(
         self,
         prepared_dialogues: List[Dict[str, Any]]
-    ) -> list[M09Input]:
+    ) -> List[M09Input]:
         """
         转换为 M09Input
 
@@ -129,14 +144,15 @@ class M09Worker:
 
 
 async def main():
-    """主函数"""
+    """主函数：运行文件系统作业轮询循环。"""
     logger.info("M09 Voice Synthesis Worker starting...")
 
-    # 创建 Worker
     worker = M09Worker()
-
-    # TODO: 实现 Worker 通信循环
-    logger.info("M09 Voice Synthesis Worker stopped")
+    await run_worker_loop(
+        "M09",
+        worker.process_job,
+        Path("./queue/m09"),
+    )
 
 
 if __name__ == "__main__":

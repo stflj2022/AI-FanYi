@@ -5,7 +5,9 @@ WebSocket 连接管理器
 """
 from typing import Dict, Set, Any, Optional
 from fastapi import WebSocket
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 import json
 
 

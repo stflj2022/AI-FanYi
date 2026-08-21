@@ -16,6 +16,7 @@ PROVIDERS=("zai-coding-cn/glm-4.7" "deepseek/deepseek-v4-pro")
 PI=0
 FAILS=0
 ZAI_KEY=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.pi/agent/auth.json")))["zai-coding-cn"]["key"])' 2>/dev/null || true)
+DS_KEY=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.pi/agent/auth.json")))["deepseek"]["key"])' 2>/dev/null || true)
 
 CONT_PROMPT="阶段2-深度化复验（第3轮）。前两轮均虚报完工被驱动打回：测试套件实际处于损坏状态。本轮规则：1) 测试命令固定为 cd ~/AI-FanYi && .venv/bin/python -m pytest src/filmdub/tests/ -q，先修复全部收集错误（已知问题：test_media_intake/test_research/test_subtitle 的 import 路径断链，No module named 'core'/'workers'）；2) 全量测试绿了之后，逐张审查 docs/tickets/ 工单，补齐真实业务逻辑（禁止空壳/TODO/假数据），新功能必须配测试；3) 每完成一张工单：跑全量测试→绿→标done→commit；4) 驱动会独立复跑 pytest 验证，测试不过的 ALL_DONE 会被打回，虚报无效；5) 禁止提问等待确认，自主决策直接执行。所有工单真正达标后，最后一行只输出 ALL_DONE。"
 
@@ -59,6 +60,24 @@ zai_alive() {
   [ "$code" = "200" ]
 }
 
+deepseek_alive() {
+  [ -n "$DS_KEY" ] || return 1
+  local code
+  code=$(curl -sS -m 10 -o /dev/null -w "%{http_code}" \
+    "https://api.deepseek.com/chat/completions" \
+    -H "Authorization: Bearer $DS_KEY" -H "Content-Type: application/json" \
+    -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' 2>/dev/null)
+  [ "$code" = "200" ]
+}
+
+provider_alive() {
+  case "${PROVIDERS[$PI]%%/*}" in
+    zai-coding-cn) zai_alive ;;
+    deepseek)      deepseek_alive ;;
+    *) return 1 ;;
+  esac
+}
+
 primary_alive() { [ "$PI" -ne 0 ] && zai_alive; }
 
 run_pi() {
@@ -75,8 +94,8 @@ run_pi() {
     local s1; s1=$(stat -c %s "$LOG")
     if [ "$s1" -le "$mark" ]; then
       zeros=$((zeros+1))
-      if [ "$zeros" -ge 16 ]; then
-        log "⏳ 零输出熔断（480s 无任何响应）"
+if [ "$zeros" -ge 30 ]; then
+log "⏳ 零输出熔断（900s 无任何响应）"
         touch "$REPO/.claude/ROTATE_NEXT"
         pkill -TERM -P "$pid" 2>/dev/null
         kill "$pid" 2>/dev/null
@@ -155,6 +174,13 @@ $CONT_PROMPT"
   # 全员阵亡则睡等重置
   if [ -f "$REPO/.claude/ROTATE_NEXT" ]; then
     rm -f "$REPO/.claude/ROTATE_NEXT"
+    # 分诊：provider 活着说明是慢轮次/会话问题，留家换新会话；死了才轮换
+    if provider_alive; then
+      log "🩺 $(cur) 探活通过但轮次无输出 → 留家换新会话"
+      touch "$REPO/.claude/FRESH_NEXT"
+      FAILS=0
+      continue
+    fi
     FAILS=$((FAILS+1))
     log "🔁 当前 provider 无响应 → 轮换（弃旧会话）"
     touch "$REPO/.claude/FRESH_NEXT"

@@ -5,7 +5,9 @@
 """
 import re
 from typing import List, Optional, Dict, Any
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import ProsodyParams, PreparedDialogue
 from .config import M08Config

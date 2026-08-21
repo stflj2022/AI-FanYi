@@ -3,16 +3,17 @@ M06 Speaker Mapping Worker
 
 说话人到人物映射 Worker
 """
+from __future__ import annotations
+
 import asyncio
-import sys
-import os
-import json
 from pathlib import Path
 from typing import Any, Dict, Optional
-from loguru import logger
 
-# 添加父目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import logging
+
+logger = logging.getLogger(__name__)
+
+from filmdub.workers.common import save_json_artifact, run_worker_loop
 
 from .config import M06Config
 from .mapper import SpeakerToCharacterMapper
@@ -23,14 +24,16 @@ from .models import MappingResult
 class M06Worker:
     """M06 Worker"""
 
-    def __init__(self, config: M06Config = None):
+    def __init__(self, config: M06Config = None, projects_base_dir: str | Path = "./artifacts"):
         """
         初始化 Worker
 
         Args:
             config: M06 配置
+            projects_base_dir: 项目基目录（用于读写 Artifact）
         """
         self.config = config or M06Config()
+        self.projects_base_dir = Path(projects_base_dir)
         self.mapper = SpeakerToCharacterMapper(self.config)
         self.voice_assigner = VoiceProfileAssigner(self.config)
 
@@ -83,8 +86,13 @@ class M06Worker:
                 "mapping": mapping_result.to_dict()
             }
 
-            # 5. 保存 Artifact
-            # TODO: 保存到 Artifact Registry
+            # 5. 持久化结果 Artifact
+            result["artifact_path"] = save_json_artifact(
+                project_id,
+                "speaker_mapping",
+                result,
+                self.projects_base_dir
+            )
 
             logger.info(f"Job {job_id} completed successfully")
 
@@ -99,20 +107,15 @@ class M06Worker:
 
 
 async def main():
-    """主函数"""
+    """主函数：运行文件系统作业轮询循环。"""
     logger.info("M06 Speaker Mapping Worker starting...")
 
-    # 创建 Worker
     worker = M06Worker()
-
-    # TODO: 实现 Worker 通信循环
-    # 这里应该：
-    # 1. 注册到 Layer 0
-    # 2. 接收作业
-    # 3. 发送心跳
-    # 4. 处理作业
-
-    logger.info("M06 Speaker Mapping Worker stopped")
+    await run_worker_loop(
+        "M06",
+        worker.process_job,
+        Path("./queue/m06"),
+    )
 
 
 if __name__ == "__main__":

@@ -3,16 +3,17 @@ M08 Prosody Planning Worker
 
 韵律规划 Worker
 """
+from __future__ import annotations
+
 import asyncio
-import sys
-import os
-import json
 from pathlib import Path
 from typing import Any, Dict, Optional
-from loguru import logger
 
-# 添加父目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import logging
+
+logger = logging.getLogger(__name__)
+
+from filmdub.workers.common import save_json_artifact, run_worker_loop
 
 from .config import M08Config
 from .planner import ProsodyPlanner
@@ -21,14 +22,16 @@ from .planner import ProsodyPlanner
 class M08Worker:
     """M08 Worker"""
 
-    def __init__(self, config: M08Config = None):
+    def __init__(self, config: M08Config = None, projects_base_dir: str | Path = "./artifacts"):
         """
         初始化 Worker
 
         Args:
             config: M08 配置
+            projects_base_dir: 项目基目录（用于读写 Artifact）
         """
         self.config = config or M08Config()
+        self.projects_base_dir = Path(projects_base_dir)
         self.planner = ProsodyPlanner(self.config)
 
     async def process_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -71,8 +74,13 @@ class M08Worker:
                 "total": len(prepared_dialogues)
             }
 
-            # 4. 保存 Artifact
-            # TODO: 保存到 Artifact Registry
+            # 4. 持久化结果 Artifact
+            result["artifact_path"] = save_json_artifact(
+                project_id,
+                "prosody",
+                result,
+                self.projects_base_dir
+            )
 
             logger.info(f"Job {job_id} completed successfully")
 
@@ -87,15 +95,15 @@ class M08Worker:
 
 
 async def main():
-    """主函数"""
+    """主函数：运行文件系统作业轮询循环。"""
     logger.info("M08 Prosody Planning Worker starting...")
 
-    # 创建 Worker
     worker = M08Worker()
-
-    # TODO: 实现 Worker 通信循环
-
-    logger.info("M08 Prosody Planning Worker stopped")
+    await run_worker_loop(
+        "M08",
+        worker.process_job,
+        Path("./queue/m08"),
+    )
 
 
 if __name__ == "__main__":

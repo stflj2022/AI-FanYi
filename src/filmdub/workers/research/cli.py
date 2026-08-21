@@ -226,7 +226,7 @@ async def _reset_research_impl(project_id: str) -> None:
     """Implementation of research reset."""
     logger.info(f"Resetting research data for project {project_id}")
 
-    from workers.research.init_db import drop_research_tables
+    from filmdub.workers.research.init_db import drop_research_tables
 
     try:
         # Drop tables

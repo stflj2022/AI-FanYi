@@ -15,9 +15,9 @@ from filmdub.core.database import get_database_manager
 from filmdub.core.database.init_db import init_database
 from filmdub.core.models import Episode, Job, MediaAsset, Project
 from filmdub.core.storage import StorageManager
-from workers.media_intake.runner import MediaIntakeWorker
-from workers.research.cli import research as research_cli
-from workers.subtitle.cli import subtitle as subtitle_cli
+from filmdub.workers.media_intake.runner import MediaIntakeWorker
+from filmdub.workers.research.cli import research as research_cli
+from filmdub.workers.subtitle.cli import subtitle as subtitle_cli
 
 load_dotenv()
 

@@ -5,7 +5,9 @@
 """
 import asyncio
 from typing import List, Dict, Any, Optional
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 from pathlib import Path
 
 from .config import M09Config

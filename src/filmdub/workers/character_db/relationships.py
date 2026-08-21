@@ -6,7 +6,9 @@
 import json
 import re
 from typing import List, Dict, Any, Optional, Set, Tuple
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import Character, CharacterRelationship
 

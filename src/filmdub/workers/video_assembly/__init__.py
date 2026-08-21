@@ -9,7 +9,9 @@ import os
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 # 添加父目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))

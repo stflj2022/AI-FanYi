@@ -74,6 +74,7 @@ class Character:
     total_segments: int = 0
     total_duration: float = 0.0
     confidence: float = 0.0
+    reference_embedding: Optional[List[float]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""

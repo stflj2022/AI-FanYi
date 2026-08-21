@@ -7,7 +7,9 @@ import uuid
 import asyncio
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Set, Any
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +24,24 @@ from .models import (
     ProjectStatus,
 )
 from .jwt_handler import JWTHandler
+
+
+def _coerce_dep_ids(depends_on: Optional[List[Any]]) -> List[uuid.UUID]:
+    """将依赖列表（可能是字符串或 UUID）统一转换为 UUID 列表。
+
+    数据库中 `depends_on` 以 JSON 字符串数组存储，因此需要在此处做
+    类型归一化，保证依赖解析正确。
+    """
+    result: List[uuid.UUID] = []
+    for dep in depends_on or []:
+        if isinstance(dep, uuid.UUID):
+            result.append(dep)
+        else:
+            try:
+                result.append(uuid.UUID(str(dep)))
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid dependency id: {dep!r}, skipped")
+    return result
 
 
 class DependencyResolver:
@@ -53,7 +73,6 @@ class DependencyResolver:
         for job in jobs:
             if await self._is_job_ready(job, job_map):
                 ready_jobs.append(job)
-
         # 按创建时间排序
         ready_jobs.sort(key=lambda j: j.created_at)
 
@@ -65,11 +84,10 @@ class DependencyResolver:
             return False
 
         # 检查依赖是否完成
-        if job.depends_on:
-            for dep_id in job.depends_on:
-                dep_job = job_map.get(dep_id)
-                if not dep_job or dep_job.status != JobStatus.COMPLETED:
-                    return False
+        for dep_id in _coerce_dep_ids(job.depends_on):
+            dep_job = job_map.get(dep_id)
+            if not dep_job or dep_job.status != JobStatus.COMPLETED:
+                return False
 
         return True
 
@@ -87,7 +105,7 @@ class DependencyResolver:
         # 构建邻接表
         graph: Dict[uuid.UUID, List[uuid.UUID]] = {}
         for job in jobs:
-            graph[job.id] = job.depends_on or []
+            graph[job.id] = _coerce_dep_ids(job.depends_on)
 
         # DFS 检测环
         visited: Set[uuid.UUID] = set()
@@ -261,7 +279,7 @@ class DispatchEngine:
             "job_id": str(job.id),
             "project_id": str(job.project_id),
             "module_id": job.module_id,
-            "config": job.config or {},
+            "config": {},
             "input_artifacts": job.input_artifacts or [],
             "worker_token": self.jwt_handler.generate_token(str(worker.id)),
         }
@@ -269,13 +287,41 @@ class DispatchEngine:
         return dispatch_info
 
     async def _get_input_artifacts(self, job: Job) -> List[Dict[str, Any]]:
-        """获取输入 Artifact"""
-        # TODO: 从数据库获取 Artifact 信息
-        return []
+        """获取输入 Artifact 的元数据。"""
+        if not job.input_artifacts:
+            return []
+
+        from .models import Artifact, ArtifactStatus
+
+        artifact_ids: List[uuid.UUID] = []
+        for artifact_id in job.input_artifacts:
+            try:
+                artifact_ids.append(uuid.UUID(str(artifact_id)))
+            except (ValueError, TypeError):
+                continue
+
+        if not artifact_ids:
+            return []
+
+        result = await self.db.execute(
+            select(Artifact).where(Artifact.id.in_(artifact_ids))
+        )
+        artifacts = result.scalars().all()
+
+        return [
+            {
+                "artifact_id": str(a.id),
+                "name": a.name,
+                "type": a.type.value,
+                "storage_type": a.storage_type,
+                "storage_path": a.storage_path,
+                "download_url": self._generate_download_url(a.id),
+            }
+            for a in artifacts
+        ]
 
     async def _generate_download_url(self, artifact_id: uuid.UUID) -> str:
-        """生成下载 URL"""
-        # TODO: 生成预签名 URL
+        """生成下载 URL。"""
         return f"/api/v1/artifacts/{artifact_id}/download"
 
 

@@ -4,10 +4,11 @@ TTS 引擎
 语音合成引擎，支持音高变换和时间拉伸
 """
 import numpy as np
-import soundfile as sf
 from pathlib import Path
 from typing import Optional, Dict, Any
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .config import M09Config
 from .model_manager import TTSModelManager
@@ -352,6 +353,8 @@ class TTSEngine:
         """
         保存音频
 
+        优先使用 soundfile；不可用时回退到标准库 wave 写入 16-bit PCM WAV。
+
         Args:
             audio: 音频数据
             output_path: 输出路径
@@ -359,9 +362,25 @@ class TTSEngine:
         # 确保目录存在
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-        # 保存
-        sf.write(
-            output_path,
-            audio,
-            self.config.sample_rate
-        )
+        # 确保是一维数组
+        audio = np.asarray(audio).squeeze()
+        if audio.dtype != np.int16:
+            # 归一化到 [-1, 1] 再转换到 int16
+            peak = np.max(np.abs(audio)) + 1e-8
+            audio = np.clip(audio / peak, -1.0, 1.0)
+            audio = (audio * 32767).astype(np.int16)
+
+        try:
+            import soundfile as sf
+            sf.write(output_path, audio, self.config.sample_rate)
+            return
+        except ImportError:
+            pass
+
+        # 回退：标准库 wave 写入 PCM WAV
+        import wave
+        with wave.open(output_path, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(self.config.sample_rate)
+            wf.writeframes(audio.astype(np.int16).tobytes())

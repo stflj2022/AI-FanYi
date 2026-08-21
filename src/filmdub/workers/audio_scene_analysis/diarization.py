@@ -6,8 +6,9 @@
 import numpy as np
 from typing import List, Optional
 from pathlib import Path
-import torch
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import SpeakerSegment, DiarizationResult
 from .config import M05Config
@@ -25,17 +26,24 @@ class SpeakerDiarization:
         """
         self.config = config or M05Config()
 
-        # 检查 CUDA 可用性
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() and self.config.device == "cuda"
-            else "cpu"
-        )
+        # 检查 CUDA 可用性（torch 未安装时默认为 CPU）
+        self.device = self._resolve_device()
 
         logger.info(f"Using device: {self.device}")
 
         # 加载模型
         self.model = None
         self._load_model()
+
+    def _resolve_device(self) -> str:
+        """解析运行设备，torch 不可用时回退到 CPU。"""
+        try:
+            import torch
+            if torch.cuda.is_available() and self.config.device == "cuda":
+                return "cuda"
+        except ImportError:
+            pass
+        return "cpu"
 
     def _load_model(self):
         """加载说话人分离模型"""
@@ -51,7 +59,7 @@ class SpeakerDiarization:
             )
 
             # 移动到设备
-            if self.device.type == "cuda":
+            if self.device == "cuda":
                 self.model.to(self.device)
 
             logger.info("Diarization model loaded successfully")

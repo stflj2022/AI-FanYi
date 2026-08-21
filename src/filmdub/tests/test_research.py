@@ -242,7 +242,7 @@ if __name__ == "__main__":
 
     # Test Manifest Builder
     print("\n[3] Testing Manifest Builder...")
-    from workers.research.models import Project
+    from filmdub.workers.research.models import Project
     project = Project(
         id="test_proj",
         canonical_title="Test Show",

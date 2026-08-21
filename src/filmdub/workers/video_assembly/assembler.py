@@ -9,7 +9,9 @@ import os
 import tempfile
 from typing import List, Optional, Dict, Any, Callable
 from pathlib import Path
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import AudioSegment, SubtitleEntry, AssemblyResult
 from .config import M11Config
@@ -175,8 +177,9 @@ class VideoAssembler:
             "video_codec": video_stream.get("codec_name", ""),
             "audio_codec": next(
                 (s.get("codec_name", "") for s in info.get("streams", [])
-                if s.get("codec_type") == "audio"
-            , "")
+                 if s.get("codec_type") == "audio"),
+                ""
+            ),
         }
 
     async def _create_combined_audio(

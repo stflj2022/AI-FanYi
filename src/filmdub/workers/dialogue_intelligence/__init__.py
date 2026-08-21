@@ -3,16 +3,17 @@ M07 Dialogue Intelligence Worker
 
 对白智能处理 Worker
 """
+from __future__ import annotations
+
 import asyncio
-import sys
-import os
-import json
 from pathlib import Path
 from typing import Any, Dict, Optional
-from loguru import logger
 
-# 添加父目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import logging
+
+logger = logging.getLogger(__name__)
+
+from filmdub.workers.common import save_json_artifact, run_worker_loop
 
 from .config import M07Config
 from .processor import DialogueIntelligence
@@ -21,14 +22,16 @@ from .processor import DialogueIntelligence
 class M07Worker:
     """M07 Worker"""
 
-    def __init__(self, config: M07Config = None):
+    def __init__(self, config: M07Config = None, projects_base_dir: str | Path = "./artifacts"):
         """
         初始化 Worker
 
         Args:
             config: M07 配置
+            projects_base_dir: 项目基目录（用于读写 Artifact）
         """
         self.config = config or M07Config()
+        self.projects_base_dir = Path(projects_base_dir)
         self.processor = DialogueIntelligence(self.config)
 
     async def process_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -72,8 +75,13 @@ class M07Worker:
                 "needs_review": sum(1 for d in processed_dialogues if d.needs_manual_review)
             }
 
-            # 4. 保存 Artifact
-            # TODO: 保存到 Artifact Registry
+            # 4. 持久化结果 Artifact
+            result["artifact_path"] = save_json_artifact(
+                project_id,
+                "dialogue_intelligence",
+                result,
+                self.projects_base_dir
+            )
 
             logger.info(f"Job {job_id} completed successfully")
 
@@ -88,15 +96,15 @@ class M07Worker:
 
 
 async def main():
-    """主函数"""
+    """主函数：运行文件系统作业轮询循环。"""
     logger.info("M07 Dialogue Intelligence Worker starting...")
 
-    # 创建 Worker
     worker = M07Worker()
-
-    # TODO: 实现 Worker 通信循环
-
-    logger.info("M07 Dialogue Intelligence Worker stopped")
+    await run_worker_loop(
+        "M07",
+        worker.process_job,
+        Path("./queue/m07"),
+    )
 
 
 if __name__ == "__main__":

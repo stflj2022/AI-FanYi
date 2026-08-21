@@ -332,7 +332,7 @@ async def reset_research(project_id: str) -> dict[str, str]:
     Returns:
         dict: Reset confirmation.
     """
-    from workers.research.init_db import drop_research_tables
+    from filmdub.workers.research.init_db import drop_research_tables
 
     # Drop tables
     await drop_research_tables(project_id)

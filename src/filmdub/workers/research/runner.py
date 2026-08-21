@@ -618,7 +618,7 @@ class ResearchWorker:
         Args:
             status: New status.
         """
-        from core.models import Project as CoreProject
+        from filmdub.core.models import Project as CoreProject
 
         await self.db.initialize()
         async with self.db.session() as session:
@@ -629,7 +629,7 @@ class ResearchWorker:
                 await session.commit()
 
                 # Update manifest
-                from core.storage import StorageManager
+                from filmdub.core.storage import StorageManager
                 storage = StorageManager(self.project_id)
                 project_manifest = storage.load_manifest("project")
                 if project_manifest:

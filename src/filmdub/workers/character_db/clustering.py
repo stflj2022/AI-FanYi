@@ -7,7 +7,9 @@ import numpy as np
 from typing import List, Tuple, Optional
 from sklearn.cluster import DBSCAN
 from sklearn.metrics import silhouette_score
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import SpeakerEmbedding, Cluster
 

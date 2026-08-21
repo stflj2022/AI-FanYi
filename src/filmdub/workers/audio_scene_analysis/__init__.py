@@ -3,16 +3,17 @@ M05 Audio & Scene Analysis Worker
 
 音频与场景分析 Worker
 """
+from __future__ import annotations
+
 import asyncio
-import sys
-import os
-import json
 from pathlib import Path
 from typing import Any, Dict, Optional
-from loguru import logger
 
-# 添加父目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import logging
+
+logger = logging.getLogger(__name__)
+
+from filmdub.workers.common import save_json_artifact, run_worker_loop
 
 from .config import M05Config
 from .diarization import SpeakerDiarization
@@ -24,14 +25,16 @@ from .models import DiarizationResult, SpeakerEmbedding, AudioFeatures
 class M05Worker:
     """M05 Worker"""
 
-    def __init__(self, config: M05Config = None):
+    def __init__(self, config: M05Config = None, projects_base_dir: str | Path = "./artifacts"):
         """
         初始化 Worker
 
         Args:
             config: M05 配置
+            projects_base_dir: 项目基目录（用于读写 Artifact）
         """
         self.config = config or M05Config()
+        self.projects_base_dir = Path(projects_base_dir)
         self.diarization = SpeakerDiarization(self.config)
         self.embedding_extractor = SpeakerEmbeddingExtractor(self.config)
         self.feature_extractor = AudioFeatureExtractor(self.config)
@@ -100,8 +103,13 @@ class M05Worker:
                 "features": [f.to_dict() for f in features]
             }
 
-            # 7. 保存 Artifact
-            # TODO: 保存到 Artifact Registry
+            # 7. 持久化结果 Artifact
+            result["artifact_path"] = save_json_artifact(
+                project_id,
+                "audio_analysis",
+                result,
+                self.projects_base_dir
+            )
 
             logger.info(f"Job {job_id} completed successfully")
 
@@ -116,20 +124,15 @@ class M05Worker:
 
 
 async def main():
-    """主函数"""
+    """主函数：运行文件系统作业轮询循环。"""
     logger.info("M05 Audio & Scene Analysis Worker starting...")
 
-    # 创建 Worker
     worker = M05Worker()
-
-    # TODO: 实现 Worker 通信循环
-    # 这里应该：
-    # 1. 注册到 Layer 0
-    # 2. 接收作业
-    # 3. 发送心跳
-    # 4. 处理作业
-
-    logger.info("M05 Audio & Scene Analysis Worker stopped")
+    await run_worker_loop(
+        "M05",
+        worker.process_job,
+        Path("./queue/m05"),
+    )
 
 
 if __name__ == "__main__":

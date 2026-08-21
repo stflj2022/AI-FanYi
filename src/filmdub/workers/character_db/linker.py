@@ -3,8 +3,12 @@
 
 将说话人聚类链接到人物
 """
+import json
+import re
 from typing import List, Optional, Dict, Any
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 import requests
 
 from .models import Cluster, Character, CharacterRelationship, Gender, RoleType
@@ -74,6 +78,9 @@ class CharacterLinker:
         """
         查找现有人物
 
+        基于聚类质心与人物参考嵌入的余弦相似度匹配，
+        相似度超过阈值时返回该人物，实现跨集一致性。
+
         Args:
             cluster: 聚类
             existing_characters: 已有的人物列表
@@ -84,13 +91,39 @@ class CharacterLinker:
         if not existing_characters:
             return None
 
-        # 计算聚类质心与每个人物的相似度
-        for character in existing_characters:
-            # 简化版：基于人物名称和描述匹配
-            # 实际实现应该使用嵌入相似度
+        import numpy as np
 
-            # TODO: 使用人物嵌入进行比较
-            pass
+        centroid = cluster.centroid
+        if centroid is None and cluster.speaker_embeddings:
+            centroid = np.mean(
+                [np.array(se.embedding) for se in cluster.speaker_embeddings],
+                axis=0
+            )
+
+        best_match = None
+        best_similarity = 0.0
+
+        for character in existing_characters:
+            if character.reference_embedding is None:
+                continue
+
+            ref = np.array(character.reference_embedding)
+            if centroid is None or np.linalg.norm(ref) == 0:
+                continue
+
+            denom = np.linalg.norm(centroid) * np.linalg.norm(ref)
+            similarity = float(np.dot(centroid, ref) / denom) if denom > 0 else 0.0
+
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match = character
+
+        if best_match and best_similarity >= self.config.similarity_threshold:
+            logger.info(
+                f"Matched cluster to existing character {best_match.name} "
+                f"(similarity={best_similarity:.3f})"
+            )
+            return best_match
 
         return None
 
@@ -230,7 +263,6 @@ class CharacterLinker:
 
         try:
             # 调用 LLM API
-            # TODO: 实际实现
             response = requests.post(
                 self.config.llm_endpoint,
                 json={
@@ -241,9 +273,16 @@ class CharacterLinker:
             )
 
             if response.status_code == 200:
-                # 解析响应
-                # TODO: 解析 LLM 返回的 JSON
-                pass
+                data = response.json()
+                # 兼容多种响应格式
+                content = data.get("response") or data.get("text") or data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+                # 提取 JSON 块
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if json_match:
+                    parsed = json.loads(json_match.group(0))
+                    if parsed.get("name") or parsed.get("gender"):
+                        return parsed
 
         except Exception as e:
             logger.warning(f"Failed to analyze character with LLM: {e}")
@@ -254,19 +293,40 @@ class CharacterLinker:
         """
         推断性别
 
+        基于对话文本中的中文性别代词（他/她/它）统计进行启发式推断；
+        无法确定时返回 UNKNOWN。
+
         Args:
             cluster: 聚类
 
         Returns:
             性别
         """
-        # 简化版：默认未知
-        # 实际实现应该使用语音特征或 LLM 分析文本
+        texts = [se.text for se in cluster.speaker_embeddings if se.text]
+        combined = "".join(texts)
+
+        male_markers = combined.count("他")
+        female_markers = combined.count("她")
+        # 英文代词（避免误计 she 中的 he）
+        male_markers += len(re.findall(r"\bhe\b|\bhim\b|\bhis\b", combined, re.IGNORECASE))
+        female_markers += len(re.findall(r"\bshe\b|\bher\b|\bhers\b", combined, re.IGNORECASE))
+
+        total = male_markers + female_markers
+        if total == 0:
+            return Gender.UNKNOWN
+
+        if male_markers > female_markers * 1.5:
+            return Gender.MALE
+        if female_markers > male_markers * 1.5:
+            return Gender.FEMALE
+
         return Gender.UNKNOWN
 
     def _infer_age_range(self, cluster: Cluster) -> Optional[str]:
         """
         推断年龄段
+
+        基于对话文本中的年龄/称呼关键词进行启发式推断。
 
         Args:
             cluster: 聚类
@@ -274,8 +334,20 @@ class CharacterLinker:
         Returns:
             年龄段或 None
         """
-        # 简化版：默认 None
-        # 实际实现应该使用语音特征或 LLM 分析文本
+        texts = [se.text for se in cluster.speaker_embeddings if se.text]
+        combined = "".join(texts)
+
+        child_patterns = [r"孩子", r"小朋友", r"妈妈", r"爸爸", r"作业", r"学校"]
+        elder_patterns = [r"老了", r"年轻时", r"退休", r"爷爷", r"奶奶", r"孙子"]
+        teen_patterns = [r"上学", r"同学", r"老师", r"考试"]
+
+        if any(re.search(p, combined) for p in child_patterns):
+            return "child"
+        if any(re.search(p, combined) for p in teen_patterns):
+            return "teen"
+        if any(re.search(p, combined) for p in elder_patterns):
+            return "senior"
+
         return None
 
     def _infer_role_type(self, cluster: Cluster) -> RoleType:

@@ -6,7 +6,9 @@
 import json
 import re
 from typing import List, Optional, Dict, Any, Set
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import ProcessedDialogue, TerminologyEntry
 from .config import M07Config

@@ -3,9 +3,10 @@ TTS 模型管理器
 
 管理 TTS 模型的加载、切换和卸载
 """
-from typing import Optional, Dict, Any
-from loguru import logger
-import torch
+from typing import Optional, Dict, Any, List
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .config import M09Config
 
@@ -24,13 +25,20 @@ class TTSModelManager:
         self.models = {}
         self.current_model = None
 
-        # 检查 CUDA 可用性
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() and self.config.cosyvoice_device == "cuda"
-            else "cpu"
-        )
+        # 检查 CUDA 可用性（torch 未安装时默认为 CPU）
+        self.device = self._resolve_device()
 
         logger.info(f"Using device: {self.device}")
+
+    def _resolve_device(self) -> str:
+        """解析运行设备，torch 不可用时回退到 CPU。"""
+        try:
+            import torch
+            if torch.cuda.is_available() and self.config.cosyvoice_device == "cuda":
+                return "cuda"
+        except ImportError:
+            pass
+        return "cpu"
 
     def load_model(self, model_name: str = None) -> bool:
         """
@@ -57,7 +65,7 @@ class TTSModelManager:
             elif model_name == "f5_tts" and self.config.enable_f5_tts:
                 model = self._load_f5_tts()
             else:
-                logger.error(f"Unknown model: {model_name}")
+                logger.error(f"Unknown or disabled model: {model_name}")
                 return False
 
             self.models[model_name] = model
@@ -72,58 +80,42 @@ class TTSModelManager:
             return False
 
     def _load_cosyvoice(self) -> Any:
-        """加载 CosyVoice 模型"""
+        """加载 CosyVoice 模型。
+
+        需要安装 CosyVoice 及其依赖（torch 等），否则抛出 ImportError。
+        """
         try:
-            # TODO: 实际加载 CosyVoice
-            # 这里只是框架
+            from cosyvoice.cli.cosyvoice import CosyVoice  # type: ignore
+
             logger.info("Loading CosyVoice model...")
-
-            # 框架代码
-            class MockCosyVoice:
-                def __init__(self):
-                    self.model_name = "CosyVoice-300M"
-
-                def inference(self, text, **kwargs):
-                    # 返回模拟音频
-                    import numpy as np
-                    return np.random.rand(24000).astype(np.float32)
-
-            model = MockCosyVoice()
-
+            model = CosyVoice(self.config.cosyvoice_model_name)
             logger.info("CosyVoice model loaded")
-
             return model
 
-        except Exception as e:
-            logger.error(f"Failed to load CosyVoice: {e}")
-            raise
+        except ImportError as e:
+            raise ImportError(
+                "CosyVoice is not installed. Please install CosyVoice and its "
+                "dependencies (torch) before using voice synthesis."
+            ) from e
 
     def _load_f5_tts(self) -> Any:
-        """加载 F5-TTS 模型"""
+        """加载 F5-TTS 模型。
+
+        需要安装 F5-TTS 及其依赖，否则抛出 ImportError。
+        """
         try:
-            # TODO: 实际加载 F5-TTS
-            # 这里只是框架
+            from f5_tts.api import F5TTS  # type: ignore
+
             logger.info("Loading F5-TTS model...")
-
-            # 框架代码
-            class MockF5TTS:
-                def __init__(self):
-                    self.model_name = "F5-TTS"
-
-                def inference(self, text, **kwargs):
-                    # 返回模拟音频
-                    import numpy as np
-                    return np.random.rand(24000).astype(np.float32)
-
-            model = MockF5TTS()
-
+            model = F5TTS(model_dir=self.config.f5_tts_model_path)
             logger.info("F5-TTS model loaded")
-
             return model
 
-        except Exception as e:
-            logger.error(f"Failed to load F5-TTS: {e}")
-            raise
+        except ImportError as e:
+            raise ImportError(
+                "F5-TTS is not installed. Please install F5-TTS and its "
+                "dependencies before using voice synthesis."
+            ) from e
 
     def switch_model(self, model_name: str) -> bool:
         """
@@ -160,7 +152,7 @@ class TTSModelManager:
 
         del self.models[model_name]
 
-        if self.current_model and model_name == self.get_current_model_name():
+        if self.current_model is not None and model_name == self.get_current_model_name():
             # 找到另一个模型作为当前模型
             if self.models:
                 self.current_model = next(iter(self.models.values()))
@@ -174,7 +166,7 @@ class TTSModelManager:
     def get_current_model_name(self) -> Optional[str]:
         """获取当前模型名称"""
         for name, model in self.models.items():
-            if model == self.current_model:
+            if model is self.current_model:
                 return name
         return None
 

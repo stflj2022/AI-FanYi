@@ -6,7 +6,9 @@
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import VoiceProfile, SpeakerToCharacterMapping
 from .config import M06Config

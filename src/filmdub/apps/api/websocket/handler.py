@@ -6,7 +6,9 @@ WebSocket 处理器
 import uuid
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .manager import ConnectionManager
 
