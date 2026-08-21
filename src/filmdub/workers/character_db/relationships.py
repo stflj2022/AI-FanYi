@@ -107,12 +107,20 @@ class RelationshipBuilder:
         # 2. 推断关系
         relationships = []
 
-        for char_a, char_b in interactions:
+        # 建立 id → Character 映射，供 _infer_relationship 使用（需要 name/gender 等属性）
+        character_by_id = {c.character_id: c for c in characters}
+
+        for (char_a_id, char_b_id), texts in interactions.items():
+            char_a = character_by_id.get(char_a_id)
+            char_b = character_by_id.get(char_b_id)
+            if char_a is None or char_b is None:
+                continue
+
             # 推断关系
             relationship = await self._infer_relationship(
                 char_a,
                 char_b,
-                interactions[(char_a, char_b)]
+                texts,
             )
 
             if relationship:
@@ -301,8 +309,7 @@ class RelationshipBuilder:
         prompt = self._build_relationship_prompt(char_a, char_b, text)
 
         try:
-            # 调用 LLM API
-            # TODO: 实际实现 LLM 调用
+            # 调用 LLM API（aiohttp 真实 HTTP 调用，失败时返回 None 由上层回退关键词推断）
             response = await self._call_llm(prompt)
 
             if response:
