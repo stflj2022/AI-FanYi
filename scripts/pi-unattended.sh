@@ -14,19 +14,45 @@ cd "$REPO" || exit 1
 P_PROVIDER="zai-coding-cn"; P_MODEL="glm-4.7"
 F_PROVIDER="deepseek";      F_MODEL="deepseek-v4-pro"
 
-CONT_PROMPT="继续推进。读 docs/tickets/ 下工单状态，挑一个未阻塞的 todo 工单立即实施；完成→测试→git commit→更新工单状态。若上一轮有未完成工作先接着做。禁止向用户提问或等待确认，一切自主决策直接执行。全部工单完成后只输出 ALL_DONE。"
+CONT_PROMPT="阶段2-深度化复验。上一阶段产出的实现多为骨架，不算完成。逐张处理 docs/tickets/ 工单：1) 审查现有代码，补齐真实业务逻辑（禁止空壳/TODO/假数据充数）；2) 为核心功能编写有意义的 pytest 测试；3) 运行 pytest 全部通过后，才能把工单标为 done 并 commit+push；4) 测试不过就继续修，不许降低标准。禁止提问等待确认，自主决策直接执行。所有工单都真正达标后，最后一行只输出 ALL_DONE。"
 
 log() { echo "[$(date '+%F %T')] $*" >> "$LOG"; }
-done_check() { tail -100 "$LOG" | grep -q "ALL_DONE"; }
+
+# 单例守卫：文件锁防双开（pgrep 会误匹配 tmux 包装 shell）
+exec 9>"/tmp/aifanyi-driver.lock" || exit 1
+if ! flock -n 9; then
+  echo "[$(date '+%F %T')] ❌ 已有驱动实例持锁，本实例退出" >> "$LOG"
+  exit 1
+fi
+
+done_check() { [ "$(tail -1 "$LOG" | tr -d '[:space:]')" = "ALL_DONE" ]; }
 quota_hit() { tail -80 "$LOG" | grep -qiE "quota|额度|429|rate.?limit|insufficient|exceeded|余额不足|balance"; }
 
 run_pi() {
   local cont=(-c)
   if [ -f "$REPO/.claude/FRESH_NEXT" ]; then cont=(); rm -f "$REPO/.claude/FRESH_NEXT"; fi
-  timeout 7200 pi --provider "$1" --model "$2" "${cont[@]}" -p "$3" < /dev/null >> "$LOG" 2>&1
+  echo "[$(date '+%F %T')] ▶ pi 启动" >> "$LOG"
+  local mark; mark=$(stat -c %s "$LOG")
+  timeout 7200 pi --provider "$1" --model "$2" "${cont[@]}" -p "$3" < /dev/null >> "$LOG" 2>&1 &
+  local pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 30
+    local s1; s1=$(stat -c %s "$LOG")
+    [ "$s1" -le "$mark" ] && continue
+    sleep 30
+    local s2; s2=$(stat -c %s "$LOG")
+    if [ "$s2" = "$s1" ] && tail -1 "$LOG" | grep -qE '^400:|exceeds max length'; then
+      log "⚡ 报错后挂起，提前终止本轮"
+      pkill -TERM -P "$pid" 2>/dev/null
+      kill "$pid" 2>/dev/null
+      return
+    fi
+    mark=$s2
+  done
+  wait "$pid" 2>/dev/null
 }
 
-ctx_hit() { tail -30 "$LOG" | grep -qiE "context.{0,20}(length|limit|window|overflow)|maximum context|too long|token limit|context_length_exceeded|prompt is too long"; }
+ctx_hit() { tail -30 "$LOG" | grep -qiE "context.{0,20}(length|limit|window|overflow)|maximum context|too long|token limit|context_length_exceeded|prompt is too long|exceeds max length"; }
 
 safe_push() {
   if [ -n "$(git status --porcelain 2>/dev/null)" ] || git log origin/main..HEAD --oneline 2>/dev/null | grep -q .; then
@@ -54,7 +80,9 @@ while true; do
   if ctx_hit; then
     log "⚠️ 会话上下文满 → 开新会话（状态在 specs/tickets/git，无损）"
     touch "$REPO/.claude/FRESH_NEXT"
-    run_pi "$P_PROVIDER" "$P_MODEL" "$(cat "$REPO/.claude/RECOVERY.md")"
+    run_pi "$P_PROVIDER" "$P_MODEL" "$(cat "$REPO/.claude/RECOVERY.md")
+
+$CONT_PROMPT"
     safe_push
     continue
   fi
