@@ -12,6 +12,7 @@ from filmdub.core.models import (
     Episode,
     Job,
     JobEvent,
+    JobStatus,
     MediaAsset,
     MediaStream,
     Project,
@@ -47,7 +48,11 @@ class MediaIntakeWorker:
         self.project_id = project_id
         self.media_path = media_path
         self.original_filename = sanitize_filename(original_filename)
-        self.job_id = f"job_{uuid.uuid4().hex[:12]}"
+
+        # jobs.id / projects.id 为 UUID 列，业务展示 ID 为字符串：两套表示并存
+        self.job_uuid = uuid.uuid4()
+        self.job_id = f"job_{self.job_uuid.hex[:12]}"
+        self.project_uuid = uuid.uuid5(uuid.NAMESPACE_URL, f"filmdub-project:{project_id}")
 
         # Initialize components
         self.storage = StorageManager(project_id)
@@ -116,21 +121,20 @@ class MediaIntakeWorker:
         """
         async with db.session() as session:
             job = Job(
-                id=self.job_id,
-                project_id=self.project_id,
-                module="media_intake",
-                status="RUNNING",
-                attempt=1,
+                id=self.job_uuid,
+                project_id=self.project_uuid,
+                name=f"media_intake:{self.original_filename}",
+                status=JobStatus.RUNNING,
+                module_id="media_intake",
                 started_at=datetime.utcnow(),
             )
             session.add(job)
 
             # Log start event
-            event = JobEvent(
-                job_id=self.job_id,
-                level="INFO",
-                event_type="JOB_STARTED",
-                message=f"Media intake started for {self.original_filename}",
+            event = self._make_event(
+                "INFO",
+                "JOB_STARTED",
+                f"Media intake started for {self.original_filename}",
             )
             session.add(event)
 
@@ -210,7 +214,6 @@ class MediaIntakeWorker:
                 season_number=self.filename_parse.season,
                 episode_number=self.filename_parse.episode,
                 title=self.filename_parse.title_candidate,
-                duration_seconds=self.duration,
                 status="INTAKE",
             )
             session.add(episode)
@@ -229,65 +232,54 @@ class MediaIntakeWorker:
             )
             session.add(media)
 
-            # Create subtitle assets for embedded subtitles
             for sub in manifest.get("subtitles", []):
                 subtitle_asset = SubtitleAsset(
                     id=f"sub_{uuid.uuid4().hex[:12]}",
                     episode_id=self.episode_id,
-                    media_id=self.media_id,
                     source_type="embedded",
-                    language=sub.get("language"),
-                    title=sub.get("title"),
+                    language=sub.get("language") or "und",
+                    storage_path=f"embedded://stream/{sub.get('index')}",
                 )
                 session.add(subtitle_asset)
 
             # Create stream records
-            # Video stream
             video = manifest.get("video")
             if video:
+                fps = video.get("fps")
                 video_stream = MediaStream(
+                    id=f"strm_{uuid.uuid4().hex[:12]}",
                     media_id=self.media_id,
-                    stream_index=video["index"],
                     stream_type="video",
+                    index=video["index"],
                     codec=video.get("codec"),
                     width=video.get("width"),
                     height=video.get("height"),
-                    fps=video.get("fps"),
-                    is_default=video.get("is_default", False),
-                    is_forced=False,
+                    frame_rate=str(fps) if fps is not None else None,
                 )
                 session.add(video_stream)
 
-            # Audio streams
             for audio in manifest.get("audio", []):
                 audio_stream = MediaStream(
+                    id=f"strm_{uuid.uuid4().hex[:12]}",
                     media_id=self.media_id,
-                    stream_index=audio["index"],
                     stream_type="audio",
+                    index=audio["index"],
                     codec=audio.get("codec"),
                     language=audio.get("language"),
-                    title=audio.get("title"),
                     channels=audio.get("channels"),
-                    channel_layout=audio.get("channel_layout"),
                     sample_rate=audio.get("sample_rate"),
-                    bitrate=audio.get("bit_rate"),
-                    is_default=audio.get("is_default", False),
-                    is_forced=audio.get("is_forced", False),
+                    bit_rate=audio.get("bit_rate"),
                 )
                 session.add(audio_stream)
 
-            # Subtitle streams
             for subtitle in manifest.get("subtitles", []):
                 sub_stream = MediaStream(
+                    id=f"strm_{uuid.uuid4().hex[:12]}",
                     media_id=self.media_id,
-                    stream_index=subtitle["index"],
                     stream_type="subtitle",
+                    index=subtitle["index"],
                     codec=subtitle.get("codec"),
-                    subtitle_codec=subtitle.get("codec"),  # For subtitle-specific codec
                     language=subtitle.get("language"),
-                    title=subtitle.get("title"),
-                    is_default=subtitle.get("is_default", False),
-                    is_forced=subtitle.get("is_forced", False),
                 )
                 session.add(sub_stream)
 
@@ -301,17 +293,16 @@ class MediaIntakeWorker:
             manifest: Media manifest.
         """
         async with db.session() as session:
-            job = await session.get(Job, self.job_id)
+            job = await session.get(Job, self.job_uuid)
             if job:
-                job.status = "SUCCESS"
-                job.finished_at = datetime.utcnow()
-                job.output_manifest = str(manifest)
+                job.status = JobStatus.COMPLETED
+                job.completed_at = datetime.utcnow()
+                job.output_artifacts = [f"media:{self.media_id}", f"episode:{self.episode_id}"]
 
-                event = JobEvent(
-                    job_id=self.job_id,
-                    level="INFO",
-                    event_type="JOB_COMPLETED",
-                    message=f"Media intake completed successfully",
+                event = self._make_event(
+                    "INFO",
+                    "JOB_COMPLETED",
+                    "Media intake completed successfully",
                 )
                 session.add(event)
 
@@ -325,21 +316,29 @@ class MediaIntakeWorker:
             error_message: Error message.
         """
         async with db.session() as session:
-            job = await session.get(Job, self.job_id)
+            job = await session.get(Job, self.job_uuid)
             if job:
-                job.status = "FAILED"
-                job.finished_at = datetime.utcnow()
+                job.status = JobStatus.FAILED
+                job.completed_at = datetime.utcnow()
                 job.error_message = error_message
 
-                event = JobEvent(
-                    job_id=self.job_id,
-                    level="ERROR",
-                    event_type="JOB_FAILED",
-                    message=error_message,
+                event = self._make_event(
+                    "ERROR",
+                    "JOB_FAILED",
+                    error_message,
                 )
                 session.add(event)
 
                 await session.commit()
+
+    def _make_event(self, level: str, event_type: str, message: str) -> JobEvent:
+        return JobEvent(
+            id=f"evt_{uuid.uuid4().hex[:12]}",
+            job_id=self.job_id,
+            level=level,
+            event_type=event_type,
+            message=message,
+        )
 
     async def _log_event(self, db, level: str, event_type: str, message: str) -> None:
         """Log a job event.
@@ -348,16 +347,10 @@ class MediaIntakeWorker:
             db: Database manager.
             level: Log level.
             event_type: Event type.
-            message: Event message.
+            message: Message.
         """
         async with db.session() as session:
-            event = JobEvent(
-                job_id=self.job_id,
-                level=level,
-                event_type=event_type,
-                message=message,
-            )
-            session.add(event)
+            session.add(self._make_event(level, event_type, message))
             await session.commit()
 
     async def _update_project_status(self, db) -> None:
