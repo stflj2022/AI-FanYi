@@ -27,7 +27,11 @@ def subtitle():
 @subtitle.command()
 @click.argument('project_id')
 @click.option('--video-path', type=click.Path(exists=True), help='视频文件路径')
-def start(project_id, video_path):
+@click.option('--subtitle-en', type=click.Path(exists=True), help='外挂英文字幕文件（srt/ass等）')
+@click.option('--subtitle-zh', type=click.Path(exists=True), help='外挂中文字幕文件，双语文件自动拆分')
+@click.option('--subtitle-path', 'subtitle_paths', type=click.Path(exists=True), multiple=True,
+              help='外挂字幕文件，按文件名自动识别语言（可多次指定）')
+def start(project_id, video_path, subtitle_en, subtitle_zh, subtitle_paths):
     """
     开始字幕处理
 
@@ -54,7 +58,12 @@ def start(project_id, video_path):
     runner = SubtitleRunner(project_id, config)
 
     # 执行
-    result = runner.run(Path(video_path))
+    result = runner.run(
+        Path(video_path),
+        subtitle_en=Path(subtitle_en) if subtitle_en else None,
+        subtitle_zh=Path(subtitle_zh) if subtitle_zh else None,
+        subtitle_auto=[Path(p) for p in subtitle_paths],
+    )
 
     # 显示结果
     if result['status'] == 'success':

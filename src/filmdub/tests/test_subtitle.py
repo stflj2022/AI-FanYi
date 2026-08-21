@@ -12,7 +12,7 @@ try:
     from filmdub.workers.subtitle import SubtitleConfig, TranslationMode
     from filmdub.workers.subtitle.models import SubtitleSource, Dialogue, SubtitleSourceType
     from filmdub.workers.subtitle.discovery import SubtitleScanner, SubtitleMatcher
-    from filmdub.workers.subtitle.importer import SubtitleParser, DialogueNormalizer
+    from filmdub.workers.subtitle.importer import SubtitleParser, DialogueNormalizer, SubtitleEntry
     from filmdub.workers.subtitle.validator import SubtitleValidator, ValidationSeverity
     from filmdub.workers.subtitle.alignment import SubtitleAligner
     from filmdub.workers.subtitle.extractor import DialogueExtractor, DialogueType
@@ -20,7 +20,7 @@ except ImportError:
     from filmdub.workers.subtitle import SubtitleConfig, TranslationMode
     from filmdub.workers.subtitle.models import SubtitleSource, Dialogue, SubtitleSourceType
     from filmdub.workers.subtitle.discovery import SubtitleScanner, SubtitleMatcher
-    from filmdub.workers.subtitle.importer import SubtitleParser, DialogueNormalizer
+    from filmdub.workers.subtitle.importer import SubtitleParser, DialogueNormalizer, SubtitleEntry
     from filmdub.workers.subtitle.validator import SubtitleValidator, ValidationSeverity
     from filmdub.workers.subtitle.alignment import SubtitleAligner
     from filmdub.workers.subtitle.extractor import DialogueExtractor, DialogueType
@@ -376,6 +376,198 @@ class TestSubtitleMatcher(unittest.TestCase):
         self.assertIsNotNone(best)
         # 第一个字幕应该被选中
         self.assertIn("Breaking", best.subtitle.path.name)
+
+
+class TestASSParsing(unittest.TestCase):
+    """测试 ASS 解析（含文本字段含逗号的边界情况）"""
+
+    def setUp(self):
+        self.parser = SubtitleParser()
+        self.ass_content = (
+            "[Script Info]\n"
+            "ScriptType: v4.00+\n"
+            "\n"
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:02:14.33,0:02:16.24,,RUS,0,0,0,,{\\i1}My name is Walter Hartwell White.{\\i0}\n"
+            "Dialogue: 0,0:02:16.45,0:02:19.31,,RUS,0,0,0,,住在新墨西哥州, 阿尔布开克市\\NAlbuquerque, New Mexico\n"
+            "Comment: 0,0:03:00.00,0:03:05.00,,RUS,0,0,0,,不应被解析的注释行\n"
+        )
+
+    def _parse_content(self, content: str, suffix: str = ".ass"):
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix=suffix, delete=False, encoding='utf-8'
+        ) as f:
+            f.write(content)
+            path = Path(f.name)
+        try:
+            return self.parser.parse(path)
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_ass_text_field_extracted_correctly(self):
+        entries = self._parse_content(self.ass_content)
+
+        self.assertEqual(len(entries), 2)
+        # 文本必须是真实台词，而不是被误捕获的 MarginL("0")
+        self.assertEqual(entries[0].text, "My name is Walter Hartwell White.")
+        self.assertNotEqual(entries[0].text.strip(), "0")
+
+    def test_ass_text_with_commas_and_tags(self):
+        entries = self._parse_content(self.ass_content)
+
+        # 第二条：文本含逗号；清洗阶段把 \\N 折叠为空格，中英混排在同一行
+        self.assertIn(",", entries[1].text)
+        self.assertIn("住在新墨西哥州", entries[1].text)
+        self.assertIn("Albuquerque, New Mexico", entries[1].text)
+        self.assertNotIn("{", entries[1].text)
+
+    def test_ass_timing(self):
+        entries = self._parse_content(self.ass_content)
+
+        self.assertAlmostEqual(entries[0].start, 134.33)
+        self.assertAlmostEqual(entries[0].end, 136.24)
+
+
+class TestBilingualSplit(unittest.TestCase):
+    """测试双语字幕拆分"""
+
+    def setUp(self):
+        self.parser = SubtitleParser()
+
+    def _entry(self, index, text, start=100.0, end=104.0):
+        return SubtitleEntry(index=index, start=start, end=end, text=text)
+
+    def test_classify_line(self):
+        self.assertEqual(self.parser.classify_line("我叫沃尔特"), "zh")
+        self.assertEqual(self.parser.classify_line("My name is Walter"), "en")
+        self.assertEqual(self.parser.classify_line("308 号邮编 87104"), "zh")
+        self.assertIsNone(self.parser.classify_line("..."))
+
+    def test_split_bilingual_keeps_timing(self):
+        # 多行形式（解析器未清洗前）与单行混排（清洗后）两种输入都要能拆
+        entries = [
+            self._entry(0, "我叫沃尔特·哈特维尔·怀特\nMy name is Walter Hartwell White."),
+            self._entry(1, "住在新墨西哥州阿尔布开克 Albuquerque New Mexico"),
+        ]
+
+        en, zh = self.parser.split_bilingual(entries)
+
+        self.assertEqual(len(en), 2)
+        self.assertEqual(len(zh), 2)
+        self.assertEqual(en[0].text, "My name is Walter Hartwell White.")
+        self.assertEqual(zh[0].text, "我叫沃尔特·哈特维尔·怀特")
+        self.assertEqual(en[0].start, 100.0)
+        self.assertEqual(en[0].end, 104.0)
+        self.assertEqual(zh[0].start, 100.0)
+        self.assertEqual(zh[1].text, "住在新墨西哥州阿尔布开克")
+        self.assertEqual(en[1].text, "Albuquerque New Mexico")
+
+    def test_split_interleaved_line_stays_chinese(self):
+        en, zh = self.parser.split_bilingual(
+            [self._entry(0, "他说Hello然后又说World")]
+        )
+
+        self.assertEqual(len(en), 0)
+        self.assertEqual(len(zh), 1)
+        self.assertIn("Hello", zh[0].text)
+
+    def test_is_bilingual(self):
+        bilingual = [self._entry(0, "你好\\nHello")]
+        english_only = [self._entry(0, "Hello there")]
+        chinese_only = [self._entry(0, "你好呀")]
+
+        self.assertTrue(self.parser.is_bilingual(bilingual))
+        self.assertFalse(self.parser.is_bilingual(english_only))
+        self.assertFalse(self.parser.is_bilingual(chinese_only))
+
+    def test_split_pure_language_returns_empty_other_side(self):
+        en, zh = self.parser.split_bilingual([self._entry(0, "Hello there")])
+
+        self.assertEqual(len(en), 1)
+        self.assertEqual(len(zh), 0)
+
+
+class TestExternalSubtitleWiring(unittest.TestCase):
+    """测试外挂字幕源接入 Runner 策略"""
+
+    def _make_runner(self):
+        from filmdub.workers.subtitle.runner import SubtitleRunner
+        return SubtitleRunner("proj_wire_test")
+
+    def _summary_with_external(self, files):
+        return {"external_subtitles": {"files": files}}
+
+    def test_explicit_paths_override_everything(self):
+        runner = self._make_runner()
+        runner._explicit_subtitles = {
+            "en": Path("/subs/en.srt"),
+            "zh": Path("/subs/zh.srt"),
+        }
+
+        runner._wire_external_sources(self._summary_with_external([]))
+
+        self.assertEqual(runner.english_subtitle.path, "/subs/en.srt")
+        self.assertEqual(runner.chinese_subtitle.path, "/subs/zh.srt")
+        self.assertEqual(
+            runner.english_subtitle.source_type, SubtitleSourceType.EXTERNAL
+        )
+
+    def test_auto_discovered_files_fill_missing_slots(self):
+        runner = self._make_runner()
+        summary = self._summary_with_external([
+            {"path": "/movie/movie.en.srt", "format": "srt", "language": "en"},
+            {"path": "/movie/movie.zh.srt", "format": "ass", "language": "zh-CN"},
+        ])
+
+        runner._wire_external_sources(summary)
+
+        self.assertEqual(runner.english_subtitle.path, "/movie/movie.en.srt")
+        self.assertEqual(runner.chinese_subtitle.format, "ass")
+
+    def test_bilingual_mirror_when_only_chinese_given(self):
+        runner = self._make_runner()
+        runner._explicit_subtitles = {"zh": Path("/subs/bilingual.ass")}
+
+        runner._wire_external_sources(self._summary_with_external([]))
+
+        # 单个双语文件同时作为中英两路来源，导入阶段按行拆分
+        self.assertIsNotNone(runner.chinese_subtitle)
+        self.assertIs(runner.english_subtitle, runner.chinese_subtitle)
+
+    def test_load_entries_splits_cached_bilingual_file(self):
+        runner = self._make_runner()
+        content = (
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+            "Dialogue: 0,0:00:01.00,0:00:03.00,,RUS,0,0,0,,你好世界\\nHello World\n"
+        )
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.ass', delete=False, encoding='utf-8'
+        ) as f:
+            f.write(content)
+            sub_path = Path(f.name)
+
+        try:
+            en_entries = runner._load_entries(str(sub_path), 'en')
+            zh_entries = runner._load_entries(str(sub_path), 'zh-CN')
+
+            self.assertEqual(len(en_entries), 1)
+            self.assertEqual(en_entries[0].text, "Hello World")
+            self.assertEqual(zh_entries[0].text, "你好世界")
+            # 同一路径只解析一次
+            self.assertIn(str(sub_path), runner._entry_cache)
+        finally:
+            sub_path.unlink(missing_ok=True)
+
+    def test_dialogues_assigned_to_instance(self):
+        runner = self._make_runner()
+        dialogues = [Dialogue(id="d1", episode_id="S01E01",
+                              start=1.0, end=2.0, source_text="hi")]
+        runner.dialogues = dialogues
+
+        self.assertEqual(runner.dialogues, dialogues)
+        self.assertEqual(runner.episode_id, "")
 
 
 if __name__ == '__main__':

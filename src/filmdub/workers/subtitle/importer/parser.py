@@ -5,7 +5,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Iterator
+from typing import List, Dict, Any, Optional, Iterator, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -37,6 +37,8 @@ class SubtitleParser:
     VTT_TIME_PATTERN = re.compile(
         r'(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})'
     )
+    CJK_PATTERN = re.compile(r'[\u4e00-\u9fff]')
+    LATIN_PATTERN = re.compile(r'[A-Za-z]')
 
     def __init__(self):
         """初始化解析器"""
@@ -197,12 +199,14 @@ class SubtitleParser:
         content = self._read_file(subtitle_path)
 
         # ASS 格式的对话行以 Dialogue: 开头
+        # 字段顺序: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
+        # Text 是最后一个字段，可能包含逗号，必须用贪婪匹配取行剩余部分
         dialogue_pattern = re.compile(
-            r'^Dialogue:\s*\d+,'
+            r'^Dialogue:\s*[^,]*,'
             r'(\d+):(\d+):(\d+)\.(\d+),'
             r'(\d+):(\d+):(\d+)\.(\d+),'
-            r'[^,]*,[^,]*,'  # Style, Name
-            r'([^,]*)'  # Text
+            r'[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,'  # Style, Name, MarginL/R/V, Effect
+            r'(.*)$'  # Text（含逗号）
         )
 
         for line in content.split('\n'):
@@ -239,6 +243,72 @@ class SubtitleParser:
 
         logger.info(f"Parsed {len(entries)} ASS entries from {subtitle_path.name}")
         return entries
+
+    def classify_line(self, line: str) -> Optional[str]:
+        """按内容判断单行语言：含 CJK 视为中文，否则含拉丁字母视为英文"""
+        if self.CJK_PATTERN.search(line):
+            return 'zh'
+        if self.LATIN_PATTERN.search(line):
+            return 'en'
+        return None
+
+    def is_bilingual(self, entries: List[SubtitleEntry]) -> bool:
+        """检测条目中是否存在中英混排（同一行内同时含 CJK 与拉丁字母）"""
+        return any(
+            self.CJK_PATTERN.search(e.text) and self.LATIN_PATTERN.search(e.text)
+            for e in entries
+        )
+
+    def _split_mixed_line(self, line: str) -> Tuple[str, str]:
+        """
+        将一行中英混排文本切成（中文段, 英文段）。
+
+        切分点取「其后不再出现 CJK 的首个拉丁字母」位置；若中英交错
+        （拉丁段之后又出现 CJK），则无法可靠切分，整行归中文侧返回。
+        纯英文行返回 ("", 原行)，纯中文/无字母行返回 (原行, "")。
+        """
+        latin_positions = [m.start() for m in self.LATIN_PATTERN.finditer(line)]
+        if not latin_positions:
+            return line, ""
+
+        last_cjk = max(
+            (m.start() for m in self.CJK_PATTERN.finditer(line)),
+            default=-1,
+        )
+        first_latin = latin_positions[0]
+        if last_cjk < first_latin:
+            return line[:first_latin], line[first_latin:]
+        return line, ""
+
+    def split_bilingual(
+        self, entries: List[SubtitleEntry]
+    ) -> Tuple[List[SubtitleEntry], List[SubtitleEntry]]:
+        """
+        将双语字幕条目拆分为纯英文与纯中文两组。
+
+        兼容两种排版：多行字幕（解析后按换行分隔）与单行混排
+        （清洗阶段换行被折叠为空格）。拆出的条目沿用原时间轴。
+        """
+        en_entries: List[SubtitleEntry] = []
+        zh_entries: List[SubtitleEntry] = []
+
+        def _emit(seg: str, bucket: List[SubtitleEntry]) -> None:
+            if seg.strip():
+                bucket.append(SubtitleEntry(
+                    index=len(bucket), start=entry.start, end=entry.end,
+                    text=seg.strip()
+                ))
+
+        for entry in entries:
+            for line in entry.text.split('\n'):
+                zh_seg, en_seg = self._split_mixed_line(line)
+                _emit(zh_seg, zh_entries)
+                if not self.CJK_PATTERN.search(en_seg):
+                    _emit(en_seg, en_entries)
+
+        logger.info(f"Split bilingual subtitle: {len(entries)} entries -> "
+                    f"{len(en_entries)} en / {len(zh_entries)} zh")
+        return en_entries, zh_entries
 
     def _read_file(self, file_path: Path) -> str:
         """读取文件，自动检测编码"""
