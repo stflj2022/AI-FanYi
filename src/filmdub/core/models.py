@@ -137,8 +137,12 @@ class RoleType(str, PyEnum):
 
 # ==================== 模型定义 ====================
 
-class Project(Base):
-    """项目表"""
+class ProjectRecord(Base):
+    """项目表（Layer 0 orchestrator 专用，UUID 主键）
+
+    注意：此模型与 ProjectM01（媒体摄入用、字符串主键）是两个不同概念。
+    为避免同名遮蔽导致 SQLAlchemy 关系解析失败，此处命名为 ProjectRecord。
+    """
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -245,7 +249,7 @@ class Job(Base):
     error_stack: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # 关系
-    project: Mapped["Project"] = relationship("Project", back_populates="jobs")
+    project: Mapped["ProjectRecord"] = relationship("ProjectRecord", back_populates="jobs")
     worker: Mapped[Optional["Worker"]] = relationship("Worker", back_populates="jobs")
 
     # 索引
@@ -344,7 +348,7 @@ class Artifact(Base):
     accessed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # 关系
-    project: Mapped[Optional["Project"]] = relationship("Project", back_populates="artifacts")
+    project: Mapped[Optional["ProjectRecord"]] = relationship("ProjectRecord", back_populates="artifacts")
 
     # 索引
     __table_args__ = (
@@ -465,7 +469,7 @@ class Character(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # 关系
-    project: Mapped["Project"] = relationship("Project", back_populates="characters")
+    project: Mapped["ProjectRecord"] = relationship("ProjectRecord", back_populates="characters")
 
     # 索引
     __table_args__ = (

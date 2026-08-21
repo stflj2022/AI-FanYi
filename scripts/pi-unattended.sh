@@ -151,11 +151,13 @@ $CONT_PROMPT"
     continue
   fi
 
-  # provider 故障（配额尽 / 零输出熔断）→ 轮换下家；全员阵亡则睡等重置
+  # provider 故障（配额尽 / 零输出熔断）→ 轮换下家并强制新会话（爆胀会话会拖死好 provider）
+  # 全员阵亡则睡等重置
   if [ -f "$REPO/.claude/ROTATE_NEXT" ]; then
     rm -f "$REPO/.claude/ROTATE_NEXT"
     FAILS=$((FAILS+1))
-    log "🔁 当前 provider 无响应 → 轮换"
+    log "🔁 当前 provider 无响应 → 轮换（弃旧会话）"
+    touch "$REPO/.claude/FRESH_NEXT"
     PI=$(( (PI+1) % ${#PROVIDERS[@]} ))
     if [ "$FAILS" -ge ${#PROVIDERS[@]} ]; then
       log "💤 全部 provider 不可用，睡 900s 后重试"
@@ -166,7 +168,8 @@ $CONT_PROMPT"
   fi
   if quota_hit; then
     FAILS=$((FAILS+1))
-    log "🔁 配额类错误 → 轮换"
+    log "🔁 配额类错误 → 轮换（弃旧会话）"
+    touch "$REPO/.claude/FRESH_NEXT"
     PI=$(( (PI+1) % ${#PROVIDERS[@]} ))
     if [ "$FAILS" -ge ${#PROVIDERS[@]} ]; then
       log "💤 全部 provider 不可用，睡 900s 后重试"

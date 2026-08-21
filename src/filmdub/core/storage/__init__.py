@@ -19,6 +19,8 @@ class StorageManager:
             project_id: Optional project ID.
         """
         self.project_id = project_id
+        if self.project_id:
+            self.ensure_directories()
 
     @property
     def projects_base(self) -> Path:

@@ -62,6 +62,13 @@ class DatabaseManager:
             expire_on_commit=False,
         )
 
+        # 自动创建所有表（幂等操作）。
+        # 延迟导入 models，确保所有模型已注册到 Base.metadata。
+        from filmdub.core import models  # noqa: F401
+
+        async with self._engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
     async def close(self) -> None:
         """Close database connections."""
         if self._engine:
