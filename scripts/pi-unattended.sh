@@ -20,7 +20,13 @@ log() { echo "[$(date '+%F %T')] $*" >> "$LOG"; }
 done_check() { tail -100 "$LOG" | grep -q "ALL_DONE"; }
 quota_hit() { tail -80 "$LOG" | grep -qiE "quota|额度|429|rate.?limit|insufficient|exceeded|余额不足|balance"; }
 
-run_pi() { timeout 7200 pi --provider "$1" --model "$2" -c -p "$3" >> "$LOG" 2>&1; }
+run_pi() {
+  local cont=(-c)
+  if [ -f "$REPO/.claude/FRESH_NEXT" ]; then cont=(); rm -f "$REPO/.claude/FRESH_NEXT"; fi
+  timeout 7200 pi --provider "$1" --model "$2" "${cont[@]}" -p "$3" >> "$LOG" 2>&1
+}
+
+ctx_hit() { tail -30 "$LOG" | grep -qiE "context.{0,20}(length|limit|window|overflow)|maximum context|too long|token limit|context_length_exceeded|prompt is too long"; }
 
 safe_push() {
   if [ -n "$(git status --porcelain 2>/dev/null)" ] || git log origin/main..HEAD --oneline 2>/dev/null | grep -q .; then
@@ -43,6 +49,15 @@ while true; do
   run_pi "$P_PROVIDER" "$P_MODEL" "$CONT_PROMPT"
   safe_push
   done_check && { log "🎉 全部工单完成"; safe_push; break; }
+
+  # 上下文满 → 弃旧会话，冷启动新会话从磁盘状态恢复
+  if ctx_hit; then
+    log "⚠️ 会话上下文满 → 开新会话（状态在 specs/tickets/git，无损）"
+    touch "$REPO/.claude/FRESH_NEXT"
+    run_pi "$P_PROVIDER" "$P_MODEL" "$(cat "$REPO/.claude/RECOVERY.md")"
+    safe_push
+    continue
+  fi
 
   if quota_hit; then
     log "zai 额度尽 → 切 $F_PROVIDER/$F_MODEL"
