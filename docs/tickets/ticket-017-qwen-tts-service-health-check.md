@@ -1,6 +1,6 @@
 # Ticket 017: qwen-tts Service 健康检查与自动重启
 
-## 状态: todo
+## 状态: done
 
 ## 优先级: 高
 

@@ -1,6 +1,6 @@
 # Ticket 016: Adapter 层集成到各模块
 
-## 状态: todo
+## 状态: done
 
 ## 优先级: 高
 
