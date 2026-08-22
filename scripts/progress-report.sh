@@ -15,6 +15,8 @@ NC='\033[0m' # No Color
 # 用于通知的变量
 REPORT_TIME=$(date '+%H:%M')
 SERVICE_STATUS="未知"
+WATCHDOG_STATUS="未知"
+UNATTENDED_STATUS="未知"
 LATEST_COMMIT="无"
 TICKETS_TOTAL=0
 TICKETS_DONE=0
@@ -30,6 +32,8 @@ echo "" | tee -a "$REPORT_FILE"
 
 # 1. 服务状态
 echo -e "${BLUE}📊 服务状态${NC}" | tee -a "$REPORT_FILE"
+
+# 检查 driver 服务
 if systemctl --user is-active --quiet aifanyi-driver.service; then
     echo -e "  ${GREEN}✅ aifanyi-driver.service 运行中${NC}" | tee -a "$REPORT_FILE"
     SERVICE_STATUS="✅ 运行中"
@@ -38,6 +42,34 @@ else
     echo -e "  ${RED}❌ aifanyi-driver.service 未运行${NC}" | tee -a "$REPORT_FILE"
     SERVICE_STATUS="❌ 未运行"
 fi
+
+# 检查 watchdog 服务（oneshot 类型，检查是否失败即可）
+if systemctl --user is-failed --quiet aifanyi-watchdog.service; then
+    echo -e "  ${RED}❌ aifanyi-watchdog.service 失败${NC}" | tee -a "$REPORT_FILE"
+    WATCHDOG_STATUS="❌ 失败"
+else
+    # 检查 watchdog timer 是否运行
+    if systemctl --user is-active --quiet aifanyi-watchdog.timer; then
+        echo -e "  ${GREEN}✅ aifanyi-watchdog.service 正常（由 timer 定期触发）${NC}" | tee -a "$REPORT_FILE"
+        WATCHDOG_STATUS="✅ 正常"
+    else
+        echo -e "  ${YELLOW}⚠️  aifanyi-watchdog.timer 未运行${NC}" | tee -a "$REPORT_FILE"
+        WATCHDOG_STATUS="⚠️ Timer 未运行"
+    fi
+fi
+
+# 综合判断 unattended-dev-system 状态
+if systemctl --user is-active --quiet aifanyi-driver.service; then
+    if systemctl --user is-active --quiet aifanyi-watchdog.timer && ! systemctl --user is-failed --quiet aifanyi-watchdog.service; then
+        UNATTENDED_STATUS="✅ 正常"
+    else
+        UNATTENDED_STATUS="⚠️ 部分（watchdog 异常）"
+    fi
+else
+    UNATTENDED_STATUS="❌ 异常"
+fi
+
+echo -e "  综合状态: $UNATTENDED_STATUS" | tee -a "$REPORT_FILE"
 echo "" | tee -a "$REPORT_FILE"
 
 # 2. 最新日志摘要
@@ -98,7 +130,8 @@ echo "" | tee -a "$REPORT_FILE"
 # 发送桌面通知
 if command -v notify-send >/dev/null 2>&1; then
     # 构建通知内容
-    NOTIFICATION_BODY="📊 $SERVICE_STATUS\n"
+    NOTIFICATION_BODY="📊 Driver: $SERVICE_STATUS | Watchdog: $WATCHDOG_STATUS\n"
+    NOTIFICATION_BODY+="🤖 Unattended: $UNATTENDED_STATUS\n"
     NOTIFICATION_BODY+="🔀 最新: $LATEST_COMMIT\n"
     NOTIFICATION_BODY+="🎫 工单: $TICKETS_DONE/$TICKETS_TOTAL 完成"
     if [ "$TICKETS_BLOCKED" -gt 0 ]; then
@@ -106,7 +139,7 @@ if command -v notify-send >/dev/null 2>&1; then
     fi
     NOTIFICATION_BODY+="\n"
     NOTIFICATION_BODY+="💻 CPU: $CPU_USAGE | 内存: $MEMORY_USAGE"
-    
+
     # 根据服务状态设置紧急程度和图标
     if systemctl --user is-active --quiet aifanyi-driver.service; then
         URGENCY="normal"
@@ -115,7 +148,7 @@ if command -v notify-send >/dev/null 2>&1; then
         URGENCY="critical"
         ICON="dialog-error"
     fi
-    
+
     # 发送通知（使用固定 replace-id 确保多次通知只保留最近一次）
     # expire-time=0 表示不自动消失，需要手动点击关闭
     notify-send \

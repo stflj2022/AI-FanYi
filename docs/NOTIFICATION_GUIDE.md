@@ -23,11 +23,21 @@
 
 ```
 📋 AI-FanYi 进度汇报 [时间]
-📊 服务状态
+📊 Driver: ✅ 运行中 | Watchdog: ✅ 正常
+🤖 Unattended: ✅ 正常
 🔀 最新提交
 🎫 工单进度 (完成/总数)
 💻 系统资源 (CPU | 内存)
 ```
+
+### 说明
+
+- **Driver**: aifanyi-driver.service 的运行状态（主驱动服务）
+- **Watchdog**: aifanyi-watchdog.service 的运行状态（监控服务）
+- **Unattended**: unattended-dev-system 综合状态
+  - ✅ 正常：所有服务正常运行
+  - ⚠️ 部分：watchdog 异常
+  - ❌ 异常：driver 未运行
 
 ---
 
