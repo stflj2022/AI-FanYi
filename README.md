@@ -73,6 +73,29 @@ The skill will:
 4. Configure AI providers
 5. Validate the installation
 
+### matt-pocock-skills (Git Submodule)
+
+Official Matt Pocock engineering/productivity skills, referenced as a **git submodule** pointing at the upstream repo:
+
+- **Upstream**: https://github.com/mattpocock/skills
+- **Categories**: engineering/ (18), productivity/ (7), in-progress/ (6), misc/ (4)
+
+**First-time setup**:
+```bash
+git submodule update --init --recursive
+cd matt-pocock-skills
+# then run in each project: /setup-matt-pocock-skills
+```
+
+**Auto-update to latest** (in skill-j root):
+```bash
+bash scripts/update-matt-skills.sh
+# or manually:
+git submodule update --remote matt-pocock-skills
+```
+
+See [docs/MATT_SKILLS_UPDATE.md](docs/MATT_SKILLS_UPDATE.md) for full details.
+
 ## Contributing
 
 Feel free to submit issues and pull requests!
