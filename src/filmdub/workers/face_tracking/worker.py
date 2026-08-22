@@ -132,57 +132,70 @@ class M03Worker:
         finally:
             cap.release()
 
+    def _find_matching_track(
+        self, detection: FaceDetection, tracks: List[FaceTrack]
+    ) -> Optional[FaceTrack]:
+        """Find a matching track for a detection based on temporal and similarity criteria."""
+        for track in tracks:
+            # Check temporal proximity
+            if abs(detection.frame_number - track.last_frame) > self.config.max_age:
+                continue
+
+            # Check embedding similarity
+            if (
+                track.representative_embedding is not None
+                and detection.embedding is not None
+            ):
+                similarity = self.recognizer.compare_embeddings(
+                    track.representative_embedding, detection.embedding
+                )
+
+                if similarity > self.config.recognition_threshold:
+                    return track
+
+        return None
+
+    def _update_track(self, track: FaceTrack, detection: FaceDetection) -> None:
+        """Update a track with a new detection."""
+        track.detections.append(detection)
+        track.last_frame = detection.frame_number
+        track.total_frames += 1
+        # Update average confidence using moving average
+        track.average_confidence = (
+            track.average_confidence * (len(track.detections) - 1) + detection.confidence
+        ) / len(track.detections)
+
+    def _create_track(self, track_id: int, detection: FaceDetection) -> FaceTrack:
+        """Create a new track from a detection."""
+        return FaceTrack(
+            track_id=f"track_{track_id}",
+            detections=[detection],
+            first_frame=detection.frame_number,
+            last_frame=detection.frame_number,
+            total_frames=1,
+            average_confidence=detection.confidence,
+            representative_embedding=detection.embedding,
+        )
+
     def _create_tracks(self, detections: List[FaceDetection]) -> List[FaceTrack]:
         """Create face tracks from detections using simple clustering."""
         if not detections:
             return []
 
-        # Simple approach: group by temporal proximity and similarity
         tracks: List[FaceTrack] = []
         track_id_counter = 0
 
         for detection in detections:
             # Try to find matching existing track
-            matched = False
+            matched_track = self._find_matching_track(detection, tracks)
 
-            for track in tracks:
-                # Check temporal proximity
-                if abs(detection.frame_number - track.last_frame) > self.config.max_age:
-                    continue
-
-                # Check embedding similarity
-                if (
-                    track.representative_embedding is not None
-                    and detection.embedding is not None
-                ):
-                    similarity = self.recognizer.compare_embeddings(
-                        track.representative_embedding, detection.embedding
-                    )
-
-                    if similarity > self.config.recognition_threshold:
-                        # Add to existing track
-                        track.detections.append(detection)
-                        track.last_frame = detection.frame_number
-                        track.total_frames += 1
-                        track.average_confidence = (
-                            track.average_confidence * (len(track.detections) - 1)
-                            + detection.confidence
-                        ) / len(track.detections)
-                        matched = True
-                        break
-
-            if not matched:
+            if matched_track:
+                # Update existing track
+                self._update_track(matched_track, detection)
+            else:
                 # Create new track
-                track = FaceTrack(
-                    track_id=f"track_{track_id_counter}",
-                    detections=[detection],
-                    first_frame=detection.frame_number,
-                    last_frame=detection.frame_number,
-                    total_frames=1,
-                    average_confidence=detection.confidence,
-                    representative_embedding=detection.embedding,
-                )
-                tracks.append(track)
+                new_track = self._create_track(track_id_counter, detection)
+                tracks.append(new_track)
                 track_id_counter += 1
 
         return tracks

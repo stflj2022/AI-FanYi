@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
-        extra = "ignore"
+        extra = "forbid"  # 禁止额外字段，确保配置严格
 
 
 # 全局配置实例

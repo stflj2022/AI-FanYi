@@ -35,6 +35,7 @@ class FaceTrackingConfig(BaseSettings):
     class Config:
         env_prefix = "FACE_TRACKING_"
         env_file = ".env"
+        extra = "forbid"  # 禁止额外字段，确保配置严格
 
 
 def get_config() -> FaceTrackingConfig:

@@ -180,14 +180,12 @@ class FaceRecognizer:
             if embedding1 is None or embedding2 is None:
                 return 0.0
 
-            # Ensure same shape
+            # Validate shape consistency - fail early on mismatch
             if embedding1.shape != embedding2.shape:
-                # Pad the smaller one
-                max_len = max(embedding1.shape[0], embedding2.shape[0])
-                if embedding1.shape[0] < max_len:
-                    embedding1 = np.pad(embedding1, (0, max_len - embedding1.shape[0]))
-                if embedding2.shape[0] < max_len:
-                    embedding2 = np.pad(embedding2, (0, max_len - embedding2.shape[0]))
+                logger.warning(
+                    f"Embedding shape mismatch: {embedding1.shape} vs {embedding2.shape}"
+                )
+                return 0.0
 
             # Compute cosine similarity
             dot_product = np.dot(embedding1, embedding2)
