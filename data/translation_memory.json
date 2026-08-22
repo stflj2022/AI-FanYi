@@ -1,0 +1,148 @@
+{
+  "entries": [
+    {
+      "id": "993c5458-cecc-4db1-b36d-2fd40725af21",
+      "source_text": "Hello",
+      "translated_text": "Hello",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "How are you?",
+      "usage_count": 3,
+      "last_used": "2026-08-22T22:43:21.654808",
+      "created_at": "2026-08-22T22:43:21.646796"
+    },
+    {
+      "id": "7ca3eea5-f796-444b-bd70-5231386825fe",
+      "source_text": "How are you?",
+      "translated_text": "How are you?",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Hello",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.647040",
+      "created_at": "2026-08-22T22:43:21.647057"
+    },
+    {
+      "id": "571cc2fb-d545-449b-a465-54d950dc6558",
+      "source_text": "World",
+      "translated_text": "World",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Hello",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.663453",
+      "created_at": "2026-08-22T22:43:21.663457"
+    },
+    {
+      "id": "38abe269-a564-4bf9-aeaf-4cdac7e8b134",
+      "source_text": "Text 0",
+      "translated_text": "Text 0",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Text 1 | Text 2",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.686873",
+      "created_at": "2026-08-22T22:43:21.686875"
+    },
+    {
+      "id": "992ac273-b253-4d2e-89ef-5332f44d7a27",
+      "source_text": "Text 1",
+      "translated_text": "Text 1",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Text 0 | Text 2 | Text 3",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.687353",
+      "created_at": "2026-08-22T22:43:21.687357"
+    },
+    {
+      "id": "801c40ff-e17d-4b73-915d-ecba56701c01",
+      "source_text": "Text 2",
+      "translated_text": "Text 2",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Text 0 | Text 1 | Text 3 | Text 4",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.687525",
+      "created_at": "2026-08-22T22:43:21.687533"
+    },
+    {
+      "id": "6189c44d-2e9b-4c09-be75-bb035cb9bfd5",
+      "source_text": "Text 3",
+      "translated_text": "Text 3",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Text 1 | Text 2 | Text 4 | Text 5",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.687680",
+      "created_at": "2026-08-22T22:43:21.687687"
+    },
+    {
+      "id": "b9721bca-5de2-46c3-b620-16a40fce1cd8",
+      "source_text": "Text 4",
+      "translated_text": "Text 4",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Text 2 | Text 3 | Text 5 | Text 6",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.687843",
+      "created_at": "2026-08-22T22:43:21.687847"
+    },
+    {
+      "id": "0e8f8340-4749-47f7-be1e-0ce25ba8be90",
+      "source_text": "Text 5",
+      "translated_text": "Text 5",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Text 3 | Text 4 | Text 6 | Text 7",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.688016",
+      "created_at": "2026-08-22T22:43:21.688024"
+    },
+    {
+      "id": "6eb004fc-c7c3-4221-b5a1-7a9508f4a38c",
+      "source_text": "Text 6",
+      "translated_text": "Text 6",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Text 4 | Text 5 | Text 7 | Text 8",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.688196",
+      "created_at": "2026-08-22T22:43:21.688199"
+    },
+    {
+      "id": "ff84192c-ed98-4566-addd-a21241b76e35",
+      "source_text": "Text 7",
+      "translated_text": "Text 7",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Text 5 | Text 6 | Text 8 | Text 9",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.688389",
+      "created_at": "2026-08-22T22:43:21.688393"
+    },
+    {
+      "id": "11fc5f7d-9380-474a-a983-851eed9c0dc3",
+      "source_text": "Text 8",
+      "translated_text": "Text 8",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Text 6 | Text 7 | Text 9",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.688588",
+      "created_at": "2026-08-22T22:43:21.688591"
+    },
+    {
+      "id": "93d2db23-b945-4b62-9802-e46baef0a279",
+      "source_text": "Text 9",
+      "translated_text": "Text 9",
+      "source_lang": "en",
+      "target_lang": "zh",
+      "context": "Text 7 | Text 8",
+      "usage_count": 1,
+      "last_used": "2026-08-22T22:43:21.688812",
+      "created_at": "2026-08-22T22:43:21.688819"
+    }
+  ],
+  "glossary": []
+}

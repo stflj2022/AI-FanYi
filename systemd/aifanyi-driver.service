@@ -1,0 +1,15 @@
+[Unit]
+Description=AI-FanYi Unattended Development Driver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PROJECT_ROOT=%h/桌面/AI-FanYi
+ExecStart=%h/桌面/AI-FanYi/scripts/pi-unattended.sh
+WorkingDirectory=%h/桌面/AI-FanYi
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

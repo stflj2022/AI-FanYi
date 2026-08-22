@@ -1,7 +1,9 @@
 #!/bin/bash
 # AI-FanYi 监督系统进度汇报脚本
 
-PROJECT_DIR="$HOME/桌面/AI-FanYi"
+# 动态检测项目目录（支持相对/绝对路径）
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_FILE="$PROJECT_DIR/.claude/pi-driver.log"
 REPORT_FILE="$PROJECT_DIR/.claude/progress-report.log"
 

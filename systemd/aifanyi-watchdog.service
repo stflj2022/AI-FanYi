@@ -1,0 +1,9 @@
+[Unit]
+Description=AI-FanYi Watchdog - monitor and restart driver if stuck
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PROJECT_ROOT=%h/桌面/AI-FanYi
+ExecStart=%h/桌面/AI-FanYi/scripts/watchdog-check.sh

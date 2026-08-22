@@ -1,0 +1,10 @@
+[Unit]
+Description=AI-FanYi Watchdog Timer (Every 10 minutes)
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

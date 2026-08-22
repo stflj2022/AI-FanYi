@@ -1,0 +1,9 @@
+[Unit]
+Description=AI-FanYi Progress Report
+After=aifanyi-driver.service
+
+[Service]
+Type=oneshot
+Environment=PROJECT_ROOT=%h/桌面/AI-FanYi
+ExecStart=%h/桌面/AI-FanYi/scripts/progress-report.sh
+WorkingDirectory=%h/桌面/AI-FanYi
