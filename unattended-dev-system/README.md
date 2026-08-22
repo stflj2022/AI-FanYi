@@ -341,6 +341,13 @@ Configure webhooks in `config.json`:
 
 ---
 
-**Version**: 1.0.0
+**Version**: 1.1.1
 **Last Updated**: 2026-08-23
 **Based on**: AI-FanYi v7 (commit ed81d91)
+
+## v1.1.1 changelog (post code-review fixes)
+
+- **Security fixes now actually enforced** (were dead code in v1.1): `validate_path` and `validate_ai_command` are now called at driver startup; rewrote `validate_ai_command` (case `|` separator bug + prefix matching).
+- **Config.json now read at runtime** by both `driver.sh` and `watchdog.sh` (was written but never consumed). CLI `--dry-run` wins over config.
+- **Bug fixes**: `git status --porcelain` (was invalid `git --porcelain`, commits never happened); `$REPOPO` typo in watchdog; `get_file_age` now returns *age in seconds* (was mtime); `((errors++))`/`((missing_count++))` abort under `set -e` (now `$((var+1))`); `{{PROJECT_NAME}}` now substituted into watchdog render; `set -e`/ERR-trap no longer kill the driver before exit-code handling (`timeout ... || EXIT_CODE=$?`); python version check fixed.
+- **watchdog**: `detect_platform` now called; single-instance flock guard; age-based stuck detection.

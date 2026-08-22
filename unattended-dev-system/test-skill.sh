@@ -93,7 +93,7 @@ required_driver_vars=("PROJECT_NAME" "PROJECT_ROOT" "LANGUAGE" "FRAMEWORK" "TEST
 for var in "${required_driver_vars[@]}"; do
     if ! grep -q "$var" "$SKILL_DIR/templates/driver.sh.template" 2>/dev/null; then
         log_error "driver.sh.template missing required placeholder: $var"
-        ((missing_count++))
+        missing_count=$((missing_count + 1))
     fi
 done
 
@@ -138,7 +138,63 @@ else
     exit 1
 fi
 
-# Test 11: Summary
+# Test 11: v1.1.1 regression checks (guard against the code-review bugs)
+echo ""
+echo "🔧 v1.1.1 regression checks..."
+
+# R1: validate_path / validate_ai_command are CALLED (not dead code)
+DRV="$SKILL_DIR/templates/driver.sh.template"
+if grep -q 'validate_path "\$REPO"' "$DRV" && grep -q 'validate_ai_command "{{AI_COMMAND}}"' "$DRV"; then
+    log_success "R1: validate_* functions are called (not dead code)"
+else
+    log_error "R1: validate_* functions defined but never called"
+    exit 1
+fi
+
+# R2: git uses correct status --porcelain flag
+if grep -q 'git -C "\$REPO" status --porcelain' "$DRV"; then
+    log_success "R2: auto_commit uses 'git status --porcelain'"
+else
+    log_error "R2: auto_commit has invalid 'git --porcelain' flag"
+    exit 1
+fi
+
+# R3: watchdog has no \$REPOPO typo
+WDOG="$SKILL_DIR/templates/watchdog.sh.template"
+if grep -q '\$REPOPO' "$WDOG"; then
+    log_error "R3: watchdog still has \$REPOPO typo"
+    exit 1
+else
+    log_success "R3: watchdog has no \$REPOPO typo"
+fi
+
+# R4: watchdog calls detect_platform and get_file_age returns age
+if grep -q '^detect_platform$' "$WDOG" && grep -q 'now=\$(date +%s)' "$WDOG"; then
+    log_success "R4: watchdog detect_platform called; get_file_age returns age"
+else
+    log_error "R4: watchdog platform/age logic broken"
+    exit 1
+fi
+
+# R5: install.sh substitutes PROJECT_NAME into watchdog render
+if grep -B6 'watchdog.sh.template > watchdog.sh' "$SKILL_DIR/install.sh" | grep -q 'PROJECT_NAME'; then
+    log_success "R5: watchdog render substitutes {{PROJECT_NAME}}"
+else
+    log_error "R5: {{PROJECT_NAME}} not substituted into watchdog.sh"
+    exit 1
+fi
+
+# R6: driver supports --dry-run CLI arg and reads config.json
+if grep -q -- '--dry-run' "$DRV" && grep -q 'load_cfg' "$DRV"; then
+    log_success "R6: driver supports --dry-run and reads config.json"
+else
+    log_error "R6: driver --dry-run / config loading missing"
+    exit 1
+fi
+
+log_success "All v1.1.1 regression checks passed"
+
+# Test 12: Summary
 echo ""
 echo "========================================"
 log_success "✅ All tests passed!"
@@ -149,6 +205,7 @@ echo "  - Templates: 4 files validated"
 echo "  - Bash scripts: 2 files validated"
 echo "  - Python script: 1 file validated"
 echo "  - JSON config: 1 file validated"
+echo "  - v1.1.1 regression checks: 6 passed"
 echo ""
 echo "📊 Test Result: ALL PASSED"
 echo ""

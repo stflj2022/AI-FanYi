@@ -395,5 +395,12 @@ rm -f driver.sh watchdog.sh orchestrator.py
 
 ---
 
-**Version**: 1.0.0
+**Version**: 1.1.1
 **Last Updated**: 2026-08-23
+
+### v1.1.1 (post code-review fixes)
+
+**Security/robustness fixes** (verified by v1.1.1 regression checks in `test-skill.sh`):
+- `validate_path` / `validate_ai_command` now called at driver startup (were dead code in v1.1 → injection/path-traversal guards were not active).
+- `config.json` read at runtime by driver & watchdog (was never consumed).
+- Fixed `git status --porcelain`, `$REPOPO` typo, `get_file_age` returning age, `set -e`+ERR-trap killing driver, `((errors++))` abort, watchdog `{{PROJECT_NAME}}` render, python version check.

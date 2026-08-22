@@ -29,7 +29,7 @@ validate_environment() {
     for cmd in "${required_commands[@]}"; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             log_error "Required command not found: $cmd"
-            ((errors++))
+            errors=$((errors + 1))
         fi
     done
 
@@ -43,11 +43,11 @@ validate_environment() {
 
     # Check Python version (if needed)
     if command -v python3 >/dev/null 2>&1; then
-        py_version=$(python3 --version 2>&1 | awk '{print $2}' | cut -d'.' -f1,2)
+        py_version=$(python3 --version 2>&1 | awk '{print $2}')
+        py_major=$(printf '%s' "$py_version" | cut -d'.' -f1)
         log_info "Python version: $py_version"
-        
-        if [ "$(echo "$py_version | cut -d'.' -f1,2)" -lt 3 ]; then
-            log_warn "Python 3.11+ recommended, found: $py_version"
+        if [ -n "$py_major" ] && [ "$py_major" -lt 3 ] 2>/dev/null; then
+            log_warn "Python 3+ recommended, found: $py_version"
         fi
     fi
 
@@ -70,7 +70,7 @@ validate_environment() {
     # Check pi CLI
     if ! command -v pi >/dev/null 2>&1; then
         log_error "pi CLI not found. Install from: https://github.com/earendil-works/pi-coding-agent"
-        ((errors++))
+        errors=$((errors + 1))
     fi
 
     if [ $errors -gt 0 ]; then
@@ -215,12 +215,13 @@ generate_templates() {
         -e "s|{{STUCK_THRESHOLD_MINUTES}}|45|g" \
         templates/driver.sh.template > driver.sh
     
-    # Generate watchdog.sh
+    # Generate watchdog.sh (H2 fix: PROJECT_NAME must be substituted here)
     sed \
         -e "s|{{PROJECT_ROOT}}|$project_root|g" \
         -e "s|{{SESSION_NAME}}|dev-driver|g" \
         -e "s|{{STUCK_THRESHOLD_MINUTES}}|45|g" \
         -e "s|{{AI_PATTERN}}|pi.*provider.*model|g" \
+        -e "s|{{PROJECT_NAME}}|$project_name|g" \
         templates/watchdog.sh.template > watchdog.sh
     
     # Generate orchestrator.py
