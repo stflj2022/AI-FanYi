@@ -1,0 +1,92 @@
+{
+  "driver": {
+    "providers": ["provider1/model1", "provider2/model2"],
+    "check_interval": 300,
+    "timeout": 7200,
+    "zero_output_fuse": 900,
+    "test_timeout": 600,
+    "max_retries": 3,
+    "retry_delay": 60,
+    "dry_run": false
+  },
+  "watchdog": {
+    "check_interval_minutes": 10,
+    "stuck_threshold_minutes": 45,
+    "health_check_interval": 300,
+    "max_restarts": 10,
+    "restart_delay": 60,
+    "log_retention_days": 7
+  },
+  "testing": {
+    "commands": [
+      {
+        "name": "unit",
+        "command": "pytest tests/ -q"
+      },
+      {
+        "name": "integration",
+        "command": "pytest tests/integration/ -q"
+      },
+      {
+        "name": "coverage",
+        "command": "pytest tests/ -v --cov=src --cov-report=html"
+      }
+    ],
+    "auto_commit": true,
+    "continue_on_failure": false,
+    "max_consecutive_failures": 3
+  },
+  "git": {
+    "auto_push": true,
+    "commit_message_format": "chore(driver): {message}",
+    "push_on": ["task_complete", "error", "ALL_DONE"],
+    "push_on_verbosity": ["errors"],
+    "max_retries": 3,
+    "retry_delay": 60
+  },
+  "notification": {
+    "enabled": false,
+    "channels": [
+      {
+        "type": "slack",
+        "webhook": "https://hooks.slack.com/services/...",
+        "on_events": ["task_complete", "error", "ALL_DONE", "quota_limit"]
+      },
+      {
+        "type": "discord",
+        "webhook": "https://discord.com/api/webhooks/...",
+        "on_events": ["error", "quota_limit"]
+      },
+      {
+        "type": "email",
+        "to": "team@example.com",
+        "on_events": ["task_complete", "ALL_DONE"]
+      }
+    ],
+    "max_retries": 3,
+    "retry_delay": 300,
+    "timeout": 10
+  },
+  "project": {
+    "name": "{{PROJECT_NAME}}",
+    "language": "{{LANGUAGE}}",
+    "framework": "{{FRAMEWORK}}",
+    "root": "{{PROJECT_ROOT}}"
+  },
+  "recovery": {
+    "auto_save_on": ["quota_limit", "context_overflow", "error"],
+    "max_retries": 3,
+    "retry_delay": 300,
+    "manual_recovery": true
+  },
+  "advanced": {
+    "log_rotation": true,
+    "log_max_size_mb": 100,
+    "checkpoint_retention": 10,
+    "parallel_tasks": false
+  },
+  "development": {
+    "debug": false,
+    "verbose": false
+  }
+}
