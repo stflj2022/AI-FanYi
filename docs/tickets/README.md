@@ -111,12 +111,12 @@
 
 全部 15 张工单复验通过：真实业务逻辑 + 测试 + 全量 pytest 绿后标记 done
 
-## 阶段3：qwen-tts 集成（进行中）
+## 阶段3：qwen-tts 集成（已完成）
 
 - Ticket 016: Adapter 层实现（已完成）
-- Ticket 016: Adapter 层集成到各模块（待处理）
-- Ticket 017: qwen-tts Service 健康检查（待处理）
-- Ticket 018: 短视频端到端测试（待处理）
+- Ticket 016: Adapter 层集成到各模块（已完成）
+- Ticket 017: qwen-tts Service 健康检查（已完成）
+- Ticket 018: 短视频端到端测试（已完成）
 
 ## 备注
 
