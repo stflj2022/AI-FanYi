@@ -1,0 +1,1389 @@
+06
+
+# **MODULE 06 -- Speaker → Character → Voice Identity**
+
+**唯一目标：**
+    
+    
+    SPEAKER_00
+          ↓
+    Walter White
+          ↓
+    Verified Voice Profile
+
+把 MODULE 05 得到的匿名 `SPEAKER_XX`，可靠地绑定到 MODULE 04 的人物数据库。
+
+**本模块不做：**
+    
+    
+    × 翻译
+    × TTS
+    × 声音克隆
+    × 最终视频合成
+
+* * *
+
+# **06.0 总体架构**
+    
+    
+    MODULE 04
+    Character Database
+            │
+            ├── 人物
+            ├── 演员
+            ├── 别名
+            ├── 场景
+            ├── 对白
+            └── 人物关系
+                    │
+                    ▼
+    MODULE 05
+    Audio Analysis
+            │
+            ├── Speaker_00
+            ├── Speaker_01
+            ├── Voice Samples
+            ├── Dialogue Alignment
+            └── Speaker Candidates
+                    │
+                    ▼
+            MODULE 06
+                    │
+            ├── Voice Embedding
+            ├── Speaker Clustering
+            ├── Cross-Episode Matching
+            ├── Character Evidence Fusion
+            ├── Confidence Scoring
+            ├── Human Review
+            └── Voice Profile
+                    │
+                    ▼
+           VERIFIED CHARACTER VOICE
+
+* * *
+
+# **06.1 最终输出**
+    
+    
+    character_voice_database
+
+例如：
+    
+    
+    Walter White
+    │
+    ├── Character ID
+    │   char_walter
+    │
+    ├── Actor
+    │   Bryan Cranston
+    │
+    ├── Speaker IDs
+    │   SPEAKER_00
+    │   SPEAKER_07
+    │
+    ├── Voice Embedding
+    │   voice_embedding.bin
+    │
+    ├── Reference Samples
+    │   63 high-quality clips
+    │
+    ├── Voice Statistics
+    │   pitch
+    │   speaking rate
+    │   energy
+    │   timbre
+    │
+    └── Confidence
+        0.994
+
+* * *
+
+# **06.2 为什么不能只靠声纹识别**
+
+假设：
+    
+    
+    SPEAKER_00
+
+和：
+    
+    
+    SPEAKER_03
+
+声音非常接近。
+
+单纯声纹模型可能：
+    
+    
+    SPEAKER_00 → Walter 0.71
+    SPEAKER_03 → Walter 0.68
+
+但剧情信息可能明确告诉我们：
+    
+    
+    Scene 08
+    只有 Walter + Jesse
+
+字幕角色归属：
+    
+    
+    该句 = Walter
+
+那么多种证据结合后：
+    
+    
+    SPEAKER_00 → Walter 0.97
+
+因此 MODULE 06 采用：
+
+**多证据融合，而不是单一 Speaker Recognition。**
+
+* * *
+
+# **06.3 五种证据**
+    
+    
+                    Speaker → Character
+                             │
+           ┌─────────┬───────┼───────┬─────────┐
+           ▼         ▼       ▼       ▼         ▼
+        声纹      字幕      场景    对白      时间连续性
+        45%       20%      15%      10%         10%
+
+第一版权重：
+    
+    
+    Voice Embedding       45%
+    Dialogue Attribution  20%
+    Scene Candidates      15%
+    Dialogue Context      10%
+    Temporal Consistency  10%
+
+实际运行后允许调整。
+
+* * *
+
+# **06.4 06.01 Voice Embedding**
+
+首先为每一个：
+    
+    
+    SPEAKER_XX
+
+生成 speaker embedding。
+
+输入：
+    
+    
+    voice_samples/
+
+例如：
+    
+    
+    SPEAKER_00
+    ├── sample_001.wav
+    ├── sample_002.wav
+    ├── sample_003.wav
+    ...
+
+生成：
+    
+    
+    speaker_00_embedding.npy
+
+* * *
+
+# **06.5 Speaker Embedding 模型**
+
+第一版：
+    
+    
+    pyannote.audio
+
+或者采用专门的：
+    
+    
+    ECAPA-TDNN
+
+作为 Speaker Verification。
+
+工程接口不要写死具体模型：
+    
+    
+    class SpeakerEmbeddingModel:
+    
+        def embed(self, audio):
+            ...
+    
+        def similarity(self, emb1, emb2):
+            ...
+
+这样以后可以替换成更先进的模型。
+
+* * *
+
+# **06.6 一个 Speaker 不应该只有一个 Embedding**
+
+错误：
+    
+    
+    SPEAKER_00
+    → embedding
+
+正确：
+    
+    
+    SPEAKER_00
+    │
+    ├── sample embeddings
+    │
+    ├── neutral centroid
+    ├── emotional centroid
+    └── global centroid
+
+例如：
+    
+    
+    neutral
+       ↓
+    E1 E2 E3 E4
+    
+    angry
+       ↓
+    E5 E6 E7
+    
+    global
+       ↓
+    E1...E7
+
+* * *
+
+# **06.7 为什么需要多个 Embedding**
+
+演员可能：
+    
+    
+    平静
+    低声
+    愤怒
+    大喊
+    哭泣
+
+声音特征会变化。
+
+如果只取一次：
+    
+    
+    Walter angry
+
+作为人物声音：
+    
+    
+    → 平静对白可能误判
+
+所以：
+
+**Character Voice 是一个分布，而不是一个向量。**
+
+* * *
+
+# **06.8 06.02 Speaker Clustering**
+
+MODULE 05 的：
+    
+    
+    SPEAKER_00
+    SPEAKER_01
+    ...
+
+通常只在单集内部有意义。
+
+下一集可能：
+    
+    
+    SPEAKER_00
+    SPEAKER_01
+
+完全是另一批编号。
+
+因此建立：
+    
+    
+    Episode Speaker
+            ↓
+    Global Speaker
+
+例如：
+    
+    
+    S01E01:SPEAKER_00
+            │
+            ├─────────┐
+            ▼         ▼
+    S01E02:SPEAKER_03
+                      │
+                      ▼
+              GLOBAL_SPEAKER_01
+
+* * *
+
+# **06.9 Global Speaker**
+
+建立：
+    
+    
+    global_speaker_id
+
+例如：
+    
+    
+    voice_0001
+
+对应：
+    
+    
+    S01E01 SPEAKER_00
+    S01E02 SPEAKER_02
+    S01E03 SPEAKER_01
+    S01E04 SPEAKER_05
+
+这一步极其重要。
+
+因为你最终要处理的是：
+
+**整部美剧**
+
+而不是单集。
+
+* * *
+
+# **06.10 Cross-Episode Speaker Matching**
+
+两个 Speaker：
+    
+    
+    S01E01:SPEAKER_00
+
+和：
+    
+    
+    S01E02:SPEAKER_03
+
+计算：
+    
+    
+    cosine similarity
+
+例如：
+    
+    
+    0.94
+
+再结合：
+    
+    
+    场景
+    人物
+    对白
+
+得到：
+    
+    
+    GLOBAL_SPEAKER_01
+
+* * *
+
+# **06.11 不要设置一个绝对阈值**
+
+不要简单：
+    
+    
+    similarity > 0.80
+    = same speaker
+
+应该：
+    
+    
+    similarity
+    +
+    quality
+    +
+    duration
+    +
+    episode context
+
+共同判断。
+
+例如：
+    
+    
+    0.91 + 高质量 + 30秒
+
+可信度可能高于：
+    
+    
+    0.96 + 噪声 + 1秒
+* * *
+
+# **06.12 Voice Sample Quality Weight**
+
+每个 embedding 都携带：
+    
+    
+    quality_score
+
+例如：
+    
+    
+    {
+      "embedding": "...",
+      "quality": 0.94,
+      "duration": 7.2
+    }
+
+计算 centroid 时：
+    
+    
+    高质量样本
+          ↓
+    更高权重
+
+* * *
+
+# **06.13 06.03 Character Candidate Filtering**
+
+从 MODULE 05 得到：
+    
+    
+    SPEAKER_00
+    
+    Walter 0.86
+    Jesse  0.12
+    Hank   0.02
+
+先进行候选过滤。
+
+如果 Scene 里只有：
+    
+    
+    Walter
+    Jesse
+
+直接删除：
+    
+    
+    Hank
+
+得到：
+    
+    
+    Walter
+    Jesse
+
+* * *
+
+# **06.14 Candidate Matrix**
+
+建立：
+    
+    
+                   Walter  Jesse  Hank
+    Speaker_00       .86    .12    .02
+    Speaker_01       .03    .91    .06
+    Speaker_02       .01    .04    .95
+
+再加入：
+    
+    
+    voice similarity
+
+例如：
+    
+    
+                   Walter  Jesse  Hank
+    Speaker_00       .94    .21    .12
+    Speaker_01       .18    .92    .27
+    Speaker_02       .14    .23    .96
+
+最终融合。
+
+* * *
+
+# **06.15 06.04 Voice Evidence**
+
+如果人物数据库已经知道：
+    
+    
+    Walter
+    演员 Bryan Cranston
+
+而视频中的：
+    
+    
+    SPEAKER_00
+
+声音与该角色的大量已确认片段高度一致：
+    
+    
+    similarity = 0.93
+
+则：
+    
+    
+    voice_score = 0.93
+
+* * *
+
+# **06.16 但是不要把"演员声音"当绝对真值**
+
+原因：
+    
+    
+    角色声音
+    ≠
+    演员所有声音
+
+演员可能：
+    
+    
+    改变声线
+    方言
+    年龄
+    模仿
+    耳语
+    喊叫
+    电话滤波
+
+所以演员资料只是：
+    
+    
+    weak prior
+
+不是最终判定。
+
+* * *
+
+# **06.17 06.05 Dialogue Evidence**
+
+假设字幕/剧本给出：
+    
+    
+    Walter:
+    What are you doing?
+
+而音频：
+    
+    
+    SPEAKER_00
+
+则：
+    
+    
+    dialogue attribution:
+    Walter = 0.99
+
+如果有 50 句：
+    
+    
+    Walter = 48
+    Jesse = 2
+
+证据非常强。
+
+* * *
+
+# **06.18 反向约束**
+
+这是非常关键的：
+
+不仅：
+    
+    
+    Speaker → Character
+
+还要：
+    
+    
+    Character → Speaker
+
+例如：
+    
+    
+    Walter
+
+已经有：
+    
+    
+    SPEAKER_00
+
+那么另一段：
+    
+    
+    SPEAKER_05
+
+不应该轻易再次被认成 Walter。
+
+除非：
+    
+    
+    不同时间
+    不同声线
+    电话
+    录像
+    年轻时期
+
+* * *
+
+# **06.19 One Character → Multiple Speaker**
+
+数据库允许：
+    
+    
+    Walter
+    │
+    ├── voice_0001
+    └── voice_0014
+
+但系统标记：
+    
+    
+    primary
+    secondary
+    special
+
+例如：
+    
+    
+    {
+      "character_id": "char_walter",
+    
+      "voices": [
+        {
+          "global_speaker_id": "voice_0001",
+          "role": "primary"
+        },
+        {
+          "global_speaker_id": "voice_0014",
+          "role": "special"
+        }
+      ]
+    }
+
+* * *
+
+# **06.20 06.06 Confidence Fusion**
+
+最终评分：
+    
+    
+    Final Score =
+    0.45 × Voice
+    +
+    0.20 × Dialogue
+    +
+    0.15 × Scene
+    +
+    0.10 × Context
+    +
+    0.10 × Temporal
+
+例如：
+    
+    
+    Voice       0.96
+    Dialogue    0.99
+    Scene       1.00
+    Context     0.93
+    Temporal    0.97
+
+得到：
+    
+    
+    Final = 0.969
+
+* * *
+
+# **06.21 三档状态**
+    
+    
+    ≥ 0.90
+    VERIFIED
+    
+    0.70--0.90
+    REVIEW
+    
+    < 0.70
+    UNRESOLVED
+
+**不要强行识别低置信度 Speaker。**
+
+* * *
+
+# **06.22 Human Review**
+
+浏览器：
+    
+    
+    ⑥ Speaker → Character
+
+显示：
+    
+    
+    ┌───────────────────────────────────────┐
+    │ SPEAKER_00                            │
+    │                                       │
+    │ 最可能：Walter White                  │
+    │                                       │
+    │ Voice similarity       96%            │
+    │ Dialogue evidence      99%            │
+    │ Scene evidence        100%            │
+    │ Overall                97%            │
+    │                                       │
+    │ [▶ 播放声音]                          │
+    │                                       │
+    │ 候选：                                │
+    │                                       │
+    │ ● Walter White     97%                │
+    │ ○ Jesse Pinkman     3%                │
+    │                                       │
+    │ [确认] [修改] [标记不确定]            │
+    └───────────────────────────────────────┘
+
+* * *
+
+# **06.23 人工确认非常重要**
+
+对于一整部剧：
+    
+    
+    主要人物
+
+通常只需要人工确认：
+    
+    
+    10～30 个核心 Speaker
+
+一旦确认：
+    
+    
+    Walter → voice_0001
+    Jesse  → voice_0002
+    Hank   → voice_0003
+
+后面的自动识别会越来越可靠。
+
+* * *
+
+# **06.24 Active Learning**
+
+人工确认后：
+    
+    
+    Walter → voice_0001
+
+系统立即更新：
+    
+    
+    Walter Voice Profile
+
+重新检查：
+    
+    
+    S01E01
+    S01E02
+    S01E03
+    ...
+
+原来：
+    
+    
+    UNRESOLVED
+
+可能自动变成：
+    
+    
+    VERIFIED
+
+因此：
+
+**人工不是每个对白都确认，而是确认少量高价值样本，让系统扩散。**
+
+* * *
+
+# **06.25 06.07 Voice Profile**
+
+确定后建立：
+    
+    
+    voice_profiles/
+    └── char_walter/
+        ├── profile.json
+        ├── embedding.npy
+        ├── neutral/
+        ├── emotional/
+        └── reference/
+
+* * *
+
+# **06.26 Voice Profile 数据结构**
+    
+    
+    {
+      "character_id": "char_walter",
+    
+      "global_speaker_ids": [
+        "voice_0001"
+      ],
+    
+      "embedding": {
+        "path": "embedding.npy",
+        "model": "ecapa",
+        "version": "v1"
+      },
+    
+      "reference_samples": [
+        "sample_001.wav",
+        "sample_014.wav",
+        "sample_037.wav"
+      ],
+    
+      "voice_statistics": {
+        "pitch_mean": 118.2,
+        "pitch_std": 22.4,
+        "speech_rate": 3.81
+      },
+    
+      "confidence": 0.994,
+    
+      "status": "VERIFIED"
+    }
+
+* * *
+
+# **06.27 06.08 Voice Reference Selection**
+
+不是：
+    
+    
+    随机取一段声音
+
+而是：
+    
+    
+    Quality
+    +
+    Duration
+    +
+    Noise
+    +
+    Speaker purity
+    +
+    Emotion
+    +
+    Phonetic diversity
+
+综合选择。
+
+例如：
+    
+    
+    最佳 reference
+    10 × 3--8 sec
+
+而不是：
+    
+    
+    1 × 60 sec
+
+* * *
+
+# **06.28 Reference Audio 两种集合**
+
+建立：
+    
+    
+    GLOBAL_REFERENCE
+
+用于：
+    
+    
+    保持人物音色
+
+以及：
+    
+    
+    EMOTION_REFERENCE
+
+用于：
+    
+    
+    控制情绪
+
+例如：
+    
+    
+    Walter
+    │
+    ├── global
+    │
+    ├── neutral
+    ├── angry
+    ├── sad
+    └── excited
+
+* * *
+
+# **06.29 06.09 Character Voice Lock**
+
+最终给每个主要人物建立：
+    
+    
+    VOICE LOCK
+
+例如：
+    
+    
+    {
+      "character_id": "char_walter",
+    
+      "voice_lock": {
+        "enabled": true,
+    
+        "primary_voice": "voice_0001",
+    
+        "embedding": "embedding.npy",
+    
+        "reference_policy": "top_quality_diverse",
+    
+        "emotion_reference": true
+      }
+    }
+
+后面的 TTS 模块：
+    
+    
+    MODULE 09
+
+不得随意改变。
+
+* * *
+
+# **06.30 Voice Lock 的意义**
+
+否则可能发生：
+    
+    
+    第1集 Walter
+    → 声音 A
+    
+    第2集 Walter
+    → 声音 B
+    
+    第3集 Walter
+    → 声音 C
+
+虽然每集都"像"。
+
+但父母连续观看时会非常明显地觉得：
+
+不是同一个人。
+
+Voice Lock 保证：
+    
+    
+    整季
+    ↓
+    整部剧
+    ↓
+    同一人物
+    ↓
+    同一核心声音身份
+
+* * *
+
+# **06.31 声音数据库**
+
+最终：
+    
+    
+    character_voice_database
+
+结构：
+    
+    
+    Walter
+    │
+    ├── identity
+    │
+    ├── speaker mapping
+    │
+    ├── voice embedding
+    │
+    ├── reference audio
+    │
+    ├── emotion references
+    │
+    ├── pitch statistics
+    │
+    ├── speech rate
+    │
+    └── confidence
+    
+    Jesse
+    │
+    ├── ...
+    │
+    └── ...
+    
+    Skyler
+    │
+    ├── ...
+    │
+    └── ...
+
+* * *
+
+# **06.32 数据库表**
+
+新增：
+    
+    
+    global_speakers
+    speaker_embeddings
+    speaker_links
+    voice_profiles
+    voice_references
+    voice_emotions
+    speaker_character_candidates
+    voice_verification
+
+核心关系：
+    
+    
+    characters
+         │
+         │ 1:N
+         ▼
+    voice_profiles
+         │
+         │ 1:N
+         ▼
+    global_speakers
+         │
+         │ 1:N
+         ▼
+    speaker_segments
+
+* * *
+
+# **06.33 失败处理**
+
+### **声音太短**
+    
+    
+    < 2 sec
+
+标记：
+    
+    
+    INSUFFICIENT_AUDIO
+
+不强行建立声纹。
+
+* * *
+
+### **多人同时说话**
+    
+    
+    OVERLAP
+
+标记：
+    
+    
+    LOW_CONFIDENCE
+
+不作为主要 reference。
+
+* * *
+
+### **电话声音**
+    
+    
+    TELEPHONE_FILTER
+
+单独：
+    
+    
+    special_reference
+
+不污染 primary voice。
+
+* * *
+
+### **唱歌**
+    
+    
+    SINGING
+
+不用于普通 speech voice profile。
+
+* * *
+
+### **背景音乐严重**
+    
+    
+    LOW_AUDIO_QUALITY
+
+不进入核心 reference。
+
+* * *
+
+# **06.34 处理失败的隔离**
+
+例如：
+    
+    
+    Speaker_07
+
+无法识别：
+    
+    
+    status = UNRESOLVED
+
+整个 MODULE 06：
+    
+    
+    仍然 SUCCESS_WITH_WARNINGS
+
+而不是：
+    
+    
+    MODULE FAILED
+
+后面 MODULE 09 可以暂时跳过这个人物。
+
+* * *
+
+# **06.35 GPU 生命周期**
+    
+    
+    06.01 Embedding
+        ↓
+    load model
+        ↓
+    process
+        ↓
+    save
+        ↓
+    unload
+    
+    06.02 Clustering
+        ↓
+    CPU
+        ↓
+    release
+    
+    06.03 Candidate Fusion
+        ↓
+    CPU
+        ↓
+    release
+    
+    06.04 Verification
+        ↓
+    GPU optional
+        ↓
+    release
+
+**绝不让所有模型同时占用 GPU。**
+
+* * *
+
+# **06.36 缓存**
+
+每一个 Speaker：
+    
+    
+    speaker_audio_hash
+
+每一个 embedding：
+    
+    
+    model_name
+    model_version
+    audio_hash
+
+例如：
+    
+    
+    {
+      "audio_hash": "abc123",
+      "model": "ecapa",
+      "model_version": "1.0",
+      "embedding_hash": "efg456"
+    }
+
+模型升级：
+    
+    
+    ECAPA v1
+    ↓
+    ECAPA v2
+
+只重新生成 embedding。
+
+无需重新做：
+    
+    
+    Scene
+    VAD
+    Diarization
+    Subtitle Alignment
+
+* * *
+
+# **06.37 浏览器页面完整流程**
+    
+    
+    ⑥ 人物声音识别
+    
+    ┌──────────────────────────────────────────┐
+    │ Speakers                                 │
+    ├──────────────────────────────────────────┤
+    │                                          │
+    │ SPEAKER_00                               │
+    │ 31m 20s                                  │
+    │                                          │
+    │ → Walter White       97.2% ✓             │
+    │ → Jesse Pinkman       2.1%               │
+    │                                          │
+    │ [▶声音] [确认]                           │
+    │                                          │
+    ├──────────────────────────────────────────┤
+    │ SPEAKER_01                               │
+    │ 8m 12s                                   │
+    │                                          │
+    │ → Jesse Pinkman      98.1% ✓             │
+    │                                          │
+    ├──────────────────────────────────────────┤
+    │ SPEAKER_02                               │
+    │ 5m 21s                                   │
+    │                                          │
+    │ → Hank Schrader      94.7% ✓             │
+    │                                          │
+    ├──────────────────────────────────────────┤
+    │ Unresolved                               │
+    │ 3 Speakers                               │
+    │                                          │
+    │ [重新分析] [人工确认]                    │
+    └──────────────────────────────────────────┘
+
+* * *
+
+# **06.38 MODULE 06 最终验收标准**
+
+必须达到：
+    
+    
+    ✓ Speaker 全局统一
+    ✓ 跨集 Speaker Matching
+    ✓ Speaker Embedding
+    ✓ 高质量 Voice Sample
+    ✓ Dialogue → Speaker
+    ✓ Speaker → Character Candidate
+    ✓ Character → Speaker Candidate
+    ✓ 多证据融合
+    ✓ Confidence
+    ✓ Human Review
+    ✓ Voice Profile
+    ✓ Voice Reference
+    ✓ Emotion Reference
+    ✓ Voice Lock
+    ✓ 失败隔离
+    ✓ 可增量更新
+    ✓ 可重新计算
+    ✓ 可回滚
+
+* * *
+
+# **06.39 最终输出**
+    
+    
+    MODULE 06
+    │
+    ├── global_speaker_database
+    │
+    ├── character_voice_database
+    │
+    ├── verified_voice_profiles
+    │
+    ├── voice_reference_audio
+    │
+    ├── speaker_character_mapping
+    │
+    └── voice_identity_manifest.json
+
+最终得到：
+    
+    
+    Walter White
+          ↓
+    voice_0001
+          ↓
+    Verified
+          ↓
+    reference_voice_walter.wav
+          ↓
+    Voice Lock
+    
+    
+    Jesse Pinkman
+          ↓
+    voice_0002
+          ↓
+    Verified
+          ↓
+    reference_voice_jesse.wav
+          ↓
+    Voice Lock
+
+* * *
+
+# **06.40 下一模块**
+    
+    
+    MODULE 07
+    Subtitle / Dialogue Intelligence
+
+它开始处理真正决定**"父母听起来是否像人在说中文"**的部分：
+    
+    
+    原始英文字幕
+          ↓
+    人物身份
+          ↓
+    人物说话习惯
+          ↓
+    前后剧情
+          ↓
+    场景
+          ↓
+    人物关系
+          ↓
+    情绪
+          ↓
+    中文台词
+
+并建立：
+    
+    
+    Translation Memory
+    +
+    Character-specific Translation Style
+    +
+    Scene Context
+    +
+    Terminology Database
+
+也就是说，**MODULE 07 才正式开始"把《绝命毒师》的英文对白变成适合中文配音的中文对白"**；如果已有高质量中文字幕，则优先把现成中文字幕作为 Translation Candidate，而不是让 Qwen 从零翻译。

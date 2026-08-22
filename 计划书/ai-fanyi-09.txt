@@ -1,0 +1,1891 @@
+09
+
+# **MODULE 09 -- Voice Synthesis**
+
+## **09.00 模块定位**
+
+这一模块才真正把：
+    
+    
+    MODULE 08
+    中文台词
+    +
+    人物身份
+    +
+    人物音色
+    +
+    情绪
+    +
+    语速
+    +
+    停顿
+    +
+    重音
+    +
+    目标时长
+
+变成：
+    
+    
+    中文人物配音 WAV
+
+核心原则：
+
+**MODULE 09 不负责判断"该说什么"，只负责把已经决定好的内容"演出来"。**
+
+这样以后换 TTS 模型，不会影响前面 01--08。
+
+* * *
+
+# **09.01 总体架构**
+    
+    
+                        MODULE 08
+                            │
+                     PerformancePlan
+                            │
+                            ▼
+                  ┌─────────────────┐
+                  │ 09.01 TTS Router│
+                  └────────┬────────┘
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+           TTS Engine A  TTS Engine B  TTS Engine C
+              │            │            │
+              └────────────┼────────────┘
+                           ▼
+                    Voice Post Process
+                           │
+                           ▼
+                     Duration Check
+                           │
+                  ┌────────┴────────┐
+                  │                 │
+                PASS              FAIL
+                  │                 │
+                  ▼                 ▼
+               WAV输出           Retry/Repair
+
+* * *
+
+# **09.02 第一原则：不要把系统锁死在某一个 TTS**
+
+你最终很可能会发现：
+    
+    
+    模型 A
+    声音最像
+
+但是：
+    
+    
+    模型 B
+    中文最自然
+
+而：
+    
+    
+    模型 C
+    情绪控制最好
+
+因此工程上必须做：
+    
+    
+    TTS Adapter Interface
+
+而不是直接把某个模型写死。
+
+* * *
+
+# **09.03 推荐的第一版 TTS 技术路线**
+
+当前工程设计采用：
+
+### **主引擎**
+
+**CosyVoice 系列**
+
+负责：
+    
+    
+    中文
+    多语言
+    声音克隆
+    自然度
+    说话风格
+
+### **第二引擎**
+
+**F5-TTS 系列**
+
+用于：
+    
+    
+    声音相似度
+    韵律
+    特定人物测试
+
+### **第三引擎**
+
+**IndexTTS 系列**
+
+用于：
+    
+    
+    中文表现
+    音色保持
+    时长控制
+
+最终不是预先决定谁永远第一。
+
+而是：
+    
+    
+    Voice Benchmark
+
+针对《绝命毒师》第一集实际测试。
+
+* * *
+
+# **09.04 为什么不直接选择一个模型**
+
+因为你的目标不是：
+
+做一个 TTS Demo。
+
+而是：
+
+**把一整部电视剧变成中文配音版。**
+
+长期运行会遇到：
+    
+    
+    短句
+    长句
+    喊叫
+    耳语
+    哭泣
+    多人对话
+    快速对白
+    低声说话
+    情绪变化
+    背景噪音
+
+一个模型很难全部最好。
+
+所以：
+    
+    
+    TTS Router
+
+是长期工程设计。
+
+* * *
+
+# **09.05 09.01 Voice Profile**
+
+每个人物建立独立：
+    
+    
+    voice_profile
+
+例如：
+    
+    
+    voices/
+    ├── walter/
+    │   ├── voice_profile.json
+    │   ├── reference_01.wav
+    │   ├── reference_02.wav
+    │   └── reference_03.wav
+    │
+    ├── jesse/
+    │   ├── voice_profile.json
+    │   └── ...
+    │
+    ├── skyler/
+    └── hank/
+
+* * *
+
+# **09.06 Voice Profile 不是一段参考音频**
+
+这是非常重要的区别。
+
+不要：
+    
+    
+    Walter = walter.wav
+
+而是：
+    
+    
+    {
+      "character_id": "char_walter",
+    
+      "engine": "cosyvoice",
+    
+      "references": [
+        "walter_ref_001.wav",
+        "walter_ref_002.wav",
+        "walter_ref_003.wav"
+      ],
+    
+      "voice_embedding": "...",
+    
+      "baseline_pitch": 112,
+    
+      "baseline_energy": 0.61,
+    
+      "baseline_rate": 0.94
+    }
+
+* * *
+
+# **09.07 参考音频选择**
+
+不是随便截一段 Walter 的声音。
+
+理想参考：
+    
+    
+    清晰
+    单人
+    无背景音乐
+    无枪声
+    无多人重叠
+    无明显混响
+    3--15 秒
+
+多个参考片段优于单片段。
+
+* * *
+
+# **09.08 自动挑选 Reference**
+
+MODULE 05 已经分离出：
+    
+    
+    speaker audio
+
+因此可以自动筛：
+    
+    
+    Walter
+       ↓
+    所有 Walter 单人语音
+       ↓
+    质量评分
+       ↓
+    Top N
+       ↓
+    Voice Reference Set
+
+* * *
+
+# **09.09 Voice Reference Quality Score**
+
+例如：
+    
+    
+    clarity          0.96
+    speaker_purity   0.99
+    noise            0.91
+    duration         0.94
+    emotion_stability 0.83
+
+最终：
+    
+    
+    0.93
+
+* * *
+
+# **09.10 为什么不能全部用情绪激烈的声音做 Voice Reference**
+
+例如 Walter：
+    
+    
+    AAAAAA!
+
+虽然声音特征明显。
+
+但如果拿它作为唯一参考：
+    
+    
+    Voice Clone
+
+容易把：
+    
+    
+    愤怒
+
+也学进：
+    
+    
+    声音身份
+
+结果：
+
+Walter 平静说话也像在吼。
+
+因此：
+    
+    
+    Voice Identity
+
+和：
+    
+    
+    Performance
+
+必须分开。
+
+* * *
+
+# **09.11 Reference 分两类**
+
+### **Identity Reference**
+
+用于：
+    
+    
+    音色
+    年龄
+    声道
+    基本音质
+
+### **Performance Reference**
+
+用于：
+    
+    
+    愤怒
+    哭泣
+    喊叫
+    耳语
+
+* * *
+
+# **09.12 Voice Bank**
+
+最终：
+    
+    
+    voice_bank/
+    │
+    ├── walter/
+    │   ├── identity/
+    │   ├── angry/
+    │   ├── calm/
+    │   └── whisper/
+    │
+    ├── jesse/
+    │   ├── identity/
+    │   ├── angry/
+    │   └── excited/
+
+这样 MODULE 09 可以根据：
+    
+    
+    PerformancePlan
+
+选择参考。
+
+* * *
+
+# **09.13 09.02 Voice Router**
+
+Router 接收：
+    
+    
+    {
+      "character": "Walter",
+      "emotion": "angry",
+      "duration": 2.74,
+      "text": "你到底在干什么？"
+    }
+
+然后选择：
+    
+    
+    TTS Engine
+    +
+    Voice Reference
+    +
+    Parameters
+
+* * *
+
+# **09.14 Router 不是简单 if/else**
+
+建立：
+    
+    
+    TTS Capability Matrix
+
+例如：
+
+| 
+
+**能力**
+
+ | 
+
+**CosyVoice**
+
+ | 
+
+**F5-TTS**
+
+ | 
+
+**IndexTTS**
+
+ | 
+| ---- | ---- | ---- | ----  |
+| 
+
+中文
+
+ | 
+
+★★★★★
+
+ | 
+
+★★★★
+
+ | 
+
+★★★★★
+
+ | 
+| 
+
+音色克隆
+
+ | 
+
+★★★★★
+
+ | 
+
+★★★★★
+
+ | 
+
+★★★★
+
+ | 
+| 
+
+情绪
+
+ | 
+
+★★★★
+
+ | 
+
+★★★★★
+
+ | 
+
+★★★★
+
+ | 
+| 
+
+时长控制
+
+ | 
+
+★★★★
+
+ | 
+
+★★★
+
+ | 
+
+★★★★★
+
+ | 
+| 
+
+长对白
+
+ | 
+
+★★★★
+
+ | 
+
+★★★
+
+ | 
+
+★★★★
+
+ | 
+| 
+
+稳定性
+
+ | 
+
+★★★★★
+
+ | 
+
+★★★★
+
+ | 
+
+★★★★
+
+ | 
+
+**实际分数在 MODULE 09 Benchmark 后确定。**
+
+* * *
+
+# **09.15 09.03 TTS Adapter**
+
+统一接口：
+    
+    
+    class TTSEngine:
+    
+        def load(self):
+            pass
+    
+        def synthesize(
+            self,
+            text,
+            voice,
+            performance
+        ):
+            pass
+    
+        def unload(self):
+            pass
+
+每个模型：
+    
+    
+    cosyvoice_adapter.py
+    f5tts_adapter.py
+    indextts_adapter.py
+
+* * *
+
+# **09.16 这样以后换模型非常容易**
+
+例如未来出现：
+    
+    
+    NewBestTTS
+
+只增加：
+    
+    
+    newbest_adapter.py
+
+前面的：
+    
+    
+    MODULE 01--08
+
+全部不动。
+
+* * *
+
+# **09.17 09.04 单句生成**
+
+输入：
+    
+    
+    "你到底在干什么？"
+
+参数：
+    
+    
+    Walter Voice
+    Angry 72%
+    Rate 1.04
+    Energy 82%
+    Target 2.74 sec
+
+生成：
+    
+    
+    dlg_001_v001.wav
+
+* * *
+
+# **09.18 不覆盖原文件**
+
+每一次生成都是一个版本：
+    
+    
+    audio/
+    └── dlg_001/
+        ├── v001.wav
+        ├── v002.wav
+        ├── v003.wav
+        └── final.wav
+
+数据库：
+    
+    
+    {
+      "dialogue_id": "dlg_001",
+      "version": 3,
+      "engine": "cosyvoice",
+      "status": "approved"
+    }
+
+* * *
+
+# **09.19 09.05 生成流程**
+    
+    
+    Load Model
+        ↓
+    Load Voice Profile
+        ↓
+    Load Performance Plan
+        ↓
+    Synthesize
+        ↓
+    Save WAV
+        ↓
+    Analyze
+        ↓
+    Duration Check
+        ↓
+    Quality Check
+        ↓
+    PASS / RETRY
+        ↓
+    Unload Model
+
+* * *
+
+# **09.20 严格资源释放**
+
+符合你之前确定的工程原则：
+
+**一个功能块完成后释放资源。**
+
+所以：
+    
+    
+    TTS Engine
+     ↓
+    GPU VRAM
+     ↓
+    生成一批
+     ↓
+    保存
+     ↓
+    unload()
+     ↓
+    torch.cuda.empty_cache()
+
+然后才加载下一个模型。
+
+* * *
+
+# **09.21 为什么不是整部剧一次性生成**
+
+错误：
+    
+    
+    加载 TTS
+    ↓
+    连续跑 10 集
+
+问题：
+    
+    
+    显存碎片
+    内存泄漏
+    模型状态污染
+    错误难定位
+
+采用：
+    
+    
+    Episode
+     ↓
+    Scene
+     ↓
+    Dialogue Batch
+     ↓
+    Release
+
+* * *
+
+# **09.22 Batch 的大小**
+
+不是固定：
+    
+    
+    100句
+
+而是根据：
+    
+    
+    VRAM
+    TTS Model
+    Audio Duration
+
+动态决定。
+
+例如：
+    
+    
+    Batch 01
+    20句
+    
+    完成
+    ↓
+    
+    释放中间缓存
+    
+    Batch 02
+    20句
+
+* * *
+
+# **09.23 09.06 Duration Checker**
+
+生成后测：
+    
+    
+    generated_duration
+
+与：
+    
+    
+    target_duration
+
+比较。
+
+例如：
+    
+    
+    Target:    2.74 s
+    Generated: 3.21 s
+
+偏差：
+    
+    
+    +17.2%
+
+进入：
+    
+    
+    REPAIR
+
+* * *
+
+# **09.24 Duration Repair**
+
+第一优先：
+    
+    
+    重新调整 speaking rate
+
+第二：
+    
+    
+    调整 pause
+
+第三：
+    
+    
+    重新生成更短中文
+
+第四：
+    
+    
+    轻微 time-stretch
+
+最后才：
+    
+    
+    人工 Review
+
+* * *
+
+# **09.25 不要过度 time-stretch**
+
+例如：
+    
+    
+    3.2 sec
+
+强行：
+    
+    
+    2.0 sec
+
+声音会明显变形。
+
+建议：
+    
+    
+    ≤ ±8%
+
+尽量通过：
+    
+    
+    TTS重新生成
+
+解决。
+
+* * *
+
+# **09.26 09.07 Audio Quality Check**
+
+检查：
+    
+    
+    clipping
+    noise
+    silence
+    distortion
+    speaker consistency
+    volume
+    duration
+
+例如：
+    
+    
+    {
+      "clipping": false,
+      "noise": 0.02,
+      "duration_error": 0.04,
+      "speaker_similarity": 0.93,
+      "quality": 0.94
+    }
+
+* * *
+
+# **09.27 Speaker Similarity Check**
+
+这是最重要的自动检查之一。
+
+生成：
+    
+    
+    Chinese Walter
+
+再次提取 speaker embedding：
+    
+    
+    generated_embedding
+
+与：
+    
+    
+    Walter reference embedding
+
+比较。
+
+如果：
+    
+    
+    similarity = 0.96
+
+通过。
+
+如果：
+    
+    
+    0.71
+
+标记：
+    
+    
+    VOICE_DRIFT
+
+* * *
+
+# **09.28 Voice Drift**
+
+整部剧几十万字之后，最容易出现：
+    
+    
+    Walter 第1集
+    像 Walter
+    
+    Walter 第6集
+    开始像另一个人
+
+所以必须：
+    
+    
+    每一集
+    每个 Scene
+    定期抽样
+
+检查 Voice Similarity。
+
+* * *
+
+# **09.29 Character Voice Lock**
+
+建立：
+    
+    
+    voice_lock
+
+例如：
+    
+    
+    {
+      "character": "walter",
+    
+      "reference_embedding": "...",
+    
+      "similarity_min": 0.86,
+    
+      "similarity_target": 0.92,
+    
+      "engine": "cosyvoice",
+    
+      "voice_version": "v1"
+    }
+
+* * *
+
+# **09.30 Voice Lock 的意义**
+
+即使以后：
+    
+    
+    TTS模型更新
+
+也不能让：
+    
+    
+    Walter v1
+
+突然变成：
+    
+    
+    Walter v2
+
+除非用户明确：
+    
+    
+    Upgrade Voice
+
+* * *
+
+# **09.31 09.08 Emotion TTS**
+
+这里开始真正执行：
+    
+    
+    PerformancePlan
+
+例如：
+    
+    
+    anger = 0.8
+
+如果 TTS 原生支持：
+    
+    
+    emotion parameter
+
+直接传。
+
+如果不支持：
+    
+    
+    reference performance
+
+辅助。
+
+* * *
+
+# **09.32 不同模型的控制方式**
+
+### **方法 A**
+
+模型原生情绪控制：
+    
+    
+    text
+    +
+    emotion
+
+### **方法 B**
+
+参考音频控制：
+    
+    
+    text
+    +
+    angry reference
+
+### **方法 C**
+
+SSML / markup：
+    
+    
+    <emphasis>
+    <pause>
+
+### **方法 D**
+
+后处理：
+    
+    
+    pitch
+    energy
+    rate
+
+Adapter 自动决定。
+
+* * *
+
+# **09.33 统一 Performance → TTS**
+    
+    
+    PerformancePlan
+           ↓
+    TTS Adapter
+           ↓
+    模型特定参数
+
+例如：
+    
+    
+    anger=0.8
+
+CosyVoice：
+    
+    
+    reference=angry_ref
+
+F5-TTS：
+    
+    
+    reference=angry_ref
+
+IndexTTS：
+    
+    
+    emotion parameters
+
+上层完全不知道区别。
+
+* * *
+
+# **09.34 09.09 多说话人场景**
+
+例如：
+    
+    
+    Walter:
+    Get out!
+    
+    Jesse:
+    What?
+    
+    Walter:
+    NOW!
+
+不能：
+    
+    
+    整个 Scene
+    ↓
+    一次 TTS
+
+而是：
+    
+    
+    dlg_101
+    ↓
+    Walter
+    
+    dlg_102
+    ↓
+    Jesse
+    
+    dlg_103
+    ↓
+    Walter
+
+分别生成。
+
+* * *
+
+# **09.35 为什么必须单句生成**
+
+这样可以：
+    
+    
+    重新生成一句
+
+而不影响：
+    
+    
+    前后 100 句
+
+这完全符合你要求的：
+
+**模块独立、错误隔离。**
+
+* * *
+
+# **09.36 但是单句生成可能缺少连续性**
+
+解决办法：
+    
+    
+    Voice Identity
+    +
+    Performance State
+    +
+    Previous Dialogue Features
+
+例如：
+    
+    
+    Walter上一句：
+    angry 0.62
+    
+    当前：
+    angry 0.71
+    
+    下一句：
+    angry 0.84
+
+形成连续变化。
+
+* * *
+
+# **09.37 09.10 Dialogue Audio Object**
+
+最终：
+    
+    
+    {
+      "dialogue_id": "dlg_001",
+    
+      "audio": {
+        "path": "audio/dlg_001/final.wav",
+        "duration": 2.71,
+        "sample_rate": 48000,
+        "channels": 1
+      },
+    
+      "voice": {
+        "character": "walter",
+        "voice_version": "v1",
+        "similarity": 0.94
+      },
+    
+      "performance": {
+        "emotion": "angry",
+        "intensity": 0.72
+      },
+    
+      "quality": {
+        "score": 0.94
+      },
+    
+      "status": "READY_FOR_MIX"
+    }
+
+* * *
+
+# **09.38 09.11 输出音频规格**
+
+建议内部统一：
+    
+    
+    WAV
+    48 kHz
+    24-bit
+    Mono
+    PCM
+
+不要在 MODULE 09 就压成：
+    
+    
+    MP3
+    AAC
+
+因为后面还有：
+    
+    
+    混音
+    EQ
+    压缩
+    响度
+    环境声
+
+* * *
+
+# **09.39 为什么 Mono**
+
+人物对白本质上：
+    
+    
+    单声道
+
+后面 MODULE 10 再决定：
+    
+    
+    stereo placement
+
+不要在这里提前决定。
+
+* * *
+
+# **09.40 09.12 Dialogue Audio Cache**
+
+生成过的声音绝对不能无条件重复生成。
+
+缓存 key：
+    
+    
+    SHA256(
+        dialogue_text
+        +
+    character_id
+        +
+    voice_version
+        +
+    performance_plan
+        +
+    tts_engine
+        +
+    engine_version
+    )
+
+如果完全一样：
+    
+    
+    直接复用
+
+* * *
+
+# **09.41 这样修改字幕不会浪费资源**
+
+例如：
+    
+    
+    dlg_001
+
+修改成：
+
+你究竟在干什么？
+
+只会重新生成：
+    
+    
+    dlg_001
+
+不会重新生成：
+    
+    
+    dlg_002--dlg_734
+
+* * *
+
+# **09.42 09.13 Human Review**
+
+浏览器：
+    
+    
+    ⑨ 声音生成
+
+显示：
+    
+    
+    ┌──────────────────────────────────────────┐
+    │ Walter -- dlg_001                         │
+    ├──────────────────────────────────────────┤
+    │ 中文：你到底在干什么？                   │
+    │                                          │
+    │ 原演员：       ▶                         │
+    │ AI中文：       ▶                         │
+    │                                          │
+    │ Voice Similarity     94%                 │
+    │ Duration             2.71 / 2.74        │
+    │ Emotion              92%                 │
+    │ Quality              94%                 │
+    │                                          │
+    │ [重新生成] [换参考音] [换TTS] [接受]     │
+    └──────────────────────────────────────────┘
+
+* * *
+
+# **09.43 用户可以单句换模型**
+
+例如：
+    
+    
+    CosyVoice
+
+效果一般。
+
+用户：
+    
+    
+    [换 TTS]
+
+选择：
+    
+    
+    F5-TTS
+
+只重新生成这一句。
+
+* * *
+
+# **09.44 这对整部《绝命毒师》非常重要**
+
+因为你很可能会发现：
+    
+    
+    Walter
+    CosyVoice 最好
+    
+    Jesse
+    F5-TTS 最好
+    
+    Hank
+    IndexTTS 最好
+
+完全允许。
+
+最终：
+    
+    
+    Character
+          ↓
+    Best TTS Engine
+
+而不是：
+    
+    
+    Whole Show
+          ↓
+    One TTS
+
+* * *
+
+# **09.45 09.14 Character-specific Engine Lock**
+
+经过测试后：
+    
+    
+    {
+      "Walter": {
+        "engine": "CosyVoice",
+        "voice_version": "v1"
+      },
+    
+      "Jesse": {
+        "engine": "F5-TTS",
+        "voice_version": "v2"
+      }
+    }
+
+一旦锁定：
+    
+    
+    整部剧保持一致
+
+* * *
+
+# **09.46 09.15 生成顺序**
+
+严格：
+    
+    
+    Project
+     ↓
+    Episode
+     ↓
+    Scene
+     ↓
+    Dialogue
+
+例如：
+    
+    
+    S01E01
+     ├── Scene 001
+     │    ├── dlg001
+     │    ├── dlg002
+     │    └── dlg003
+     │
+     ├── Scene 002
+     │    ├── dlg004
+     │    └── dlg005
+
+* * *
+
+# **09.47 Scene 完成后**
+    
+    
+    Scene 001
+     ↓
+    所有对白生成
+     ↓
+    Quality Check
+     ↓
+    写入磁盘
+     ↓
+    释放 GPU
+
+然后：
+    
+    
+    Scene 002
+
+* * *
+
+# **09.48 09.16 失败隔离**
+
+如果：
+    
+    
+    dlg_003
+
+失败：
+    
+    
+    dlg_001 PASS
+    dlg_002 PASS
+    dlg_003 FAILED
+    dlg_004 PASS
+
+不会导致：
+    
+    
+    整个 Scene FAILED
+
+最终：
+    
+    
+    Scene
+    READY_WITH_EXCEPTIONS
+
+然后只处理：
+    
+    
+    dlg_003
+
+* * *
+
+# **09.49 09.17 Checkpoint**
+
+每生成一句：
+    
+    
+    checkpoint.json
+
+记录：
+    
+    
+    dialogue_id
+    voice_version
+    engine
+    audio_path
+    duration
+    quality
+    status
+
+如果程序崩溃：
+    
+    
+    restart
+     ↓
+    读取 checkpoint
+     ↓
+    跳过已经完成的
+     ↓
+    继续失败/未完成的
+
+* * *
+
+# **09.50 09.18 模型加载隔离**
+
+例如：
+    
+    
+    Scene 001
+    ↓
+    CosyVoice
+    ↓
+    完成
+    ↓
+    unload
+    ↓
+    VRAM释放
+
+然后：
+    
+    
+    Scene 002
+    ↓
+    F5-TTS
+    ↓
+    完成
+    ↓
+    unload
+
+这样你以后即使加入：
+    
+    
+    70B LLM
+    +
+    大型 TTS
+    +
+    Whisper
+
+也不需要让它们同时占满 GPU。
+
+* * *
+
+# **09.51 09.19 TTS Worker**
+
+建议独立进程：
+    
+    
+    tts_worker
+
+而不是把模型直接放进 Web Server。
+
+架构：
+    
+    
+    Browser
+       ↓
+    API
+       ↓
+    Job Queue
+       ↓
+    TTS Worker
+       ↓
+    GPU
+
+Worker 完成：
+    
+    
+    save
+    release
+    report
+
+然后退出/重启。
+
+* * *
+
+# **09.52 为什么 Worker 很重要**
+
+如果：
+    
+    
+    TTS Python
+
+出现：
+    
+    
+    CUDA OOM
+
+不能让：
+    
+    
+    Web UI
+
+一起死掉。
+
+因此：
+    
+    
+    Web UI
+    ≠
+    TTS Worker
+
+* * *
+
+# **09.53 09.20 Job 状态**
+    
+    
+    QUEUED
+     ↓
+    LOADING_MODEL
+     ↓
+    LOADING_VOICE
+     ↓
+    SYNTHESIZING
+     ↓
+    ANALYZING
+     ↓
+    QUALITY_CHECK
+     ↓
+    PASS
+
+失败：
+    
+    
+    FAILED
+     ↓
+    RETRY
+
+* * *
+
+# **09.54 Retry Policy**
+
+第一次：
+    
+    
+    same parameters
+
+第二次：
+    
+    
+    different seed
+
+第三次：
+    
+    
+    alternative reference
+
+第四次：
+    
+    
+    alternative TTS
+
+仍失败：
+    
+    
+    MANUAL_REVIEW
+
+* * *
+
+# **09.55 09.21 最重要的质量指标**
+
+不要只看：
+    
+    
+    Voice similarity
+
+必须同时：
+    
+    
+    Voice similarity
+    +
+    Naturalness
+    +
+    Emotion
+    +
+    Timing
+    +
+    Artifact
+
+最终：
+    
+    
+    TTS Quality Score
+
+* * *
+
+# **09.56 推荐评分**
+    
+    
+    Voice Identity        30%
+    Naturalness           25%
+    Performance           20%
+    Timing                15%
+    Audio Quality         10%
+
+得到：
+    
+    
+    0--100
+
+* * *
+
+# **09.57 例如**
+    
+    
+    Voice             94
+    Naturalness       91
+    Performance       88
+    Timing            96
+    Audio Quality     98
+
+综合：
+    
+    
+    92.6
+    
+    
+    READY
+
+* * *
+
+# **09.58 09.22 最终输出目录**
+    
+    
+    audio/
+    └── S01E01/
+        ├── Scene_001/
+        │   ├── dlg_001.wav
+        │   ├── dlg_002.wav
+        │   └── dlg_003.wav
+        │
+        ├── Scene_002/
+        │   └── ...
+        │
+        └── manifest.json
+
+* * *
+
+# **09.59 Manifest**
+    
+    
+    {
+      "episode": "S01E01",
+    
+      "voice_engine": {
+        "Walter": "CosyVoice",
+        "Jesse": "F5-TTS"
+      },
+    
+      "voice_versions": {
+        "Walter": "v1",
+        "Jesse": "v1"
+      },
+    
+      "dialogues": 734,
+    
+      "completed": 728,
+    
+      "review": 6,
+    
+      "failed": 0
+    }
+
+* * *
+
+# **09.60 MODULE 09 完成后的完整链路**
+    
+    
+    MODULE 01
+    Project & Media
+            ↓
+    MODULE 02
+    Media Intelligence
+            ↓
+    MODULE 03
+    Subtitle / Audio Alignment
+            ↓
+    MODULE 04
+    Character Database
+            ↓
+    MODULE 05
+    Speaker & Scene Analysis
+            ↓
+    MODULE 06
+    Voice Identity
+            ↓
+    MODULE 07
+    Chinese Dialogue
+            ↓
+    MODULE 08
+    Performance Planning
+            ↓
+    ╔══════════════════════════╗
+    ║ MODULE 09                ║
+    ║ VOICE SYNTHESIS          ║
+    ╚════════════╤═════════════╝
+                 ↓
+         Character Voice
+                 +
+           Chinese Speech
+                 +
+            Performance
+                 ↓
+            Dialogue WAV
+
+* * *
+
+# **09.61 MODULE 09 的最终原则**
+
+这个模块最终追求的不是：
+
+**"AI声音像原演员。"**
+
+而是四件事同时成立：
+    
+    
+    ① 听起来是这个人物
+    ② 说的是自然中文
+    ③ 表演跟原演员基本一致
+    ④ 能准确塞回原视频时间轴
+
+也就是：
+    
+    
+    原演员
+       │
+       ├── 音色 ──────────→ Voice Clone
+       │
+       ├── 情绪 ──────────→ Emotion
+       │
+       ├── 语速 ──────────→ Prosody
+       │
+       ├── 停顿 ──────────→ Timing
+       │
+       └── 表演 ──────────→ Performance
+                                  │
+    中文台词 ──────────────────────┘
+                                  ↓
+                         中文人物配音
+
+**MODULE 09 的输出到这里为止仍然只是"干净的人物对白音频"，还没有把它放回电视剧。**
+
+下一阶段进入：
+
+# **MODULE 10 -- Dialogue Audio Processing & Scene Mixing**
+
+负责把这些：
+    
+    
+    dlg_001.wav
+    dlg_002.wav
+    dlg_003.wav
+    ...
+
+按照原片的：
+    
+    
+    时间
+    音量
+    空间
+    混响
+    环境
+    背景音乐
+    音效
+
+重新组合成**完整中文对白声轨**，同时尽可能保留原剧的音乐、环境声和音效。
+
+最终才会进入后面的**视频级重新合成**。

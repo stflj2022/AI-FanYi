@@ -1,0 +1,1421 @@
+05
+
+# **MODULE 05 -- Audio & Scene Analysis**
+
+**输入**
+    
+    
+    MODULE 01  Project & Media Intake
+    MODULE 03  Subtitle & Dialogue Package
+    MODULE 04  Character Database
+    原始视频
+
+**输出**
+    
+    
+    Scene Database
+    Audio Segments
+    Speech Segments
+    Speaker Candidates
+    Voice Samples
+    Audio Quality Scores
+
+* * *
+
+# **05.0 模块职责**
+
+本模块只解决四件事：
+    
+    
+    ① 视频里有哪些场景？
+    ② 每个场景什么时候开始/结束？
+    ③ 每句话对应哪一段实际声音？
+    ④ 每段声音可能是谁说的？
+
+**不做：**
+    
+    
+    × 声音克隆
+    × TTS
+    × 翻译
+    × 最终 Speaker → Character 确认
+    × 视频重新合成
+
+核心数据流：
+    
+    
+    原始视频
+        │
+        ├── Video
+        │
+        └── Audio
+              │
+              ▼
+          Scene Detection
+              │
+              ▼
+          Speech Detection
+              │
+              ▼
+          Speaker Diarization
+              │
+              ▼
+          Speech Segments
+              │
+              ▼
+          与 MODULE 03 字幕对齐
+              │
+              ▼
+          Speaker Candidate
+              │
+              ▼
+          Voice Samples
+
+* * *
+
+# **05.1 工程目录**
+    
+    
+    data/projects/<project_id>/
+    │
+    ├── media/
+    │   └── source.mkv
+    │
+    ├── audio/
+    │   ├── master.wav
+    │   ├── dialogue.wav
+    │   └── stems/
+    │
+    ├── scenes/
+    │   ├── scenes.jsonl
+    │   ├── keyframes/
+    │   └── thumbnails/
+    │
+    ├── speech/
+    │   ├── vad.jsonl
+    │   ├── diarization.json
+    │   ├── segments.jsonl
+    │   └── speakers/
+    │
+    ├── voice_samples/
+    │   ├── speaker_000/
+    │   ├── speaker_001/
+    │   └── ...
+    │
+    └── audio_analysis_manifest.json
+
+* * *
+
+# **05.2 严格串行资源策略**
+    
+    
+    05.01 Audio Extraction
+            ↓
+          SAVE
+            ↓
+          RELEASE
+    
+    05.02 Scene Detection
+            ↓
+          SAVE
+            ↓
+          RELEASE
+    
+    05.03 Scene Classification
+            ↓
+          SAVE
+            ↓
+          RELEASE
+    
+    05.04 VAD
+            ↓
+          SAVE
+            ↓
+          RELEASE
+    
+    05.05 Diarization
+            ↓
+          SAVE
+            ↓
+          RELEASE
+    
+    05.06 Subtitle-Audio Alignment
+            ↓
+          SAVE
+            ↓
+          RELEASE
+    
+    05.07 Speaker Candidate
+            ↓
+          SAVE
+            ↓
+          RELEASE
+    
+    05.08 Voice Sample Extraction
+            ↓
+          SAVE
+            ↓
+          RELEASE
+
+任何一步失败，都不会破坏之前已经生成的数据。
+
+* * *
+
+# **05.3 05.01 Audio Extraction**
+
+首先把视频音频抽出来。
+
+推荐建立一个统一母版：
+    
+    
+    PCM
+    mono
+    48 kHz
+    24-bit
+
+或者根据后续 ASR / TTS pipeline 使用：
+    
+    
+    WAV
+    mono
+    48kHz
+
+命令：
+    
+    
+    ffmpeg \
+    -i source.mkv \
+    -map 0:a:0 \
+    -ac 1 \
+    -ar 48000 \
+    -c:a pcm_s24le \
+    audio/master.wav
+
+* * *
+
+# **05.4 为什么先转 PCM**
+
+后面的：
+    
+    
+    VAD
+    Diarization
+    Speaker Embedding
+    Voice Cloning
+
+都不应该直接反复读取：
+    
+    
+    MKV → decode → audio
+
+统一：
+    
+    
+    source.mkv
+          ↓
+    master.wav
+          ↓
+    所有音频模块
+
+可以大幅降低重复解码。
+
+* * *
+
+# **05.5 05.02 Scene Detection**
+
+场景切分是整个工程非常重要的一步。
+
+不能简单按照字幕切。
+
+应该结合：
+    
+    
+    Video Shot
+    +
+    Subtitle
+    +
+    Audio
+    +
+    人物出场
+
+* * *
+
+# **05.6 Shot Detection**
+
+第一层：
+    
+    
+    Shot Boundary Detection
+
+检测：
+    
+    
+    镜头切换
+    淡入
+    淡出
+    黑场
+    快速剪辑
+
+可以采用：
+    
+    
+    PySceneDetect
+
+或者后续替换成更强的视觉模型。
+
+得到：
+    
+    
+    {
+      "shot_id": "shot_001",
+      "start": 0.0,
+      "end": 4.32
+    }
+
+* * *
+
+# **05.7 Shot ≠ Scene**
+
+这是工程上必须区分的。
+
+例如：
+    
+    
+    厨房
+
+可能有：
+    
+    
+    shot 001
+    shot 002
+    shot 003
+    shot 004
+
+但它们属于：
+    
+    
+    scene 001
+
+因此：
+    
+    
+    Shot
+        ↓
+    Scene
+
+不是：
+    
+    
+    Shot = Scene
+
+* * *
+
+# **05.8 Scene Detection 第二层**
+
+根据：
+    
+    
+    镜头连续性
+    人物
+    地点
+    时间
+    对白连续性
+    视觉特征
+
+把多个 Shot 合并。
+
+例如：
+    
+    
+    SHOT 001 ─┐
+    SHOT 002 ─┤
+    SHOT 003 ─┼── SCENE 001
+    SHOT 004 ─┘
+
+* * *
+
+# **05.9 Scene 数据结构**
+    
+    
+    {
+      "scene_id": "scene_001",
+    
+      "start": 0.0,
+      "end": 183.42,
+    
+      "shots": [
+        "shot_001",
+        "shot_002",
+        "shot_003"
+      ],
+    
+      "location": null,
+    
+      "characters": [],
+    
+      "dialogue_count": 17
+    }
+
+* * *
+
+# **05.10 Scene 不要求第一次就完美**
+
+第一版只需要：
+    
+    
+    scene boundaries
+
+足够可靠。
+
+人物、地点、情绪等信息后面逐步补充。
+
+这样可以避免：
+
+一个视觉模型错误导致整个 pipeline 停止。
+
+* * *
+
+# **05.11 05.03 Scene Classification**
+
+对于每个 Scene：
+    
+    
+    取：
+    第一帧
+    中间帧
+    最后帧
+
+建立：
+    
+    
+    scene_visual_summary
+
+例如：
+    
+    
+    {
+      "scene_id": "scene_008",
+    
+      "visual_summary":
+      "Two men talking inside a vehicle at night.",
+    
+      "location_candidate": "vehicle",
+    
+      "time_candidate": "night",
+    
+      "confidence": 0.91
+    }
+
+* * *
+
+# **05.12 场景人物候选**
+
+结合 MODULE 04：
+    
+    
+    Scene 008
+
+已知：
+    
+    
+    Walter
+    Jesse
+
+则：
+    
+    
+    {
+      "scene_id": "scene_008",
+    
+      "candidate_characters": [
+        {
+          "character_id": "walter",
+          "score": 0.93
+        },
+        {
+          "character_id": "jesse",
+          "score": 0.91
+        }
+      ]
+    }
+
+这会直接帮助后面的 Speaker Identification。
+
+* * *
+
+# **05.13 05.04 VAD**
+
+现在进入音频层。
+
+使用：
+    
+    
+    Voice Activity Detection
+
+目标：
+
+找出"有人讲话"的时间段。
+
+例如：
+    
+    
+    0--4 sec    silence
+    4--7 sec    speech
+    7--8 sec    silence
+    8--12 sec   speech
+
+输出：
+    
+    
+    {
+      "start": 4.02,
+      "end": 6.93,
+      "speech_probability": 0.98
+    }
+
+* * *
+
+# **05.14 VAD 不等于 Speaker**
+
+VAD：
+    
+    
+    这里有人说话
+
+Diarization：
+    
+    
+    这里是 Speaker A
+    那里是 Speaker B
+
+必须分开。
+
+* * *
+
+# **05.15 VAD 推荐架构**
+
+第一版：
+    
+    
+    Silero VAD
+
+后面可以替换：
+    
+    
+    更强 VAD
+
+而无需修改下游接口。
+
+* * *
+
+# **05.16 05.05 Speaker Diarization**
+
+核心目标：
+    
+    
+    Who spoke when?
+
+输出：
+    
+    
+    SPEAKER_00
+    SPEAKER_01
+    SPEAKER_02
+
+例如：
+    
+    
+    00:01:12--00:01:15
+    SPEAKER_00
+    
+    00:01:16--00:01:18
+    SPEAKER_01
+    
+    00:01:19--00:01:23
+    SPEAKER_00
+
+* * *
+
+# **05.17 推荐架构**
+
+第一版采用：
+    
+    
+    pyannote.audio
+
+输入：
+    
+    
+    master.wav
+
+输出：
+    
+    
+    {
+      "segment_id": "sp_00001",
+    
+      "start": 72.13,
+      "end": 75.84,
+    
+      "speaker": "SPEAKER_00"
+    }
+
+* * *
+
+# **05.18 为什么这里不直接识别 Walter**
+
+Diarization 得到：
+    
+    
+    SPEAKER_00
+
+而不是：
+    
+    
+    Walter White
+
+因为：
+    
+    
+    Speaker
+    ≠
+    Character
+
+这是后面最关键的一个步骤。
+
+* * *
+
+# **05.19 Speaker 是"声音实体"**
+
+例如：
+    
+    
+    SPEAKER_00
+
+可能最终确认：
+    
+    
+    → Walter White
+
+但必须经过：
+    
+    
+    声音
+    +
+    场景
+    +
+    字幕
+    +
+    人物候选
+    +
+    声纹
+
+综合判断。
+
+* * *
+
+# **05.20 05.06 Subtitle ↔ Audio Alignment**
+
+现在拥有：
+    
+    
+    MODULE 03:
+    字幕
+
+和：
+    
+    
+    MODULE 05:
+    实际讲话时间
+
+进行匹配。
+
+例如字幕：
+    
+    
+    100.20--104.00
+    "What are you doing?"
+
+音频：
+    
+    
+    100.42--103.76
+    SPEAKER_00
+
+建立：
+    
+    
+    {
+      "dialogue_id": "dlg_012",
+    
+      "audio_segment_id": "sp_0088",
+    
+      "speaker_id": "SPEAKER_00",
+    
+      "alignment_score": 0.97
+    }
+
+* * *
+
+# **05.21 对齐算法**
+
+评分：
+    
+    
+    时间重叠        50%
+    字幕顺序        15%
+    VAD              15%
+    场景一致性       10%
+    文本/语速匹配    10%
+
+例如：
+    
+    
+    alignment_score = 0.96
+
+* * *
+
+# **05.22 一句字幕可能对应多个 Speaker**
+
+例如：
+    
+    
+    John: Hello?
+    Mary: Hi.
+
+字幕可能合并：
+    
+    
+    Hello? Hi.
+
+实际：
+    
+    
+    SPEAKER_00  10.0--10.6
+    SPEAKER_01  10.7--11.1
+
+因此不能：
+    
+    
+    一条字幕 = 一个 speaker
+
+* * *
+
+# **05.23 一句话也可能被切成多个音频片段**
+
+例如：
+    
+    
+    SPEAKER_00
+    10.0--11.0
+    
+    silence
+    
+    SPEAKER_00
+    11.7--13.2
+
+仍然属于：
+    
+    
+    同一句 dialogue
+
+所以数据库支持：
+    
+    
+    dialogue
+       │
+       ├── audio_segment 1
+       └── audio_segment 2
+
+* * *
+
+# **05.24 05.07 Speaker Candidate**
+
+现在开始把：
+    
+    
+    SPEAKER_00
+
+映射到：
+    
+    
+    Character candidates
+
+例如：
+    
+    
+    SPEAKER_00
+    
+    候选：
+    
+    Walter     0.91
+    Jesse      0.07
+    Hank       0.02
+
+来源：
+    
+    
+    场景人物
+    +
+    字幕
+    +
+    声音
+    +
+    对白上下文
+
+* * *
+
+# **05.25 Candidate Score**
+
+最终先不确认。
+
+保存：
+    
+    
+    {
+      "speaker_id": "SPEAKER_00",
+    
+      "candidate_characters": [
+        {
+          "character_id": "char_walter",
+          "score": 0.91
+        },
+        {
+          "character_id": "char_jesse",
+          "score": 0.07
+        }
+      ],
+    
+      "status": "UNCONFIRMED"
+    }
+
+* * *
+
+# **05.26 为什么不在 MODULE 05 确认**
+
+因为：
+    
+    
+    MODULE 05
+
+只有：
+    
+    
+    音频
+    场景
+    字幕
+
+真正可靠的：
+    
+    
+    Speaker Embedding
+    +
+    Character Voice Reference
+
+需要 MODULE 06。
+
+所以：
+    
+    
+    05 = candidate
+    06 = identification
+
+* * *
+
+# **05.27 05.08 Voice Sample Extraction**
+
+现在为每个：
+    
+    
+    SPEAKER_00
+
+提取干净声音。
+
+例如：
+    
+    
+    voice_samples/
+    └── SPEAKER_00/
+        ├── sample_001.wav
+        ├── sample_002.wav
+        ├── sample_003.wav
+        └── ...
+
+* * *
+
+# **05.28 声音样本不能什么都收**
+
+过滤：
+    
+    
+    音乐
+    多人同时讲话
+    爆炸
+    枪声
+    汽车
+    电话滤波
+    严重混响
+    极端噪声
+
+* * *
+
+# **05.29 Sample Quality Score**
+
+每个样本：
+    
+    
+    {
+      "sample_id": "sample_001",
+    
+      "speaker": "SPEAKER_00",
+    
+      "duration": 4.21,
+    
+      "quality": {
+        "snr": 18.4,
+        "overlap": 0.01,
+        "reverb": 0.12,
+        "clipping": 0.00
+      },
+    
+      "quality_score": 0.91
+    }
+
+* * *
+
+# **05.30 建立 Voice Sample Pool**
+
+不要只保存一个声音样本。
+
+例如：
+    
+    
+    SPEAKER_00
+    │
+    ├── 0.9 quality
+    ├── 0.94 quality
+    ├── 0.87 quality
+    ├── 0.92 quality
+    └── ...
+
+以后 MODULE 06 可以选择：
+    
+    
+    Top 10
+    Top 20
+    Top 30 sec
+    Top 60 sec
+
+建立 speaker reference。
+
+* * *
+
+# **05.31 按情绪分类样本**
+
+非常重要。
+
+例如：
+    
+    
+    SPEAKER_00
+    │
+    ├── neutral/
+    ├── calm/
+    ├── angry/
+    ├── sad/
+    ├── shouting/
+    └── whisper/
+
+但是第一版只做：
+    
+    
+    neutral
+    emotional
+
+后续再细分。
+
+* * *
+
+# **05.32 为什么要保留不同情绪**
+
+因为最终配音：
+    
+    
+    Walter 平静说话
+
+和：
+    
+    
+    Walter 愤怒大喊
+
+不能使用完全相同的 reference。
+
+未来 TTS 可以：
+    
+    
+    target dialogue
+    +
+    character voice
+    +
+    emotion
+    +
+    reference audio
+
+* * *
+
+# **05.33 05 模块最重要的数据库**
+
+新增：
+    
+    
+    scenes
+    scene_shots
+    audio_segments
+    speech_segments
+    speakers
+    speaker_segments
+    speaker_samples
+    dialogue_audio_alignment
+    speaker_character_candidates
+
+* * *
+
+# **05.34 speakers**
+    
+    
+    CREATE TABLE speakers (
+        speaker_id TEXT PRIMARY KEY,
+    
+        episode_id TEXT,
+    
+        total_duration REAL,
+    
+        segment_count INTEGER,
+    
+        quality_score REAL,
+    
+        status TEXT
+    );
+
+* * *
+
+# **05.35 speaker_samples**
+    
+    
+    CREATE TABLE speaker_samples (
+        sample_id TEXT PRIMARY KEY,
+    
+        speaker_id TEXT,
+    
+        path TEXT,
+    
+        start REAL,
+    
+        end REAL,
+    
+        duration REAL,
+    
+        quality_score REAL,
+    
+        emotion TEXT,
+    
+        overlap_score REAL
+    );
+
+* * *
+
+# **05.36 dialogue_audio_alignment**
+    
+    
+    CREATE TABLE dialogue_audio_alignment (
+        dialogue_id TEXT,
+    
+        audio_segment_id TEXT,
+    
+        speaker_id TEXT,
+    
+        overlap_score REAL,
+    
+        alignment_score REAL,
+    
+        PRIMARY KEY(dialogue_id, audio_segment_id)
+    );
+
+* * *
+
+# **05.37 speaker_character_candidates**
+    
+    
+    CREATE TABLE speaker_character_candidates (
+        speaker_id TEXT,
+    
+        character_id TEXT,
+    
+        score REAL,
+    
+        evidence TEXT,
+    
+        confirmed INTEGER DEFAULT 0,
+    
+        PRIMARY KEY(speaker_id, character_id)
+    );
+
+* * *
+
+# **05.38 重要：允许一个 Character 对应多个 Speaker**
+
+例如：
+    
+    
+    Character:
+    Walter White
+
+可能出现：
+    
+    
+    SPEAKER_00
+    SPEAKER_07
+
+原因：
+    
+    
+    年轻时期
+    电话声音
+    广播声音
+    梦境
+    录像
+    特殊处理
+
+所以：
+    
+    
+    Character 1:N Speaker
+
+不能设计成：
+    
+    
+    Character 1:1 Speaker
+
+* * *
+
+# **05.39 也允许一个 Speaker 候选多个 Character**
+
+例如：
+    
+    
+    SPEAKER_04
+
+可能：
+    
+    
+    Walter 0.52
+    Hank   0.44
+
+在证据不足时：
+    
+    
+    status = AMBIGUOUS
+
+绝不能强行指定。
+
+* * *
+
+# **05.40 Speaker 状态机**
+    
+    
+    DISCOVERED
+        ↓
+    SEGMENTED
+        ↓
+    QUALITY_CHECKED
+        ↓
+    CANDIDATE_ASSIGNED
+        ↓
+    IDENTIFIED
+        ↓
+    VOICE_REFERENCE_READY
+
+失败：
+    
+    
+    QUALITY_FAILED
+    AMBIGUOUS
+    INSUFFICIENT_AUDIO
+
+* * *
+
+# **05.41 失败隔离**
+
+如果：
+    
+    
+    pyannote
+
+失败：
+    
+    
+    MODULE 05.05 FAILED
+
+前面：
+    
+    
+    Audio
+    Scene
+    VAD
+
+全部保留。
+
+可以重新执行：
+    
+    
+    05.05
+
+而不必重新抽取音频。
+
+* * *
+
+# **05.42 GPU 使用**
+
+本模块 GPU 使用：
+    
+    
+    Scene Detection
+        CPU/GPU
+    
+    VAD
+        GPU optional
+    
+    Diarization
+        GPU
+    
+    Audio Quality
+        CPU/GPU
+    
+    Embedding
+        暂不在本模块正式执行
+
+每一个 job：
+    
+    
+    load model
+    ↓
+    process
+    ↓
+    save
+    ↓
+    unload
+
+* * *
+
+# **05.43 缓存机制**
+
+例如：
+    
+    
+    cache/
+    ├── audio_hash
+    ├── scene_hash
+    ├── vad_hash
+    └── diarization_hash
+
+输入没变化：
+    
+    
+    直接使用缓存
+
+例如：
+    
+    
+    重新运行 MODULE 05
+
+不应该再次：
+    
+    
+    2小时视频
+    ↓
+    重新 Diarization
+
+* * *
+
+# **05.44 浏览器页面**
+
+第五标签：
+    
+    
+    ⑤ 音频 & 场景
+
+界面：
+    
+    
+    ┌──────────────────────────────────────────┐
+    │ ⑤ Audio & Scene Analysis                 │
+    ├──────────────────────────────────────────┤
+    │                                          │
+    │ 音频                                     │
+    │ ✓ 已提取                                 │
+    │ 48kHz / Mono                             │
+    │                                          │
+    │ 场景                                     │
+    │ 37 Scenes                                │
+    │ 214 Shots                                │
+    │                                          │
+    │ VAD                                      │
+    │ ✓ 完成                                   │
+    │ Speech: 41m 28s                          │
+    │                                          │
+    │ Speaker Diarization                     │
+    │ ✓ 完成                                   │
+    │                                          │
+    │ Speakers                                │
+    │ SPEAKER_00   31m 20s                     │
+    │ SPEAKER_01    8m 12s                     │
+    │ SPEAKER_02    1m 03s                     │
+    │                                          │
+    │ 中文字幕 ↔ 音频                         │
+    │ ✓ 734 / 734 对齐                        │
+    │                                          │
+    │ Voice Samples                           │
+    │ ✓ 已提取                                 │
+    │                                          │
+    │ [查看场景]                               │
+    │ [查看Speaker]                            │
+    │ [查看声音样本]                           │
+    │                                          │
+    │             [进入 MODULE 06]             │
+    └──────────────────────────────────────────┘
+
+* * *
+
+# **05.45 本模块完成后的结果**
+
+以：
+    
+    
+    Breaking Bad S01E01
+
+为例：
+    
+    
+    Scenes
+    37
+    
+    Shots
+    214
+    
+    Dialogue
+    734
+    
+    Speech segments
+    约 800+
+    
+    Speakers
+    例如 8
+    
+    Speaker samples
+    数百段
+    
+    Dialogue alignment
+    > 95%
+    
+    Speaker → Character
+    暂时只有候选
+
+* * *
+
+# **05.46 最终 Manifest**
+    
+    
+    {
+      "schema_version": "1.0",
+    
+      "episode_id": "S01E01",
+    
+      "audio": {
+        "sample_rate": 48000,
+        "channels": 1,
+        "duration": 3601.4
+      },
+    
+      "scenes": 37,
+    
+      "shots": 214,
+    
+      "speech_segments": 823,
+    
+      "speakers": 8,
+    
+      "voice_samples": 436,
+    
+      "dialogue_alignment": {
+        "total": 734,
+        "aligned": 726,
+        "unresolved": 8
+      },
+    
+      "status": "SUCCESS_WITH_WARNINGS"
+    }
+
+* * *
+
+# **05.47 MODULE 05 → MODULE 06**
+    
+    
+    MODULE 04
+    Character Database
+            │
+            │
+            ▼
+    MODULE 05
+    Audio & Scene Analysis
+            │
+            ├── Scene Database
+            │
+            ├── Speech Segments
+            │
+            ├── Speaker IDs
+            │
+            ├── Voice Samples
+            │
+            ├── Dialogue ↔ Audio
+            │
+            └── Speaker Candidates
+                        │
+                        ▼
+                 MODULE 06
+           Speaker → Character
+           Voice Identification
+
+**MODULE 06 的核心任务只有一个：**
+    
+    
+    SPEAKER_00
+          ↓
+    Walter White
+
+通过：
+    
+    
+    Speaker Embedding
+    +
+    高质量 Voice Samples
+    +
+    MODULE 04 Character Database
+    +
+    Scene Candidate
+    +
+    Dialogue Attribution
+    +
+    全剧跨集一致性
+
+最终建立：
+    
+    
+    Character
+          ↓
+    Speaker
+          ↓
+    Verified Voice Profile
+          ↓
+    Reference Voice
+
+这一步完成后，整个工程才真正拥有了"**这个人物到底是谁的声音**"这一可靠答案。

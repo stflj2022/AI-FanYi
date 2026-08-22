@@ -1,0 +1,2425 @@
+01
+
+好。现在正式进入 **MODULE 01 -- Project & Media Intake（项目与媒体输入模块）**。
+
+这一模块我们先**不碰人物识别、不碰 ASR、不碰 TTS、不碰联网研究**。它只有一个职责：
+
+**把用户交给系统的一部影视文件，安全、完整、可追踪地登记成一个标准化 Project，并生成后续所有模块都能使用的 Media Manifest。**
+
+这一模块完成后，后面的任何模块都不应该再直接"猜测"原始视频是什么，而是统一读取本模块产生的标准数据。
+
+我会按真正可开发的工程来设计。
+
+* * *
+
+# **MODULE 01 总体目标**
+    
+    
+    用户
+     │
+     │ 上传
+     ▼
+    ┌──────────────────────────────┐
+    │      Project & Media Intake  │
+    │                              │
+    │  ① 文件接收                  │
+    │  ② 文件安全检查              │
+    │  ③ Hash                       │
+    │  ④ FFprobe                    │
+    │  ⑤ 视频/音频/字幕流分析       │
+    │  ⑥ 文件命名解析              │
+    │  ⑦ Project 创建               │
+    │  ⑧ SQLite 初始化              │
+    │  ⑨ Manifest 生成              │
+    │  ⑩ Job 建立                   │
+    └──────────────┬───────────────┘
+                   │
+                   ▼
+            标准化 Project
+                   │
+           ┌───────┴────────┐
+           ▼                ▼
+       project.json     media.json
+           │                │
+           └───────┬────────┘
+                   ▼
+            MODULE 02 Research
+
+* * *
+
+# **1. 本模块的边界**
+
+必须先把边界定死。
+
+## **本模块负责**
+
+- 上传视频
+- 导入本地视频
+- 文件完整性检查
+- SHA-256
+- 文件大小
+- 文件格式
+- 视频流
+- 音频流
+- 字幕流
+- 字幕轨道
+- 章节
+- metadata
+- 时长
+- 分辨率
+- FPS
+- 音频采样率
+- 声道
+- 原始语言信息
+- 创建 Project
+- 创建 Episode
+- 建立数据库
+- 建立任务状态
+- 生成标准 manifest
+- 记录日志
+
+## **本模块不负责**
+
+- 搜索 IMDb/TMDB
+- 识别演员
+- 人物数据库
+- Whisper
+- Speaker Diarization
+- 翻译
+- TTS
+- 音源分离
+- 混音
+- 视频重新编码
+
+这几个边界一定不能混。
+
+* * *
+
+# **2. 为什么第一模块必须这么"笨"**
+
+例如用户上传：
+    
+    
+    Breaking.Bad.S01E01.1080p.WEB-DL.DD5.1.H.264.mkv
+
+我们不能让后面的 Character Worker 自己再去：
+    
+    
+    猜这是 Breaking Bad
+    猜这是第一季
+    猜这是第一集
+    猜视频时长
+    猜哪个音轨是英文
+    猜哪个字幕是中文
+
+这些信息必须在 Module 01 就固定下来。
+
+因此以后所有模块只认：
+    
+    
+    project_id
+    episode_id
+    media_id
+
+* * *
+
+# **3. 三个核心 ID**
+
+这是整个系统非常重要的设计。
+
+## **Project ID**
+
+代表整部影视作品。
+
+例如：
+    
+    
+    bb
+
+或者：
+    
+    
+    breaking_bad
+
+但我建议使用不可变 UUID：
+    
+    
+    proj_01JXXXXXXXXXXXX
+
+* * *
+
+## **Episode ID**
+
+代表某一集：
+    
+    
+    ep_01JXXXXXXXXXXXX
+
+例如：
+    
+    
+    Breaking Bad
+    Season 1
+    Episode 1
+
+* * *
+
+## **Media ID**
+
+代表具体文件。
+
+因为同一集可能有：
+    
+    
+    1080p WEB-DL
+    1080p BluRay
+    2160p WEB-DL
+
+所以：
+    
+    
+    Project
+       │
+       └── Episode
+             │
+             ├── Media A
+             ├── Media B
+             └── Media C
+
+非常重要。
+
+* * *
+
+# **4. Project ≠ Episode ≠ Media**
+
+必须保持这个层级：
+    
+    
+    PROJECT
+    │
+    └── SHOW
+        │
+        ├── Season 01
+        │   ├── Episode 01
+        │   │   ├── Media
+        │   │   ├── Subtitle
+        │   │   └── Processing
+        │   │
+        │   ├── Episode 02
+        │   └── ...
+        │
+        └── Season 02
+
+这样以后可以：
+
+一个 Project 直接处理整季。
+
+* * *
+
+# **5. 用户真正看到的 UI**
+
+第一版不要复杂。
+
+## **Tab 01：输入**
+    
+    
+    ┌──────────────────────────────────────┐
+    │              FilmDub AI              │
+    ├──────────────────────────────────────┤
+    │                                      │
+    │  新建项目                             │
+    │                                      │
+    │  [ 上传视频 ]                         │
+    │                                      │
+    │  或                                   │
+    │                                      │
+    │  [ 导入视频文件 ]                     │
+    │                                      │
+    └──────────────────────────────────────┘
+
+上传之后：
+    
+    
+    ┌──────────────────────────────────────┐
+    │ 文件                                  │
+    │                                      │
+    │ Breaking.Bad.S01E01.1080p.mkv        │
+    │                                      │
+    │ 3.42 GB                              │
+    │                                      │
+    │ 文件检查       ✓                     │
+    │ SHA256          ✓                     │
+    │ FFprobe         ✓                     │
+    │                                      │
+    │ [ 创建项目 ]                          │
+    └──────────────────────────────────────┘
+
+* * *
+
+# **6. 创建以后显示 Media Overview**
+    
+    
+    Breaking Bad
+    Season 1
+    Episode 1
+    
+    ────────────────────────────
+    
+    视频
+    1920 × 1080
+    23.976 fps
+    H.264
+    01:00:12
+    
+    音频
+    English
+    AC-3
+    5.1
+    48 kHz
+    
+    字幕
+    English
+    Chinese
+    Chinese Traditional
+    
+    章节
+    7
+    
+    ────────────────────────────
+    
+    [进入项目]
+
+这就是 Module 01 的最终 UI。
+
+* * *
+
+# **7. 推荐技术栈**
+
+这一模块其实不需要 GPU。
+    
+    
+    Backend:
+    FastAPI
+    
+    Database:
+    SQLite
+    
+    Media inspection:
+    FFprobe
+    
+    File hashing:
+    SHA-256
+    
+    Frontend:
+    Next.js
+    
+    Filesystem:
+    普通本地文件系统
+    
+    Container:
+    Docker
+    
+    Language:
+    Python 3.12+
+
+FFprobe 非常适合这里，因为它本身就是用于获取媒体容器、stream、metadata 等信息，而且支持 JSON 输出，方便程序直接解析。
+
+* * *
+
+# **8. 目录结构**
+
+最终整个项目：
+    
+    
+    filmdub/
+    │
+    ├── apps/
+    │   ├── api/
+    │   └── web/
+    │
+    ├── workers/
+    │   └── media_intake/
+    │
+    ├── core/
+    │   ├── config/
+    │   ├── database/
+    │   ├── models/
+    │   ├── schemas/
+    │   └── storage/
+    │
+    ├── projects/
+    │
+    ├── docker/
+    │
+    ├── scripts/
+    │
+    └── tests/
+
+* * *
+
+# **9. 一个项目的实际目录**
+
+假设：
+    
+    
+    Breaking Bad
+    S01E01
+
+建立：
+    
+    
+    projects/
+    └── proj_01JABC/
+        │
+        ├── project.json
+        ├── database.sqlite
+        │
+        ├── media/
+        │   └── ep_01JXYZ/
+        │       └── original.mkv
+        │
+        ├── manifests/
+        │   └── media.json
+        │
+        ├── logs/
+        │   └── intake.jsonl
+        │
+        └── jobs/
+            └── media_intake.json
+
+注意：
+
+原始文件永远不覆盖。
+
+* * *
+
+# **10. 原始文件是 Immutable Asset**
+
+这是专业系统必须遵守的规则。
+
+上传：
+    
+    
+    original.mkv
+
+之后任何模块都不能修改它。
+
+不能：
+    
+    
+    FFmpeg → original.mkv
+
+必须：
+    
+    
+    original.mkv
+          ↓
+    derived/
+
+例如：
+    
+    
+    audio/source.wav
+
+由原始视频派生。
+
+这样任何一步失败，都可以从原始文件重新开始。
+
+* * *
+
+# **11. 文件 Hash**
+
+上传后首先：
+    
+    
+    SHA-256
+
+例如：
+    
+    
+    sha256:
+    8f3b7c....
+
+数据库：
+    
+    
+    media.sha256
+
+作用：
+
+### **① 防止重复导入**
+
+用户再次上传同一个文件：
+    
+    
+    SHA256相同
+
+系统告诉：
+
+这个文件已经存在。
+
+### **② 数据完整性**
+
+后面任何时候可以验证：
+    
+    
+    original.mkv
+    SHA256
+
+是否发生改变。
+
+* * *
+
+# **12. 文件名解析**
+
+我们建立：
+    
+    
+    Filename Parser
+
+例如：
+    
+    
+    Breaking.Bad.S01E01.1080p.WEB-DL.mkv
+
+得到：
+    
+    
+    {
+      "title_candidate": "Breaking Bad",
+      "season": 1,
+      "episode": 1,
+      "quality": "1080p",
+      "source": "WEB-DL"
+    }
+
+但这里有一个重要原则：
+
+**文件名解析只能产生 Candidate，不是最终事实。**
+
+因为：
+    
+    
+    Some.Show.1x01.mkv
+
+也可能存在。
+
+所以：
+    
+    
+    filename parser
+           ↓
+    candidate
+           ↓
+    Module 02 Research
+           ↓
+    最终确认
+
+* * *
+
+# **13. FFprobe**
+
+运行：
+    
+    
+    ffprobe \
+      -v error \
+      -print_format json \
+      -show_format \
+      -show_streams \
+      -show_chapters \
+      input.mkv
+
+FFprobe 官方文档明确支持 `-show_format`、`-show_streams`、`-show_chapters` 以及 JSON writer。
+
+* * *
+
+# **14. Media Manifest**
+
+FFprobe 原始输出不能直接成为我们的 API 数据结构。
+
+我们建立自己的：
+    
+    
+    media.json
+
+例如：
+    
+    
+    {
+      "schema_version": "1.0",
+    
+      "media_id": "med_01JXYZ",
+    
+      "filename": "Breaking.Bad.S01E01.1080p.mkv",
+    
+      "sha256": "...",
+    
+      "container": {
+        "format": "matroska",
+        "duration": 3612.45,
+        "size_bytes": 3678912345
+      },
+    
+      "video": {
+        "codec": "h264",
+        "width": 1920,
+        "height": 1080,
+        "fps": 23.976,
+        "duration": 3612.45
+      },
+    
+      "audio": [],
+    
+      "subtitles": [],
+    
+      "chapters": []
+    }
+
+* * *
+
+# **15. Audio Stream Schema**
+
+例如：
+    
+    
+    {
+      "index": 1,
+    
+      "codec": "ac3",
+    
+      "language": "eng",
+    
+      "title": "English 5.1",
+    
+      "channels": 6,
+    
+      "channel_layout": "5.1",
+    
+      "sample_rate": 48000,
+    
+      "bit_rate": 640000,
+    
+      "default": true
+    }
+
+* * *
+
+# **16. 为什么必须记录所有音轨**
+
+不能只记录：
+    
+    
+    第一条音轨
+
+因为影视文件可能：
+    
+    
+    Audio 1 English 5.1
+    Audio 2 English Stereo
+    Audio 3 Commentary
+    Audio 4 Japanese
+
+后面 Source Separation 模块需要知道：
+
+哪一条才是目标原始对白音轨。
+
+所以全部记录。
+
+* * *
+
+# **17. Subtitle Stream**
+
+同样：
+    
+    
+    {
+      "index": 4,
+    
+      "codec": "subrip",
+    
+      "language": "chi",
+    
+      "title": "Chinese Simplified",
+    
+      "default": false,
+    
+      "forced": false
+    }
+
+以后 Subtitle Worker 可以直接看到：
+    
+    
+    有中文字幕
+
+从而：
+
+**跳过翻译。**
+
+这正好符合我们之前确定的策略。
+
+* * *
+
+# **18. 字幕要区分三种东西**
+    
+    
+    Subtitle Track
+    External Subtitle
+    Generated Subtitle
+
+例如：
+    
+    
+    media.mkv
+    ├── embedded English
+    ├── embedded Chinese
+    │
+    └── external/
+        └── Chinese.srt
+
+数据库都要记录。
+
+* * *
+
+# **19. 外部字幕导入**
+
+用户可以：
+    
+    
+    [上传中文字幕]
+
+例如：
+    
+    
+    Breaking.Bad.S01E01.zh-CN.srt
+
+Module 01 不解析剧情，只做：
+    
+    
+    文件登记
+    编码检测
+    Hash
+    格式检测
+    关联 Episode
+
+真正字幕内容解析放到：
+
+MODULE 07 Subtitle Manager
+
+这样边界非常干净。
+
+* * *
+
+# **20. SQLite 数据库**
+
+Module 01 就要建立数据库。
+
+第一版：
+    
+    
+    database.sqlite
+
+以后如果做多人/多机器：
+    
+    
+    PostgreSQL
+
+但上层代码不要依赖 SQLite 特有功能。
+
+* * *
+
+# **21. 核心表**
+
+第一版建立：
+    
+    
+    projects
+    episodes
+    media_assets
+    media_streams
+    subtitle_assets
+    jobs
+    job_events
+
+* * *
+
+# **22. projects**
+    
+    
+    CREATE TABLE projects (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        original_title TEXT,
+        target_language TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        status TEXT NOT NULL
+    );
+
+例如：
+    
+    
+    proj_01JABC
+    Breaking Bad
+    zh-CN
+    active
+
+* * *
+
+# **23. episodes**
+    
+    
+    CREATE TABLE episodes (
+        id TEXT PRIMARY KEY,
+    
+        project_id TEXT NOT NULL,
+    
+        season_number INTEGER,
+    
+        episode_number INTEGER,
+    
+        title TEXT,
+    
+        original_title TEXT,
+    
+        duration_seconds REAL,
+    
+        created_at TEXT NOT NULL,
+    
+        updated_at TEXT NOT NULL,
+    
+        status TEXT NOT NULL,
+    
+        FOREIGN KEY(project_id)
+            REFERENCES projects(id)
+    );
+
+* * *
+
+# **24. media_assets**
+    
+    
+    CREATE TABLE media_assets (
+        id TEXT PRIMARY KEY,
+    
+        episode_id TEXT NOT NULL,
+    
+        original_filename TEXT NOT NULL,
+    
+        storage_path TEXT NOT NULL,
+    
+        mime_type TEXT,
+    
+        file_size INTEGER NOT NULL,
+    
+        sha256 TEXT NOT NULL UNIQUE,
+    
+        duration_seconds REAL,
+    
+        container_format TEXT,
+    
+        created_at TEXT NOT NULL,
+    
+        status TEXT NOT NULL,
+    
+        FOREIGN KEY(episode_id)
+            REFERENCES episodes(id)
+    );
+
+* * *
+
+# **25. media_streams**
+    
+    
+    CREATE TABLE media_streams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    
+        media_id TEXT NOT NULL,
+    
+        stream_index INTEGER NOT NULL,
+    
+        stream_type TEXT NOT NULL,
+    
+        codec TEXT,
+    
+        language TEXT,
+    
+        title TEXT,
+    
+        is_default BOOLEAN,
+    
+        is_forced BOOLEAN,
+    
+        width INTEGER,
+    
+        height INTEGER,
+    
+        fps REAL,
+    
+        channels INTEGER,
+    
+        channel_layout TEXT,
+    
+        sample_rate INTEGER,
+    
+        bitrate INTEGER,
+    
+        FOREIGN KEY(media_id)
+            REFERENCES media_assets(id)
+    );
+
+* * *
+
+# **26. subtitle_assets**
+    
+    
+    CREATE TABLE subtitle_assets (
+        id TEXT PRIMARY KEY,
+    
+        episode_id TEXT NOT NULL,
+    
+        media_id TEXT,
+    
+        source_type TEXT NOT NULL,
+    
+        language TEXT,
+    
+        title TEXT,
+    
+        storage_path TEXT,
+    
+        sha256 TEXT,
+    
+        created_at TEXT NOT NULL,
+    
+        FOREIGN KEY(episode_id)
+            REFERENCES episodes(id)
+    );
+
+`source_type`：
+    
+    
+    embedded
+    external
+    generated
+
+* * *
+
+# **27. Jobs**
+
+这是整个未来系统的基础。
+    
+    
+    CREATE TABLE jobs (
+        id TEXT PRIMARY KEY,
+    
+        project_id TEXT NOT NULL,
+    
+        episode_id TEXT,
+    
+        module TEXT NOT NULL,
+    
+        status TEXT NOT NULL,
+    
+        attempt INTEGER DEFAULT 0,
+    
+        input_manifest TEXT,
+    
+        output_manifest TEXT,
+    
+        started_at TEXT,
+    
+        finished_at TEXT,
+    
+        error_code TEXT,
+    
+        error_message TEXT,
+    
+        worker_version TEXT,
+    
+        FOREIGN KEY(project_id)
+            REFERENCES projects(id),
+    
+        FOREIGN KEY(episode_id)
+            REFERENCES episodes(id)
+    );
+
+* * *
+
+# **28. Job 状态**
+
+统一：
+    
+    
+    PENDING
+    RUNNING
+    SUCCESS
+    FAILED
+    CANCELLED
+    SKIPPED
+
+以后所有模块都必须使用这一套。
+
+* * *
+
+# **29. Job Events**
+    
+    
+    CREATE TABLE job_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    
+        job_id TEXT NOT NULL,
+    
+        timestamp TEXT NOT NULL,
+    
+        level TEXT NOT NULL,
+    
+        event_type TEXT NOT NULL,
+    
+        message TEXT,
+    
+        payload TEXT,
+    
+        FOREIGN KEY(job_id)
+            REFERENCES jobs(id)
+    );
+
+例如：
+    
+    
+    10:32:01 INFO
+    MEDIA_PROBE_STARTED
+    
+    10:32:03 INFO
+    MEDIA_PROBE_COMPLETED
+    
+    10:32:03 INFO
+    MANIFEST_CREATED
+
+* * *
+
+# **30. Worker 标准接口**
+
+所有后面的模块都必须遵循：
+    
+    
+    worker <module> <job_id>
+
+例如：
+    
+    
+    python -m workers.media_intake.run \
+        --job-id job_01JABC
+
+Worker 必须：
+    
+    
+    读取 Job
+    ↓
+    读取 input_manifest
+    ↓
+    处理
+    ↓
+    写 output
+    ↓
+    更新 Job
+    ↓
+    退出
+
+* * *
+
+# **31. Worker 不应该直接操作 UI**
+
+错误：
+    
+    
+    TTS Worker
+        ↓
+    修改浏览器状态
+
+正确：
+    
+    
+    Worker
+     ↓
+    SQLite
+     ↓
+    FastAPI
+     ↓
+    Web UI
+
+这样前后端完全解耦。
+
+* * *
+
+# **32. FastAPI API**
+
+第一版：
+    
+    
+    POST   /api/projects
+    POST   /api/projects/{id}/media
+    GET    /api/projects
+    GET    /api/projects/{id}
+    GET    /api/episodes/{id}
+    GET    /api/media/{id}
+    GET    /api/jobs/{id}
+    POST   /api/jobs/{id}/retry
+    POST   /api/jobs/{id}/cancel
+
+* * *
+
+# **33. 创建 Project**
+    
+    
+    POST /api/projects
+
+请求：
+    
+    
+    {
+      "title": "Breaking Bad",
+      "target_language": "zh-CN"
+    }
+
+返回：
+    
+    
+    {
+      "project_id": "proj_01JABC",
+      "status": "created"
+    }
+
+* * *
+
+# **34. 上传 Media**
+    
+    
+    POST /api/projects/proj_01JABC/media
+
+上传：
+    
+    
+    multipart/form-data
+
+服务器：
+    
+    
+    接收
+    ↓
+    临时文件
+    ↓
+    SHA256
+    ↓
+    FFprobe
+    ↓
+    正式存储
+
+* * *
+
+# **35. 非常重要：上传不能直接写入最终路径**
+
+必须：
+    
+    
+    /tmp/upload/uuid.tmp
+
+检查成功：
+    
+    
+    /tmp/upload/uuid.tmp
+            ↓
+    projects/.../original.mkv
+
+检查失败：
+    
+    
+    删除 tmp
+
+防止产生垃圾项目。
+
+* * *
+
+# **36. 文件上传 API 不应该负责重处理**
+
+上传接口：
+    
+    
+    HTTP 202 Accepted
+
+然后：
+    
+    
+    Media Intake Job
+
+后台运行。
+
+FastAPI 官方的 BackgroundTasks 可以处理简单的后台任务；但官方也明确指出，对于重计算、跨进程/服务器的任务，更适合 Celery 等独立任务系统。我们的影视处理显然属于后者，因此这里应该把真正的 Worker 与 API 进程分离。
+
+* * *
+
+# **37. GPU 不属于 Module 01**
+
+虽然最终工程使用 NVIDIA GPU，但：
+
+Module 01 不需要 CUDA。
+
+因此：
+    
+    
+    api container
+    CPU
+    
+    media-intake worker
+    CPU
+
+后面的：
+    
+    
+    diarization
+    TTS
+    separation
+
+才申请 GPU。
+
+这也是模块隔离的重要体现。
+
+* * *
+
+# **38. Docker 架构**
+
+最终：
+    
+    
+    ┌────────────────────────────┐
+    │ Browser                    │
+    └─────────────┬──────────────┘
+                  ↓
+    ┌────────────────────────────┐
+    │ FastAPI                    │
+    └─────────────┬──────────────┘
+                  ↓
+    ┌────────────────────────────┐
+    │ Job Manager                │
+    └─────────────┬──────────────┘
+                  ↓
+           ┌──────┴──────┐
+           ↓             ↓
+     media-intake     GPU workers
+     CPU              CUDA
+
+Docker Compose 本身支持给特定 service 配置 GPU reservation，并可以指定 NVIDIA GPU device；因此后续 GPU worker 可以与 CPU API/Intake 服务分离。
+
+* * *
+
+# **39. Project Manifest**
+
+除了 SQLite，我们还必须生成：
+    
+    
+    project.json
+
+因为：
+
+SQLite 适合程序查询，JSON 适合模块之间交换。
+
+例如：
+    
+    
+    {
+      "schema_version": "1.0",
+    
+      "project": {
+        "id": "proj_01JABC",
+        "title": "Breaking Bad",
+        "target_language": "zh-CN"
+      },
+    
+      "episodes": [
+        {
+          "id": "ep_01JXYZ",
+          "season": 1,
+          "episode": 1,
+          "media": [
+            {
+              "id": "med_01J123"
+            }
+          ]
+        }
+      ]
+    }
+
+* * *
+
+# **40. Media Manifest 必须版本化**
+
+例如：
+    
+    
+    {
+      "schema_version": "1.0"
+    }
+
+未来：
+    
+    
+    1.0
+    1.1
+    2.0
+
+这样后面修改数据库结构，不会把旧项目全部弄坏。
+
+* * *
+
+# **41. Manifest 不允许随意覆盖**
+
+例如：
+    
+    
+    manifests/
+    ├── media.v1.json
+    ├── media.v2.json
+    └── latest.json
+
+或者简单一点：
+    
+    
+    media.json
+    media.history.jsonl
+
+每次修改记录：
+    
+    
+    version
+    timestamp
+    reason
+    worker
+
+* * *
+
+# **42. 项目级状态**
+    
+    
+    project.status
+
+可以：
+    
+    
+    CREATED
+    INTAKE
+    READY_FOR_RESEARCH
+    PROCESSING
+    COMPLETED
+    FAILED
+    ARCHIVED
+
+Module 01 最终状态：
+    
+    
+    READY_FOR_RESEARCH
+
+这就是：
+
+**MODULE 02 可以开始工作的唯一信号。**
+
+* * *
+
+# **43. Module 01 的完成条件**
+
+必须全部满足：
+    
+    
+    ✓ 原始文件存在
+    ✓ SHA256 完成
+    ✓ FFprobe 成功
+    ✓ 至少一个视频流
+    ✓ 至少一个音频流
+    ✓ duration 有效
+    ✓ media.json 完成
+    ✓ project.json 完成
+    ✓ SQLite 完成
+    ✓ media_assets 写入
+    ✓ streams 写入
+    ✓ job = SUCCESS
+    ✓ project = READY_FOR_RESEARCH
+
+任何一项失败：
+    
+    
+    FAILED
+
+不能进入 Module 02。
+
+* * *
+
+# **44. 输入合法性检查**
+
+例如用户上传纯音频：
+    
+    
+    movie.mp3
+
+直接：
+    
+    
+    REJECT:
+    NO_VIDEO_STREAM
+
+* * *
+
+用户上传：
+    
+    
+    movie.mp4
+
+没有音频：
+    
+    
+    REJECT:
+    NO_AUDIO_STREAM
+
+因为我们最终是影视配音。
+
+* * *
+
+# **45. 但字幕不是必需项**
+
+这一点非常重要。
+
+没有字幕：
+    
+    
+    ✓ ACCEPT
+
+因为后面可以：
+    
+    
+    WhisperX
+
+再建立字幕。
+
+所以：
+    
+    
+    video + audio = minimum valid media
+
+字幕是 optional。
+
+* * *
+
+# **46. 视频也不能假定只有一个视频流**
+
+例如：
+    
+    
+    Video
+    ├── main video
+    └── attached cover
+
+FFprobe 可能发现多个 video stream。
+
+我们应该选择：
+    
+    
+    disposition.default
+
+如果没有：
+    
+    
+    最高分辨率
+
+而不是简单：
+    
+    
+    streams[0]
+
+* * *
+
+# **47. 音频选择也不要现在决定**
+
+Module 01：
+
+**只登记。**
+
+例如：
+    
+    
+    Audio 1 English 5.1
+    Audio 2 English Stereo
+    Audio 3 Commentary
+
+全部保存。
+
+到底使用哪个：
+
+Module 03 Audio Analysis 决定。
+
+这样设计更合理。
+
+* * *
+
+# **48. 字幕选择同理**
+
+Module 01：
+    
+    
+    Subtitle 1 English
+    Subtitle 2 Chinese Simplified
+    Subtitle 3 Chinese Traditional
+
+全部登记。
+
+Module 07 才决定：
+    
+    
+    preferred subtitle
+
+* * *
+
+# **49. 编码问题**
+
+上传后不要直接假定：
+    
+    
+    UTF-8
+
+尤其外部 `.srt`。
+
+Module 01 只记录：
+    
+    
+    file encoding candidate
+
+例如：
+    
+    
+    UTF-8
+    UTF-8-BOM
+    GB18030
+    Shift-JIS
+
+实际字幕解析交给 Module 07。
+
+* * *
+
+# **50. 文件安全**
+
+因为这是一个可以接受用户文件的 Web 应用，必须考虑：
+    
+    
+    路径穿越
+    恶意文件名
+    超大文件
+    符号链接
+    非法扩展名
+    磁盘耗尽
+
+因此原始文件实际保存名称：
+    
+    
+    original.mkv
+
+而不是用户上传的：
+    
+    
+    ../../../../etc/passwd
+
+用户原始文件名仅存数据库：
+    
+    
+    original_filename
+
+* * *
+
+# **51. 文件大小限制**
+
+配置：
+    
+    
+    upload:
+      max_file_size_gb: 100
+
+但不要硬编码。
+
+以后可以：
+    
+    
+    50 GB
+    100 GB
+    500 GB
+
+由配置控制。
+
+* * *
+
+# **52. 目录不能来自用户输入**
+
+错误：
+    
+    
+    path = PROJECTS / filename
+
+正确：
+    
+    
+    project_id = generate_id()
+    media_id = generate_id()
+    
+    path = (
+        PROJECTS
+        / project_id
+        / "media"
+        / media_id
+        / "original.mkv"
+    )
+
+* * *
+
+# **53. 原子写入**
+
+Manifest：
+
+不要：
+    
+    
+    open("media.json", "w")
+
+直接写。
+
+应该：
+    
+    
+    media.json.tmp
+           ↓
+    fsync
+           ↓
+    rename
+           ↓
+    media.json
+
+这样程序中途崩溃不会留下半个 JSON。
+
+* * *
+
+# **54. Job 的幂等性**
+
+这是工程上非常重要的一点。
+
+如果：
+    
+    
+    Media Intake
+
+执行两次。
+
+不能生成：
+    
+    
+    media_1
+    media_2
+    media_3
+
+而应该通过：
+    
+    
+    SHA256
+
+判断：
+
+已经导入。
+
+所以：
+    
+    
+    same file
+    +
+    same project
+    =
+    idempotent
+
+* * *
+
+# **55. Module 01 的命令行接口**
+
+即使有 Web UI，也必须提供 CLI。
+
+例如：
+    
+    
+    filmdub project create \
+      --title "Breaking Bad" \
+      --target-language zh-CN
+
+然后：
+    
+    
+    filmdub media import \
+      --project proj_01JABC \
+      "/data/Breaking.Bad.S01E01.mkv"
+
+查询：
+    
+    
+    filmdub media inspect med_01JXYZ
+
+重新运行：
+    
+    
+    filmdub job retry job_01JABC
+
+* * *
+
+# **56. CLI 非常重要**
+
+因为以后调试：
+    
+    
+    Web UI
+    坏了
+
+但 Worker 正常。
+
+我们仍然可以：
+    
+    
+    filmdub media import ...
+
+这就是：
+
+UI ≠ 核心系统。
+
+* * *
+
+# **57. Module 01 Python 包**
+
+建议：
+    
+    
+    workers/media_intake/
+    ├── __init__.py
+    ├── cli.py
+    ├── runner.py
+    ├── probe.py
+    ├── hashing.py
+    ├── filename_parser.py
+    ├── validator.py
+    ├── manifest.py
+    ├── storage.py
+    └── tests/
+
+* * *
+
+# **58. probe.py**
+
+核心：
+    
+    
+    import json
+    import subprocess
+    from pathlib import Path
+    
+    
+    def ffprobe(path: Path) -> dict:
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            "-show_chapters",
+            str(path),
+        ]
+    
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    
+        return json.loads(result.stdout)
+
+这是故意保持简单。
+
+FFprobe 自身已经负责媒体解析，不需要我们重新造一个媒体解析器。
+
+* * *
+
+# **59. hashing.py**
+    
+    
+    import hashlib
+    from pathlib import Path
+    
+    
+    def sha256_file(
+        path: Path,
+        chunk_size: int = 8 * 1024 * 1024,
+    ) -> str:
+    
+        digest = hashlib.sha256()
+    
+        with path.open("rb") as f:
+            while chunk := f.read(chunk_size):
+                digest.update(chunk)
+    
+        return digest.hexdigest()
+
+8 MB chunk 足够。
+
+* * *
+
+# **60. Manifest 生成**
+
+不要把 FFprobe JSON 原样输出。
+
+建立：
+    
+    
+    def build_media_manifest(
+        ffprobe_data: dict,
+        media_id: str,
+        filename: str,
+        sha256: str,
+    ) -> dict:
+        ...
+
+负责：
+    
+    
+    FFprobe
+       ↓
+    我们自己的 Schema
+
+* * *
+
+# **61. Schema 用 Pydantic**
+
+例如：
+    
+    
+    from pydantic import BaseModel
+    
+    
+    class VideoStream(BaseModel):
+        index: int
+        codec: str | None
+        width: int | None
+        height: int | None
+        fps: float | None
+        duration: float | None
+    
+    
+    class AudioStream(BaseModel):
+        index: int
+        codec: str | None
+        language: str | None
+        title: str | None
+        channels: int | None
+        channel_layout: str | None
+        sample_rate: int | None
+
+然后：
+    
+    
+    FFprobe JSON
+           ↓
+    Pydantic validation
+           ↓
+    media.json
+
+* * *
+
+# **62. 为什么这一层很重要**
+
+如果 FFprobe 输出未来发生变化：
+    
+    
+    FFprobe
+
+只影响：
+    
+    
+    probe.py
+
+后面的：
+    
+    
+    Character
+    Speaker
+    TTS
+
+完全不知道 FFprobe 的存在。
+
+* * *
+
+# **63. Module 01 的输入输出协议**
+
+正式定义：
+    
+    
+    INPUT
+    
+    MediaFile
+
+输出：
+    
+    
+    ProjectManifest
+    MediaManifest
+    JobRecord
+
+即：
+    
+    
+    MediaFile
+        ↓
+    MediaIntakeWorker
+        ↓
+    ProjectManifest
+        +
+    MediaManifest
+
+* * *
+
+# **64. Worker Contract**
+
+以后所有模块都遵循：
+    
+    
+    WorkerContract
+    
+    input:
+        manifest(s)
+    
+    output:
+        manifest(s)
+    
+    side effects:
+        database
+        artifacts
+        logs
+    
+    exit:
+        SUCCESS / FAILED
+
+例如未来：
+    
+    
+    CharacterWorker
+
+输入：
+    
+    
+    MediaManifest
+    ResearchManifest
+
+输出：
+    
+    
+    CharacterManifest
+
+* * *
+
+# **65. Module 01 的测试必须先写**
+
+至少：
+
+### **Test 01**
+
+正常 MKV。
+
+### **Test 02**
+
+正常 MP4。
+
+### **Test 03**
+
+没有字幕。
+
+### **Test 04**
+
+多音轨。
+
+### **Test 05**
+
+多字幕。
+
+### **Test 06**
+
+无音频。
+
+应该：
+    
+    
+    FAIL
+
+### **Test 07**
+
+纯音频。
+
+应该：
+    
+    
+    FAIL
+
+### **Test 08**
+
+重复文件。
+
+应该：
+    
+    
+    IDEMPOTENT
+
+### **Test 09**
+
+损坏视频。
+
+应该：
+    
+    
+    FFPROBE_FAILED
+
+### **Test 10**
+
+特殊文件名。
+
+应该：
+    
+    
+    SUCCESS
+
+* * *
+
+# **66. 特殊文件名测试**
+
+例如：
+    
+    
+    绝命毒师 第01季 第01集.mkv
+
+以及：
+    
+    
+    Breaking.Bad.S01E01.1080p.WEB-DL.x265.10bit.mkv
+
+以及：
+    
+    
+    Breaking.Bad.1x01.mkv
+
+都应该成功导入。
+
+但：
+
+**文件名解析只是候选信息。**
+
+这是为了给 Module 02 Research 提供初始搜索关键词。
+
+* * *
+
+# **67. Module 01 不需要 LLM**
+
+这是一个刻意的决定。
+
+不要：
+    
+    
+    视频
+     ↓
+    Qwen
+     ↓
+    "这应该是绝命毒师"
+
+这完全没有必要。
+
+Module 01 应该：
+    
+    
+    Filename
+    +
+    FFprobe
+    +
+    Hash
+
+确定机器层面的事实。
+
+* * *
+
+# **68. Module 01 完成后的标准结果**
+
+例如：
+    
+    
+    projects/
+    └── proj_01ABC/
+        │
+        ├── project.json
+        │
+        ├── database.sqlite
+        │
+        ├── media/
+        │   └── med_01XYZ/
+        │       └── original.mkv
+        │
+        ├── manifests/
+        │   └── media.json
+        │
+        ├── logs/
+        │   └── intake.jsonl
+        │
+        └── jobs/
+            └── job_01XYZ.json
+
+* * *
+
+# **69. 此时浏览器显示**
+    
+    
+    PROJECT
+    ──────────────────────────
+    
+    Breaking Bad
+    
+    Episode
+    S01E01
+    
+    Media
+    ✓ Imported
+    
+    Duration
+    60:12
+    
+    Video
+    1920 × 1080
+    23.976 fps
+    H.264
+    
+    Audio
+    English 5.1
+    
+    Subtitles
+    English
+    Chinese Simplified
+    
+    ──────────────────────────
+    
+    MEDIA INTAKE
+    ✓ SUCCESS
+    
+    NEXT
+    → Research
+
+* * *
+
+# **70. 最终状态**
+
+数据库：
+    
+    
+    project.status
+    =
+    READY_FOR_RESEARCH
+
+Job：
+    
+    
+    MEDIA_INTAKE
+    =
+    SUCCESS
+
+然后 Orchestrator 才允许：
+    
+    
+    MODULE 02
+    Research Worker
+
+启动。
+
+* * *
+
+# **71. 一个关键的工程决定：Module 01 不自动进入 Module 02**
+
+我建议第一版：
+    
+    
+    ✓ Media Intake 完成
+    
+    [进入下一步]
+
+而不是：
+    
+    
+    Media Intake
+    ↓
+    自动 Research
+
+原因很简单：
+
+**第一版我们要逐模块验证。**
+
+以后确认稳定后，可以增加：
+    
+    
+    Auto Pipeline
+
+* * *
+
+# **72. 最终 Orchestrator 才负责自动串行**
+
+最终：
+    
+    
+    Module 01 SUCCESS
+           ↓
+    Module 02 START
+           ↓
+    Module 02 SUCCESS
+           ↓
+    Module 03 START
+
+但每个 Worker 自己不知道下一步是什么。
+
+这是非常重要的解耦。
+
+* * *
+
+# **73. Module 01 的最终工程接口**
+
+我们最终把它固定成：
+    
+    
+    POST /projects
+    POST /projects/{project_id}/media
+    GET  /projects/{project_id}
+    GET  /media/{media_id}
+    GET  /jobs/{job_id}
+    
+    CLI:
+    
+    filmdub project create
+    filmdub media import
+    filmdub media inspect
+    filmdub job status
+    filmdub job retry
+
+内部：
+    
+    
+    MediaIntakeWorker
+
+输入：
+    
+    
+    media file
+
+输出：
+    
+    
+    ProjectManifest
+    MediaManifest
+
+* * *
+
+# **74. NVIDIA GPU 从这里开始就不参与**
+
+这是故意的。
+
+以后：
+    
+    
+    Module 01
+    CPU
+          ↓
+    Module 02
+    CPU + Internet/LLM
+          ↓
+    Module 03
+    GPU
+          ↓
+    Module 04
+    GPU
+          ↓
+    ...
+
+真正需要 GPU 的 Worker 自己声明：
+    
+    
+    resources:
+      gpu: true
+
+Docker Compose 可以针对这些 service 指定 GPU reservation，而不必让整个系统占用 GPU。
+
+* * *
+
+# **75. Module 01 的验收标准**
+
+我们把验收标准写死：
+
+## **必须做到**
+
+**A. 文件**
+
+- 上传
+- SHA256
+- Immutable
+- 重复检测
+
+**B. Media**
+
+- container
+- video
+- audio
+- subtitle
+- chapters
+- metadata
+
+**C. Project**
+
+- Project ID
+- Episode ID
+- Media ID
+
+**D. Database**
+
+- SQLite
+- schema
+- migrations
+
+**E. Worker**
+
+- Job
+- status
+- retry
+- logs
+
+**F. API**
+
+- upload
+- inspect
+- status
+
+**G. Data**
+
+- project.json
+- media.json
+* * *
+
+# **76. Module 01 完成后，我们实际上得到了一块"稳定地基"**
+
+最重要的不是上传页面。
+
+而是这一层：
+    
+    
+                       PROJECT
+                          │
+                      Episode
+                          │
+                        Media
+                          │
+              ┌───────────┼───────────┐
+              │           │           │
+            Video       Audio      Subtitle
+              │           │           │
+              └───────────┴───────────┘
+                          │
+                    Media Manifest
+
+从 **MODULE 02 开始，所有 AI 模块都建立在这个标准化对象上。**
+
+* * *
+
+# **77. 我建议 Module 01 实际采用的 V1 技术**
+
+最终确定：
+    
+    
+    Python 3.12
+    FastAPI
+    Pydantic v2
+    SQLAlchemy 2
+    Alembic
+    SQLite
+    FFmpeg / FFprobe
+    Next.js
+    Docker Compose
+    pytest
+
+暂时：
+    
+    
+    Redis        ❌
+    Celery       ❌
+    PostgreSQL   ❌
+    CUDA         ❌
+    LLM          ❌
+
+不是因为这些东西不好，而是：
+
+**Module 01 根本不需要它们。**
+
+以后系统扩大，再替换基础设施。
+
+* * *
+
+# **78. Module 01 的一句话定义**
+
+最终把它写进项目 README：
+
+**Project & Media Intake is the immutable ingestion layer of FilmDub AI. It converts user-supplied audiovisual files into validated, hashed, versioned Project/Episode/Media assets and machine-readable manifests, without performing any AI inference or modifying the source media.**
+
+这句话非常重要。
+
+以后开发过程中如果有人说：
+
+"顺便在这里把 Whisper 跑了吧。"
+
+答案应该是：
+
+**不。**
+
+因为那已经属于 Module 03/07。
+
+* * *
+
+# **79. 下一步：正式写 MODULE 01**
+
+到这里已经完成了**工程设计**。下一步我建议不要再做概念讨论，而是直接进入实现：
+
+### **MODULE 01-A**
+
+建立完整仓库：
+    
+    
+    filmdub/
+    ├── apps/api
+    ├── apps/web
+    ├── core
+    ├── workers/media_intake
+    ├── migrations
+    ├── tests
+    ├── docker
+    └── scripts
+
+然后一次性给出：
+
+1. **￼**** ****完整 SQLite Schema**
+2. **￼**** ****SQLAlchemy Models**
+3. **￼**** ****Pydantic Schemas**
+4. **￼**** ****FFprobe Parser**
+5. **￼**** ****SHA256**
+6. **￼**** ****Media Validator**
+7. **￼**** ****Project/Media Storage**
+8. **￼**** ****Job System**
+9. **￼**** ****FastAPI API**
+10. **￼**** ****CLI**
+11. **Docker Compose**
+12. **Next.js 第一版上传页面**
+13. **pytest 测试**
+14. **启动命令**
+15. **实际测试一个《绝命毒师》S01E01**
+16. **Module 01 完成后产生的全部文件示例**
+
+并且从这一模块开始，我们把**所有后续模块都必须遵守的 Worker Contract、Manifest Schema、Job 状态机、目录规范**一次定死。这样进入 Module 02 时，就可以直接在这套地基上开发，而不用以后返工。

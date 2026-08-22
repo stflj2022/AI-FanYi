@@ -1,0 +1,1270 @@
+03
+
+# **MODULE 03 -- Subtitle & Dialogue Acquisition**
+
+**工程目标：**
+    
+    
+    输入：
+    MODULE 01 media_manifest
+    MODULE 02 research_manifest
+    原始视频
+    
+    输出：
+    标准化、校验后的 Dialogue Package
+    
+    不负责：
+    翻译
+    配音
+    TTS
+    视频渲染
+
+核心原则：
+
+**优先使用现成中文字幕；没有中文字幕才翻译；没有字幕才从音频 ASR。**
+
+* * *
+
+# **03.0 模块结构**
+    
+    
+    MODULE 03
+    │
+    ├── 03.01 Subtitle Discovery
+    ├── 03.02 Subtitle Import
+    ├── 03.03 Subtitle Validation
+    ├── 03.04 Subtitle Alignment
+    ├── 03.05 Dialogue Extraction
+    ├── 03.06 Speaker Candidate Analysis
+    ├── 03.07 Chinese Subtitle Acquisition
+    ├── 03.08 Optional Translation
+    ├── 03.09 ASR Fallback
+    ├── 03.10 Dialogue Normalization
+    └── 03.11 Dialogue Package
+
+严格串行：
+    
+    
+    完成一个
+    ↓
+    保存结果
+    ↓
+    释放资源
+    ↓
+    下一个
+
+* * *
+
+# **03.1 输入**
+    
+    
+    data/projects/<project_id>/
+    │
+    ├── media/
+    │   └── source.mkv
+    │
+    ├── media_manifest.json
+    │
+    └── research/
+        ├── research_manifest.json
+        └── project.db
+
+* * *
+
+# **03.2 输出目录**
+    
+    
+    data/projects/<project_id>/dialogue/
+    │
+    ├── source/
+    │   ├── original.srt
+    │   ├── chinese.srt
+    │   └── other/
+    │
+    ├── normalized/
+    │   ├── source.jsonl
+    │   └── chinese.jsonl
+    │
+    ├── asr/
+    │   └── asr.jsonl
+    │
+    ├── alignment/
+    │   └── subtitle_alignment.json
+    │
+    ├── evidence/
+    │
+    ├── cache/
+    │
+    └── dialogue_manifest.json
+
+* * *
+
+# **03.3 首先确定字幕策略**
+
+优先级固定：
+    
+    
+    ① 视频内嵌中文字幕
+            ↓
+    ② 外部中文字幕
+            ↓
+    ③ 官方/可靠中文字幕
+            ↓
+    ④ 英文字幕 + Qwen翻译
+            ↓
+    ⑤ 英文ASR + Qwen翻译
+            ↓
+    ⑥ 其他语言ASR
+
+因此你找到现成的《绝命毒师》中文字幕后：
+    
+    
+    不启动 Qwen 翻译
+    不启动 ASR
+
+直接进入：
+    
+    
+    Subtitle Validation
+
+这是整个系统最重要的节省资源策略之一。
+
+* * *
+
+# **03.4 03.01 Subtitle Discovery**
+
+扫描：
+    
+    
+    ffprobe source.mkv
+
+发现：
+    
+    
+    Stream #0:2
+    eng
+    
+    Stream #0:3
+    chi
+
+自动判断：
+    
+    
+    Chinese subtitle = AVAILABLE
+
+如果视频没有：
+    
+    
+    subtitle stream
+
+再扫描：
+    
+    
+    同目录
+    字幕目录
+    项目目录
+    用户指定路径
+
+文件名：
+    
+    
+    Breaking.Bad.S01E01.chi.srt
+    Breaking.Bad.S01E01.zh-CN.ass
+    Breaking.Bad.S01E01.srt
+
+* * *
+
+# **03.5 外部字幕自动匹配**
+
+不要仅仅比较文件名。
+
+评分：
+    
+    
+    文件名        30%
+    作品名        20%
+    Season/Episode 20%
+    字幕语言      15%
+    字幕时长      15%
+
+例如：
+    
+    
+    candidate.srt
+    
+    Title       ✓
+    S01E01      ✓
+    Chinese     ✓
+    Duration    ✓
+    
+    score = 0.97
+
+* * *
+
+# **03.6 字幕来源记录**
+
+任何字幕都记录：
+    
+    
+    {
+      "subtitle_id": "sub_001",
+    
+      "language": "zh-CN",
+    
+      "source_type": "external",
+    
+      "path": "...",
+    
+      "format": "srt",
+    
+      "duration": 3601.2,
+    
+      "confidence": 0.98
+    }
+
+如果是用户提供：
+    
+    
+    source_type = user
+
+用户提供的字幕优先级最高。
+
+* * *
+
+# **03.7 03.02 Subtitle Import**
+
+统一支持：
+    
+    
+    SRT
+    ASS
+    SSA
+    VTT
+    TTML
+    SCC
+    WebVTT
+
+内部全部转换成：
+    
+    
+    {
+      "id": "dlg_000001",
+    
+      "start": 12.420,
+    
+      "end": 15.830,
+    
+      "text": "你到底在做什么？",
+    
+      "language": "zh-CN"
+    }
+
+* * *
+
+# **03.8 内部标准格式**
+
+不要让后续模块直接读取 SRT。
+
+统一使用：
+    
+    
+    JSONL
+
+例如：
+    
+    
+    {"id":"dlg_000001","start":12.42,"end":15.83,"text":"What are you doing?","language":"en"}
+    {"id":"dlg_000002","start":16.02,"end":18.71,"text":"I don't know.","language":"en"}
+
+* * *
+
+# **03.9 为什么使用 JSONL**
+
+因为：
+    
+    
+    1,000 行
+
+其中：
+    
+    
+    第 500 行坏了
+
+不需要整个文件重新生成。
+
+而且后续可以：
+    
+    
+    stream processing
+
+非常适合你要求的模块化处理。
+
+* * *
+
+# **03.10 03.03 Subtitle Validation**
+
+检查：
+
+### **时间**
+    
+    
+    start < end
+
+### **重叠**
+    
+    
+    12.0--15.0
+    14.5--17.0
+
+检测。
+
+### **空字幕**
+    
+    
+    ""
+
+删除。
+
+### **异常字符**
+    
+    
+    �
+
+标记。
+
+### **极端持续时间**
+
+例如：
+    
+    
+    字幕持续 45 秒
+
+可能是错误。
+
+* * *
+
+# **03.11 Subtitle Repair**
+
+自动修复：
+    
+    
+    start >= end
+
+无法修复：
+    
+    
+    REVIEW
+
+而不是猜。
+
+* * *
+
+# **03.12 字幕切句**
+
+例如：
+    
+    
+    Walter:
+    I don't know what
+    you're talking about.
+
+不能机械认为：
+    
+    
+    两个人
+
+应该保留：
+    
+    
+    {
+      "dialogue_id": "dlg_001",
+      "text": "I don't know what you're talking about.",
+      "start": 12.4,
+      "end": 15.8
+    }
+
+* * *
+
+# **03.13 03.04 Subtitle Alignment**
+
+字幕和视频时间轴必须对齐。
+
+比较：
+    
+    
+    字幕 duration
+    vs
+    视频 duration
+
+例如：
+    
+    
+    Video = 3600 sec
+    Subtitle = 3598 sec
+
+正常。
+
+如果：
+    
+    
+    Video = 3600
+    Subtitle = 3300
+
+可能是：
+    
+    
+    不同版本
+    PAL/NTSC
+    25fps/23.976fps
+    删减版
+    广告版
+
+需要做：
+    
+    
+    offset
+    scale
+
+而不是直接使用。
+
+* * *
+
+# **03.14 自动寻找 Offset**
+
+如果同时有：
+    
+    
+    英文字幕
+    中文字幕
+
+可以利用：
+    
+    
+    文本相似位置
+
+寻找：
+    
+    
+    Chinese timestamp
+    ≈
+    English timestamp + offset
+
+例如：
+    
+    
+    English:
+    00:10:12
+    
+    Chinese:
+    00:10:14
+
+系统检测：
+    
+    
+    offset = +2.0 sec
+
+* * *
+
+# **03.15 03.05 Dialogue Extraction**
+
+字幕并不等于"对白"。
+
+可能包含：
+    
+    
+    [Music]
+    ♪ ...
+    <door opens>
+    (phone ringing)
+
+建立分类：
+    
+    
+    DIALOGUE
+    MUSIC
+    SFX
+    DESCRIPTION
+    UNKNOWN
+
+* * *
+
+# **03.16 不要简单删除括号内容**
+
+例如：
+    
+    
+    [crying] I can't do this.
+
+应该：
+    
+    
+    {
+      "text": "I can't do this.",
+      "emotion_hint": "crying"
+    }
+
+这个信息以后对 TTS 很重要。
+
+* * *
+
+# **03.17 Dialogue Metadata**
+
+每句对白最终：
+    
+    
+    {
+      "dialogue_id": "dlg_000124",
+    
+      "start": 502.21,
+      "end": 505.63,
+    
+      "source_text": "I can't do this.",
+    
+      "language": "en",
+    
+      "speaker_id": null,
+    
+      "character_id": null,
+    
+      "scene_id": null,
+    
+      "emotion_hint": "distressed",
+    
+      "source": "subtitle",
+    
+      "confidence": 0.99
+    }
+
+注意：
+    
+    
+    speaker_id = null
+    character_id = null
+
+此时还不知道谁说的。
+
+这是 **MODULE 06** 的工作。
+* * *
+
+# **03.18 03.06 Speaker Candidate Analysis**
+
+这里先不做完整 Speaker Diarization。
+
+只建立：
+    
+    
+    dialogue
+    ↓
+    possible speaker
+
+如果字幕有：
+    
+    
+    WALTER:
+    What are you doing?
+
+可以直接记录：
+    
+    
+    candidate_character = Walter
+    confidence = 0.99
+
+如果没有：
+    
+    
+    What are you doing?
+
+保持：
+    
+    
+    candidate_character = null
+
+* * *
+
+# **03.19 字幕中的角色名**
+
+有些字幕：
+    
+    
+    WALTER
+    What are you doing?
+
+有些：
+    
+    
+    Walter: What are you doing?
+
+有些完全没有。
+
+统一 parser：
+    
+    
+    speaker_hint
+
+但：
+
+`speaker_hint` ≠ 最终人物。
+
+最终仍需 MODULE 06 声纹 + 场景 + 对话联合判断。
+* * *
+
+# **03.20 03.07 Chinese Subtitle Acquisition**
+
+如果发现：
+    
+    
+    zh-CN subtitle
+
+直接：
+    
+    
+    USE
+
+不翻译。
+
+这是你这个项目的重要设计：
+    
+    
+    Translation Mode:
+    
+    AUTO
+
+自动选择：
+    
+    
+    Chinese subtitle exists
+    → USE_EXISTING
+    
+    Chinese subtitle absent
+    → TRANSLATE
+
+* * *
+
+# **03.21 中文字幕质量评分**
+
+即使找到中文字幕，也要评分。
+
+检查：
+    
+    
+    时间轴
+    字符异常
+    空字幕
+    数量
+    中英文比例
+
+例如：
+    
+    
+    字幕总句数：742
+    英文：0
+    中文：734
+    异常：8
+    
+    quality = 0.96
+
+* * *
+
+# **03.22 如果中文字幕质量低**
+
+例如：
+    
+    
+    quality < 0.80
+
+UI：
+    
+    
+    ⚠ 中文字幕质量较低
+    
+    [继续使用]
+    [重新寻找]
+    [使用Qwen重新翻译]
+
+不要自动覆盖用户找到的字幕。
+
+* * *
+
+# **03.23 03.08 Qwen Translation Fallback**
+
+只有没有可靠中文字幕时才启动。
+
+流程：
+    
+    
+    English subtitle
+            ↓
+    Scene Context
+            ↓
+    Character Context
+            ↓
+    Translation Memory
+            ↓
+    Qwen3 / Qwen3.5
+            ↓
+    Chinese Dialogue
+
+这里第一次使用：
+    
+    
+    MODULE 02 Character DB
+
+* * *
+
+# **03.24 翻译不是逐句翻译**
+
+例如：
+    
+    
+    Walter:
+    You know what?
+    I think we should talk.
+
+不能：
+    
+    
+    你知道什么？
+    我认为我们应该谈谈。
+
+应该根据：
+    
+    
+    Character
+    Relationship
+    Previous dialogue
+    Scene
+    Tone
+
+翻译。
+
+* * *
+
+# **03.25 Qwen 输入上下文**
+
+每次翻译：
+    
+    
+    当前台词
+    +
+    前 3 句
+    +
+    后 2 句
+    +
+    人物资料
+    +
+    人物关系
+    +
+    本剧术语表
+    +
+    Translation Memory
+
+例如：
+    
+    
+    Character:
+    Walter White
+    
+    Relationship:
+    Jesse = partner/student-like relationship
+    
+    Tone:
+    controlled / tense
+    
+    Previous:
+    ...
+    
+    Current:
+    You know what?
+    
+    Next:
+    I think we should talk.
+
+* * *
+
+# **03.26 输出必须结构化**
+    
+    
+    {
+      "dialogue_id": "dlg_001",
+      "source": "You know what?",
+      "translation": "你知道吗？",
+      "style": "natural",
+      "confidence": 0.94
+    }
+
+* * *
+
+# **03.27 Translation Memory**
+
+立即建立：
+    
+    
+    translation_memory
+
+表：
+    
+    
+    CREATE TABLE translation_memory (
+        id TEXT PRIMARY KEY,
+    
+        project_id TEXT,
+    
+        character_id TEXT,
+    
+        source_text TEXT,
+    
+        translated_text TEXT,
+    
+        scene_context TEXT,
+    
+        confidence REAL,
+    
+        created_at TEXT
+    );
+
+以后出现：
+    
+    
+    "I don't know."
+
+不一定重新翻译。
+
+可以检索：
+    
+    
+    Walter
+    +
+    "I don't know."
+
+得到历史译法。
+
+* * *
+
+# **03.28 03.09 ASR Fallback**
+
+如果没有字幕：
+    
+    
+    Whisper
+
+优先：
+    
+    
+    Whisper large-v3
+
+或者当前环境中更好的 GPU ASR。
+
+输出：
+    
+    
+    {
+      "start": 120.4,
+      "end": 123.2,
+      "text": "I don't know."
+    }
+
+* * *
+
+# **03.29 ASR 与字幕不要混为一谈**
+
+标记：
+    
+    
+    source = subtitle
+
+或者：
+    
+    
+    source = asr
+
+这样后面知道：
+    
+    
+    subtitle confidence
+    ASR confidence
+
+* * *
+
+# **03.30 ASR 也不负责 Speaker Identification**
+
+ASR：
+    
+    
+    WHO?
+    unknown
+
+只负责：
+    
+    
+    WHAT?
+
+即：
+    
+    
+    说了什么
+    什么时候说
+
+Speaker：
+    
+    
+    谁说的
+
+交给 MODULE 05/06。
+
+* * *
+
+# **03.31 03.10 Dialogue Normalization**
+
+统一：
+    
+    
+    curly quotes
+    apostrophes
+    unicode
+    HTML
+    字幕标签
+    换行
+
+例如：
+    
+    
+    I&nbsp;don't&nbsp;know
+
+变成：
+    
+    
+    I don't know
+
+但：
+
+原始文本永远保留。
+
+* * *
+
+# **03.32 Original vs Normalized**
+    
+    
+    raw_text
+    normalized_text
+
+两个字段都保存。
+
+以后发现处理错误，可以重新生成。
+
+* * *
+
+# **03.33 Dialogue Package**
+
+最终：
+    
+    
+    {
+      "schema_version": "1.0",
+    
+      "project_id": "breaking_bad",
+    
+      "episode_id": "S01E01",
+    
+      "source_language": "en",
+    
+      "target_language": "zh-CN",
+    
+      "dialogues": [
+        {
+          "id": "dlg_000001",
+    
+          "start": 12.42,
+          "end": 15.83,
+    
+          "source_text": "What are you doing?",
+    
+          "translated_text": "你在干什么？",
+    
+          "speaker_id": null,
+    
+          "character_id": null,
+    
+          "source": "subtitle",
+    
+          "translation_source": "existing_subtitle",
+    
+          "confidence": 0.99
+        }
+      ]
+    }
+
+* * *
+
+# **03.34 最终数据库增加**
+    
+    
+    CREATE TABLE dialogues (
+        id TEXT PRIMARY KEY,
+    
+        episode_id TEXT NOT NULL,
+    
+        start REAL NOT NULL,
+        end REAL NOT NULL,
+    
+        source_text TEXT NOT NULL,
+        normalized_text TEXT,
+    
+        translated_text TEXT,
+    
+        source_language TEXT,
+        target_language TEXT,
+    
+        speaker_id TEXT,
+        character_id TEXT,
+    
+        source_type TEXT,
+    
+        confidence REAL
+    );
+
+* * *
+
+# **03.35 03 模块的资源生命周期**
+
+严格执行：
+    
+    
+    03.01
+    字幕扫描
+    ↓
+    释放
+    
+    03.02
+    字幕解析
+    ↓
+    释放
+    
+    03.03
+    字幕校验
+    ↓
+    释放
+    
+    03.04
+    时间轴校准
+    ↓
+    释放
+    
+    03.05
+    对白提取
+    ↓
+    释放
+    
+    03.07
+    中文字幕检索
+    ↓
+    释放
+    
+    如果没有中文字幕：
+    
+    03.08
+    启动 Qwen
+    ↓
+    完成
+    ↓
+    释放 GPU
+    
+    如果没有任何字幕：
+    
+    03.09
+    启动 Whisper
+    ↓
+    完成
+    ↓
+    释放 GPU
+
+* * *
+
+# **03.36 失败隔离**
+
+例如：
+    
+    
+    中文字幕下载失败
+
+不影响：
+    
+    
+    英文字幕
+
+如果：
+    
+    
+    Qwen 翻译失败
+
+保留：
+    
+    
+    English Dialogue Package
+
+状态：
+    
+    
+    SUCCESS_WITH_WARNINGS
+
+如果：
+    
+    
+    ASR GPU OOM
+
+可以：
+    
+    
+    retry
+    ↓
+    smaller model
+    ↓
+    CPU fallback
+
+* * *
+
+# **03.37 浏览器页面**
+
+第三个标签：
+    
+    
+    ③ 字幕 & 对白
+
+UI：
+    
+    
+    ┌────────────────────────────────────────┐
+    │ ① 输入 │ ② 研究 │ ③ 字幕 │ ④ ... │
+    ├────────────────────────────────────────┤
+    │ Breaking Bad · S01E01                 │
+    │                                        │
+    │ 字幕状态                               │
+    │                                        │
+    │ 英文字幕       ✓ 已找到               │
+    │ 中文字幕       ✓ 已找到               │
+    │                                        │
+    │ 中文字幕质量   96%                     │
+    │ 时间轴          ✓                      │
+    │ 异常字幕        8                       │
+    │                                        │
+    │ 翻译              未执行               │
+    │ ASR               未执行               │
+    │                                        │
+    │ ───────────────────────────────────── │
+    │                                        │
+    │ 对白数量：742                          │
+    │ 有效对白：734                          │
+    │                                        │
+    │ [查看字幕]                             │
+    │ [重新搜索中文字幕]                     │
+    │ [使用Qwen重新翻译]                     │
+    │ [启动ASR]                              │
+    │                                        │
+    │             [进入 MODULE 04]            │
+    └────────────────────────────────────────┘
+
+* * *
+
+# **03.38 自动决策器**
+
+核心代码逻辑：
+    
+    
+    if embedded_chinese_subtitle:
+        mode = "EXISTING_CHINESE"
+    
+    elif external_chinese_subtitle:
+        mode = "EXISTING_CHINESE"
+    
+    elif reliable_english_subtitle:
+        mode = "QWEN_TRANSLATION"
+    
+    else:
+        mode = "ASR"
+
+如果用户强制：
+    
+    
+    mode = "QWEN_TRANSLATION"
+
+则覆盖自动策略。
+
+* * *
+
+# **03.39 本模块完成后的状态**
+
+例如你的《绝命毒师》S01E01：
+    
+    
+    MODULE 03
+    
+    ✓ English subtitle
+    ✓ Chinese subtitle
+    ✓ Chinese subtitle validated
+    ✓ Timeline aligned
+    ✓ 734 valid dialogue lines
+    ✓ 8 subtitle anomalies
+    ✓ Existing Chinese subtitle selected
+    ✓ Translation skipped
+    ✓ ASR skipped
+
+最终：
+    
+    
+    dialogue_manifest.json
+
+成为 MODULE 04 的唯一输入之一。
+
+* * *
+
+# **03.40 MODULE 03 → MODULE 04 接口**
+    
+    
+    MODULE 02
+    Character DB
+          │
+          ▼
+    MODULE 03
+          │
+          ├── source dialogue
+          ├── Chinese dialogue
+          ├── timestamps
+          ├── subtitle evidence
+          └── dialogue metadata
+                  │
+                  ▼
+          MODULE 04
+    Character Database Construction
+
+### **MODULE 04 接下来要做的事情**
+    
+    
+    视频
+     +
+    MODULE 02 人物资料
+     +
+    MODULE 03 每句对白
+            ↓
+    建立真正的
+    CHARACTER DATABASE
+            ↓
+    人物画像
+    人物别名
+    人物关系
+    人物出场历史
+    人物说话习惯
+    人物词汇
+    人物语气
+    人物情绪
+    人物对白历史
+    人物场景历史
+
+并开始把：
+    
+    
+    "Walter White"
+
+从一个**外部数据库人物实体**
+
+变成我们这部影视剧中的：
+
+**可用于后续声纹识别、翻译、情绪控制和 TTS 的完整 Character Profile。**

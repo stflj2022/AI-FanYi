@@ -1,0 +1,1789 @@
+07
+
+# **MODULE 07 -- Subtitle / Dialogue Intelligence**
+
+**核心目标：**
+    
+    
+    英文对白
+       ↓
+    人物身份
+       ↓
+    人物说话风格
+       ↓
+    人物关系
+       ↓
+    场景上下文
+       ↓
+    剧情上下文
+       ↓
+    已有中文字幕（如果有）
+       ↓
+    Qwen3 / Qwen3.5 本地 LLM
+       ↓
+    适合中文配音的最终台词
+
+本模块**只负责"中文台词"**。
+
+不做：
+    
+    
+    × 声音克隆
+    × TTS
+    × 音频混音
+    × 视频合成
+
+* * *
+
+# **07.01 核心设计：双轨翻译**
+
+你已经确定：
+
+**有现成中文字幕时，不必让 LLM 从零翻译。**
+
+因此采用：
+    
+    
+                      原始英文字幕
+                           │
+                 ┌─────────┴─────────┐
+                 ▼                   ▼
+           有中文字幕             无中文字幕
+                 │                   │
+                 ▼                   ▼
+          Existing Chinese       Qwen3/3.5
+              Subtitle             Translation
+                 │                   │
+                 └─────────┬─────────┘
+                           ▼
+                    Dialogue Adaptation
+                           │
+                           ▼
+                   TTS-ready Chinese
+
+注意：
+
+**现成中文字幕 ≠ 直接拿去 TTS。**
+
+因为字幕翻译通常优先考虑：
+    
+    
+    阅读
+
+而不是：
+    
+    
+    说出来是否自然
+
+因此无论字幕来自哪里，最终都要经过：
+    
+    
+    Dialogue Adaptation
+
+* * *
+
+# **07.02 输入**
+    
+    
+    MODULE 03
+    ├── English subtitle
+    ├── dialogue timeline
+    └── dialogue IDs
+    
+    MODULE 04
+    ├── Character Database
+    ├── Character Style
+    ├── Vocabulary
+    ├── Relationships
+    └── Timeline
+    
+    MODULE 05
+    ├── Scene
+    ├── Scene context
+    └── Dialogue ↔ Audio
+    
+    MODULE 06
+    ├── Character identity
+    ├── Voice identity
+    └── Voice profile
+    
+    External
+    └── Optional Chinese subtitle
+
+* * *
+
+# **07.03 输出**
+    
+    
+    translation/
+    │
+    ├── source_dialogue.jsonl
+    ├── candidate_translation.jsonl
+    ├── adapted_dialogue.jsonl
+    ├── terminology.json
+    ├── translation_memory.json
+    ├── character_translation_profiles.json
+    └── translation_manifest.json
+
+核心结果：
+    
+    
+    {
+      "dialogue_id": "dlg_001",
+    
+      "character_id": "char_walter",
+    
+      "source": "What are you doing?",
+    
+      "candidate_cn": "你在干什么？",
+    
+      "final_cn": "你在干什么？",
+    
+      "translation_source": "existing_subtitle",
+    
+      "adaptation_status": "APPROVED"
+    }
+
+* * *
+
+# **07.04 为什么必须把"翻译"和"改写"分开**
+
+例如英文：
+
+You don't understand what you're dealing with.
+
+字幕可能：
+
+你根本不了解你面对的是什么。
+
+作为字幕：
+    
+    
+    很好
+
+作为中文对白：
+    
+    
+    略显书面
+
+可以改成：
+
+你根本不知道自己惹上了什么。
+
+所以：
+    
+    
+    Translation
+
+和：
+    
+    
+    Dialogue Adaptation
+
+是两个不同阶段。
+
+* * *
+
+# **07.05 07.01 Subtitle Import**
+
+首先扫描：
+    
+    
+    subtitles/
+
+支持：
+    
+    
+    .srt
+    .ass
+    .ssa
+    .vtt
+    .sbv
+
+同时记录：
+    
+    
+    language
+    source
+    release
+    episode
+    hash
+
+例如：
+    
+    
+    {
+      "subtitle_id": "sub_001",
+    
+      "language": "zh-CN",
+    
+      "source": "external",
+    
+      "format": "ass",
+    
+      "quality": 0.94
+    }
+
+* * *
+
+# **07.06 中文字幕不能覆盖原始字幕**
+
+必须保存：
+    
+    
+    ENGLISH ORIGINAL
+
+以及：
+    
+    
+    CHINESE CANDIDATE
+
+两者并存。
+    
+    
+    dlg_001
+    │
+    ├── English
+    │
+    ├── Existing Chinese
+    │
+    └── LLM Chinese
+
+* * *
+
+# **07.07 字幕质量评估**
+
+如果找到多个中文字幕：
+    
+    
+    字幕 A
+    字幕 B
+    字幕 C
+
+不要随机选。
+
+建立：
+    
+    
+    subtitle_quality_score
+
+考虑：
+    
+    
+    时间轴完整性
+    翻译完整度
+    错别字
+    人物名一致性
+    术语一致性
+    机器翻译痕迹
+    上下文一致性
+
+* * *
+
+# **07.08 字幕来源优先级**
+
+默认：
+    
+    
+    官方/正版字幕
+        ↓
+    高质量人工字幕
+        ↓
+    高评价社区字幕
+        ↓
+    机器字幕
+        ↓
+    Qwen自动翻译
+
+但最终不是机械选择。
+
+如果两个版本：
+    
+    
+    A：忠实但生硬
+    B：自然但错误很多
+
+应当：
+    
+    
+    A
+    ↓
+    Qwen Dialogue Adaptation
+
+而不是直接采用 B。
+
+* * *
+
+# **07.09 07.02 Dialogue Normalization**
+
+将字幕变成标准 Dialogue Object：
+    
+    
+    {
+      "dialogue_id": "dlg_001",
+    
+      "episode": "S01E01",
+    
+      "scene_id": "scene_008",
+    
+      "start": 612.42,
+    
+      "end": 615.31,
+    
+      "character_id": "char_walter",
+    
+      "speaker_id": "voice_0001",
+    
+      "english": "What are you doing?",
+    
+      "chinese_candidate": "你在干什么？"
+    }
+
+* * *
+
+# **07.10 字幕拆分**
+
+字幕可能：
+    
+    
+    Walter:
+    What are you doing?
+
+也可能：
+    
+    
+    WALTER: What are you doing?
+
+也可能完全没有人物标签。
+
+MODULE 07 统一成：
+    
+    
+    dialogue_id
+    character_id
+    speaker_id
+
+* * *
+
+# **07.11 人物身份来自 MODULE 06**
+
+如果：
+    
+    
+    speaker_id = voice_0001
+
+MODULE 06 已经确定：
+    
+    
+    voice_0001
+    ↓
+    Walter White
+
+那么 MODULE 07 自动得到：
+    
+    
+    character_id = char_walter
+
+* * *
+
+# **07.12 建立 Character Translation Profile**
+
+这是整个系统的核心之一。
+
+每个人物都有：
+    
+    
+    Character Translation Profile
+
+例如：
+    
+    
+    {
+      "character_id": "char_walter",
+    
+      "style": {
+        "formality": 0.72,
+        "sentence_length": "medium",
+        "slang": 0.25,
+        "aggressiveness": 0.41,
+        "sarcasm": 0.68
+      },
+    
+      "address_preferences": {},
+    
+      "recurring_phrases": {},
+    
+      "forbidden_variants": {},
+    
+      "preferred_terms": {}
+    }
+
+* * *
+
+# **07.13 人物说话不能"一视同仁"**
+
+例如：
+    
+    
+    Walter
+
+和：
+    
+    
+    Jesse
+
+即使英文原文一样：
+
+What are you doing?
+
+也不应该机械地翻译成完全一样的中文风格。
+
+例如：
+    
+    
+    Walter：
+    你在干什么？
+    
+    Jesse：
+    你搞什么啊？
+
+不是为了"文学加工"。
+
+而是为了保持：
+
+**人物辨识度。**
+
+* * *
+
+# **07.14 Character Voice 与 Character Language 必须对应**
+
+MODULE 06：
+    
+    
+    Walter
+    ↓
+    声音 A
+
+MODULE 07：
+    
+    
+    Walter
+    ↓
+    语言风格 A
+
+MODULE 09：
+    
+    
+    Walter
+    ↓
+    声音 A
+    +
+    语言风格 A
+
+最终才能真正形成：
+
+**"这是 Walter 在说中文"**
+
+而不是：
+
+一个普通 AI 声音在念中文字幕。
+
+* * *
+
+# **07.15 07.03 Terminology Database**
+
+建立全剧术语库：
+    
+    
+    terminology/
+
+例如：
+    
+    
+    {
+      "meth": {
+        "preferred": "冰毒",
+        "alternatives": [
+          "甲基苯丙胺"
+        ]
+      },
+    
+      "DEA": {
+        "preferred": "缉毒局"
+      }
+    }
+
+* * *
+
+# **07.16 术语分级**
+    
+    
+    character-specific
+    show-wide
+    season-specific
+    episode-specific
+    scene-specific
+
+优先级：
+    
+    
+    user override
+        ↓
+    scene
+        ↓
+    episode
+        ↓
+    season
+        ↓
+    show
+        ↓
+    general
+
+* * *
+
+# **07.17 人名数据库**
+
+例如：
+    
+    
+    Walter White
+    → 沃尔特·怀特
+    
+    Jesse Pinkman
+    → 杰西·平克曼
+    
+    Hank Schrader
+    → 汉克·施拉德
+
+但数据库允许用户指定：
+    
+    
+    沃尔特
+    沃尔特·怀特
+    老白
+
+不同场景不同使用方式。
+
+* * *
+
+# **07.18 称谓数据库**
+
+这是中文配音特别重要的一层。
+
+例如：
+    
+    
+    Walter → Jesse
+
+可能：
+    
+    
+    Jesse
+
+也可能：
+    
+    
+    Pinkman
+
+也可能：
+    
+    
+    kid
+
+翻译不能统一成：
+    
+    
+    杰西
+
+应该根据：
+    
+    
+    关系
+    年龄
+    情绪
+    场景
+    权力关系
+
+决定。
+
+* * *
+
+# **07.19 Relationship-aware Translation**
+
+MODULE 04 已经提供：
+    
+    
+    Walter
+    ↓
+    Jesse
+    partner / subordinate / adversarial
+
+MODULE 07 使用这个信息。
+
+例如：
+    
+    
+    Jesse → Walter
+
+正常：
+
+沃尔特。
+
+紧张：
+
+怀特先生。
+
+愤怒：
+
+老白。
+
+具体采用什么形式由：
+    
+    
+    历史对白
+    +
+    人物关系
+    +
+    场景
+
+决定，而不是固定字典硬替换。
+
+* * *
+
+# **07.20 07.04 Translation Memory**
+
+建立：
+    
+    
+    translation_memory
+
+核心字段：
+    
+    
+    {
+      "source": "You know what?",
+    
+      "character": "Jesse",
+    
+      "context": "argument",
+    
+      "translation": "你知道吗？",
+    
+      "episode": "S01E03",
+    
+      "confidence": 0.94
+    }
+
+* * *
+
+# **07.21 Translation Memory 的真正作用**
+
+不是简单：
+    
+    
+    英文 → 中文
+
+而是：
+    
+    
+    英文
+    +
+    人物
+    +
+    场景
+    +
+    情绪
+    +
+    上下文
+    →
+    中文
+
+因此同一句英文：
+
+Come on.
+
+可以产生：
+    
+    
+    Jesse：
+    得了吧。
+    
+    Walter：
+    行了。
+    
+    Skyler：
+    拜托。
+
+* * *
+
+# **07.22 建立 Phrase Memory**
+
+例如：
+    
+    
+    "What the hell..."
+
+如果某人物已经多次翻译成：
+    
+    
+    "到底怎么回事……"
+
+后面优先保持。
+
+避免：
+    
+    
+    第一集：到底怎么回事
+    第二集：见鬼
+    第三集：什么鬼东西
+    第四集：搞什么
+
+造成角色语言不稳定。
+
+* * *
+
+# **07.23 07.05 Qwen Translation Engine**
+
+默认：
+    
+    
+    Qwen3 / Qwen3.5
+
+作为本地翻译和改写核心。
+
+但 Qwen 不直接看到：
+    
+    
+    整部剧全部字幕
+
+而是收到：
+    
+    
+    当前对白
+    +
+    人物 Profile
+    +
+    前后对白
+    +
+    Scene Summary
+    +
+    Relationship
+    +
+    Terminology
+    +
+    Translation Memory
+
+* * *
+
+# **07.24 Prompt Context**
+
+例如：
+    
+    
+    CHARACTER:
+    Walter White
+    
+    RELATION:
+    Speaking to Jesse
+    
+    SCENE:
+    Inside vehicle at night
+    
+    EMOTION:
+    Tense
+    
+    PREVIOUS:
+    ...
+    
+    CURRENT:
+    What are you doing?
+    
+    NEXT:
+    ...
+    
+    TERMINOLOGY:
+    ...
+    
+    PREVIOUS TRANSLATIONS:
+    ...
+
+然后要求：
+    
+    
+    生成适合中文口语配音的台词。
+
+* * *
+
+# **07.25 Qwen 不允许改变剧情**
+
+System Rule：
+    
+    
+    不得：
+    添加信息
+    删除信息
+    改变人物关系
+    改变事实
+    改变事件
+    改变说话人
+
+允许：
+    
+    
+    调整语序
+    调整口语表达
+    调整长度
+    调整中文自然度
+    保持人物风格
+
+* * *
+
+# **07.26 07.06 三阶段翻译**
+
+不是：
+    
+    
+    English → Final Chinese
+
+而是：
+    
+    
+    English
+       ↓
+    Literal Translation
+       ↓
+    Context Translation
+       ↓
+    Dialogue Adaptation
+
+* * *
+
+# **07.27 Stage A -- Literal**
+
+目标：
+
+保证意思正确。
+
+例如：
+    
+    
+    English:
+    You have no idea what you're doing.
+    
+    Literal:
+    你根本不知道自己在做什么。
+
+* * *
+
+# **07.28 Stage B -- Context**
+
+结合剧情：
+    
+    
+    你根本不知道自己在干什么。
+
+* * *
+
+# **07.29 Stage C -- Dialogue Adaptation**
+
+考虑人物：
+    
+    
+    你根本不知道自己惹上了什么。
+
+但必须有：
+    
+    
+    adaptation_reason
+
+避免 LLM 无限制发挥。
+
+* * *
+
+# **07.30 配音长度约束**
+
+这是非常重要的。
+
+原文：
+    
+    
+    2.4 sec
+
+中文如果变成：
+    
+    
+    7.2 sec
+
+TTS 会产生：
+    
+    
+    声音重叠
+    画面口型错位
+    下一句撞车
+
+因此建立：
+    
+    
+    target_duration
+
+* * *
+
+# **07.31 Duration Budget**
+
+例如：
+    
+    
+    {
+      "source_duration": 2.84,
+    
+      "target_duration": {
+        "min": 2.4,
+        "ideal": 2.8,
+        "max": 3.2
+      }
+    }
+
+Qwen 输出：
+    
+    
+    候选 A
+    候选 B
+    候选 C
+
+选择符合时间预算的版本。
+
+* * *
+
+# **07.32 中文字数预算**
+
+估算：
+    
+    
+    target_chars
+
+例如：
+    
+    
+    2.8 sec
+    ≈
+    12--16 Chinese characters
+
+不是硬性公式。
+
+实际由后面的 TTS 语速校验再次确认。
+
+* * *
+
+# **07.33 绝不能为了时长删除关键信息**
+
+优先级：
+    
+    
+    剧情信息
+    人物关系
+    情绪
+    人物语言风格
+    时长
+
+如果太长：
+    
+    
+    优先改写
+
+而不是：
+    
+    
+    简单删词
+
+* * *
+
+# **07.34 07.07 Context Window**
+
+每句对白提供：
+    
+    
+    当前句
+    +
+    前 3 句
+    +
+    后 3 句
+
+如果场景很短：
+    
+    
+    整个 Scene
+
+如果涉及剧情理解：
+    
+    
+    Scene Summary
+    +
+    Character Timeline
+
+* * *
+
+# **07.35 两级上下文**
+
+### **Local Context**
+    
+    
+    前后对白
+
+### **Global Context**
+    
+    
+    人物历史
+    人物关系
+    剧情时间线
+    术语
+    过去翻译
+
+避免把整个剧本塞给 Qwen。
+
+* * *
+
+# **07.36 07.08 Long-term Translation Memory**
+
+数据库：
+    
+    
+    translation_memory
+
+每条记录：
+    
+    
+    source
+    translation
+    character
+    episode
+    scene
+    context_embedding
+    confidence
+    approved_by
+
+以后遇到相似表达：
+    
+    
+    semantic search
+
+找出历史翻译。
+
+* * *
+
+# **07.37 Translation Memory Retrieval**
+
+例如当前：
+    
+    
+    "You don't understand."
+
+数据库找到：
+    
+    
+    S01E02
+    Walter
+    → 你根本不明白。
+    
+    S01E04
+    Walter
+    → 你根本就不懂。
+    
+    S01E05
+    Walter
+    → 你什么都不明白。
+
+Qwen 根据：
+    
+    
+    当前场景
+    当前情绪
+    当前关系
+
+选择最一致的风格。
+
+* * *
+
+# **07.38 07.09 Character-specific Translation Memory**
+
+普通 TM：
+    
+    
+    英文 → 中文
+
+本系统：
+    
+    
+    人物 + 英文 + 场景 → 中文
+
+这是关键区别。
+
+* * *
+
+# **07.39 07.10 Consistency Checker**
+
+每次生成后自动检查：
+    
+    
+    人物名
+    术语
+    关系
+    时间
+    数字
+    地点
+    事件
+
+例如原文：
+
+Three million dollars.
+
+模型不能变成：
+
+两百万美元。
+
+* * *
+
+# **07.40 Entity Checker**
+
+检查：
+    
+    
+    Walter
+    Jesse
+    Hank
+    DEA
+    Los Pollos Hermanos
+
+确保前后一致。
+
+* * *
+
+# **07.41 Profanity Policy**
+
+《绝命毒师》这类剧不能自动"净化"。
+
+建立：
+    
+    
+    profanity_level
+
+例如：
+    
+    
+    original:
+    Fuck!
+    
+    candidate:
+    操！
+    
+    alternative:
+    妈的！
+    
+    soft:
+    该死！
+
+默认：
+    
+    
+    保持原剧强度
+
+用户可以设置：
+    
+    
+    原汁原味
+    自然中文
+    适度弱化
+    家庭友好
+
+对于父母观看，我建议默认：
+
+**自然中文 + 保持剧情和人物语气，不刻意把脏话全部消毒。**
+* * *
+
+# **07.42 07.11 Emotion-aware Dialogue**
+
+MODULE 06：
+    
+    
+    Walter voice
+
+MODULE 07：
+    
+    
+    Walter language
+
+同时：
+    
+    
+    emotion = angry
+
+例如：
+    
+    
+    Neutral:
+    你到底在干什么？
+    
+    Angry:
+    你他妈到底在干什么？
+
+但情绪不能凭空增加粗话。
+
+必须根据：
+    
+    
+    原文
+    人物
+    场景
+    历史语言习惯
+
+判断。
+
+* * *
+
+# **07.43 07.12 Dialogue Adaptation Score**
+
+每句最终生成：
+    
+    
+    {
+      "accuracy": 0.96,
+      "naturalness": 0.92,
+      "character_consistency": 0.94,
+      "terminology_consistency": 1.00,
+      "duration_fit": 0.89
+    }
+
+综合：
+    
+    
+    final_score
+
+* * *
+
+# **07.44 三种状态**
+    
+    
+    ≥ 0.90
+    AUTO_APPROVED
+    
+    0.75--0.90
+    REVIEW
+    
+    < 0.75
+    REGENERATE
+
+* * *
+
+# **07.45 自动重试**
+
+如果：
+    
+    
+    duration_fit = 0.52
+
+不要直接交给人工。
+
+执行：
+    
+    
+    Qwen
+    ↓
+    shorter version
+    ↓
+    重新评分
+
+最多：
+    
+    
+    3 attempts
+
+仍失败：
+    
+    
+    MANUAL_REVIEW
+
+* * *
+
+# **07.46 浏览器页面**
+
+第七标签：
+    
+    
+    ⑦ 中文对白
+    
+    
+    ┌──────────────────────────────────────────┐
+    │ Dialogue Intelligence                    │
+    ├──────────────────────────────────────────┤
+    │ Scene 008                                │
+    │ Walter → Jesse                            │
+    │                                          │
+    │ ENGLISH                                  │
+    │ What are you doing?                      │
+    │                                          │
+    │ Existing Chinese                         │
+    │ 你在干什么？                             │
+    │                                          │
+    │ Qwen Adaptation                          │
+    │ 你在干什么？                             │
+    │                                          │
+    │ Duration                                 │
+    │ 2.81 sec                                 │
+    │                                          │
+    │ Character Style                          │
+    │ Walter / tense                           │
+    │                                          │
+    │ Score                                    │
+    │ Accuracy          98%                    │
+    │ Naturalness       94%                    │
+    │ Character         96%                    │
+    │ Duration          93%                    │
+    │                                          │
+    │ [原字幕] [Qwen] [修改] [接受]           │
+    │                                          │
+    └──────────────────────────────────────────┘
+
+* * *
+
+# **07.47 批量模式**
+
+正常工作不需要用户一句一句确认。
+    
+    
+    全部对白
+        ↓
+    自动处理
+        ↓
+    高分 → 自动接受
+        ↓
+    中分 → REVIEW
+        ↓
+    低分 → 自动重试
+        ↓
+    仍低分 → REVIEW
+
+例如一集：
+    
+    
+    734 dialogues
+    
+    AUTO:
+    681
+    
+    RETRY:
+    38
+    
+    REVIEW:
+    15
+
+用户只需要检查：
+    
+    
+    15句
+
+* * *
+
+# **07.48 人工修改立即进入 Memory**
+
+用户把：
+    
+    
+    你在干什么？
+
+改成：
+    
+    
+    你搞什么？
+
+数据库记录：
+    
+    
+    {
+      "source": "What are you doing?",
+    
+      "character": "Jesse",
+    
+      "approved_translation": "你搞什么？",
+    
+      "approved_by": "user"
+    }
+
+以后相似场景优先参考。
+
+* * *
+
+# **07.49 User Override 永久高优先级**
+
+优先级：
+    
+    
+    USER OVERRIDE
+          ↓
+    APPROVED TRANSLATION MEMORY
+          ↓
+    CHARACTER STYLE
+          ↓
+    SHOW TERMINOLOGY
+          ↓
+    QWEN
+          ↓
+    GENERAL TRANSLATION
+
+这样用户越使用系统：
+
+系统越符合自己的审美。
+
+* * *
+
+# **07.50 07.13 翻译记忆数据库**
+    
+    
+    translation_memory (
+        tm_id,
+        source_text,
+        target_text,
+        character_id,
+        scene_type,
+        emotion,
+        episode_id,
+        confidence,
+        approved,
+        source
+    )
+
+* * *
+
+# **07.51 Character Translation Profile**
+    
+    
+    character_translation_profiles (
+        character_id,
+        formality,
+        slang_level,
+        profanity_level,
+        sentence_length,
+        preferred_address,
+        speech_patterns,
+        updated_at
+    )
+
+* * *
+
+# **07.52 Terminology**
+    
+    
+    terminology (
+        term_id,
+        source_term,
+        preferred_translation,
+        alternatives,
+        scope,
+        priority,
+        user_locked
+    )
+
+* * *
+
+# **07.53 Dialogue Translation**
+    
+    
+    dialogue_translations (
+        dialogue_id,
+    
+        source_text,
+    
+        existing_translation,
+    
+        literal_translation,
+    
+        contextual_translation,
+    
+        adapted_translation,
+    
+        final_translation,
+    
+        score,
+    
+        status
+    )
+
+这样可以完整追溯：
+    
+    
+    英文
+    ↓
+    现成字幕
+    ↓
+    Qwen
+    ↓
+    用户修改
+
+* * *
+
+# **07.54 模块资源策略**
+
+这个模块主要是 LLM。
+
+采用：
+    
+    
+    07.01 Subtitle Import
+    CPU
+    
+    07.02 Normalization
+    CPU
+    
+    07.03 Terminology
+    CPU
+    
+    07.04 Translation Memory Retrieval
+    CPU
+    
+    07.05 Qwen Translation
+    GPU
+    
+    07.06 Adaptation
+    GPU
+    
+    07.07 Consistency Check
+    GPU/CPU
+    
+    07.08 Duration Check
+    CPU
+
+Qwen 每一步独占 GPU：
+    
+    
+    load
+    ↓
+    batch
+    ↓
+    save
+    ↓
+    unload
+
+* * *
+
+# **07.55 Qwen 不必处理每一句**
+
+这是一个重要优化。
+
+如果：
+    
+    
+    已有高质量中文字幕
+    +
+    历史翻译一致
+    +
+    人物关系明确
+    +
+    时长合适
+
+可以：
+    
+    
+    直接采用
+
+只有：
+    
+    
+    低质量
+    不自然
+    不一致
+    长度不合适
+
+才调用 Qwen。
+
+* * *
+
+# **07.56 因此真正工作流**
+    
+    
+    英文
+     ↓
+    有没有中文字幕？
+     │
+     ├── 没有
+     │    ↓
+     │   Qwen翻译
+     │
+     └── 有
+          ↓
+       中文字幕
+          ↓
+       Quality Check
+          ↓
+       是否适合配音？
+          │
+          ├── 是 → 保留
+          │
+          └── 否 → Qwen Adaptation
+
+这会比：
+    
+    
+    全部重新翻译
+
+更稳定，也更节省计算。
+
+* * *
+
+# **07.57 最终 Dialogue Object**
+
+这是 MODULE 08/09 最重要的输入：
+    
+    
+    {
+      "dialogue_id": "dlg_001",
+    
+      "episode_id": "S01E01",
+    
+      "scene_id": "scene_008",
+    
+      "character_id": "char_walter",
+    
+      "speaker_id": "voice_0001",
+    
+      "start": 612.42,
+    
+      "end": 615.31,
+    
+      "source": {
+        "en": "What are you doing?"
+      },
+    
+      "translation": {
+        "cn": "你在干什么？",
+        "source": "existing_subtitle",
+        "adapted": false
+      },
+    
+      "emotion": "tense",
+    
+      "duration_target": 2.89,
+    
+      "style_profile": "walter_v1",
+    
+      "confidence": 0.97,
+    
+      "status": "READY_FOR_TTS"
+    }
+
+* * *
+
+# **07.58 MODULE 07 完成标准**
+    
+    
+    ✓ 英文字幕标准化
+    ✓ 中文字幕可选输入
+    ✓ 字幕质量评估
+    ✓ 人物绑定
+    ✓ 场景绑定
+    ✓ 人物关系
+    ✓ 人物语言风格
+    ✓ 人物专属词典
+    ✓ 全剧术语库
+    ✓ Translation Memory
+    ✓ Character Translation Memory
+    ✓ Qwen3/3.5 本地翻译
+    ✓ Qwen Dialogue Adaptation
+    ✓ 情绪上下文
+    ✓ 剧情上下文
+    ✓ 时长预算
+    ✓ 一致性检查
+    ✓ 自动重试
+    ✓ 人工 Review
+    ✓ User Override
+    ✓ 版本化
+    ✓ 可增量更新
+
+* * *
+
+# **07.59 最终数据流**
+    
+    
+                             MODULE 07
+                                  │
+                 ┌────────────────┼────────────────┐
+                 │                │                │
+                 ▼                ▼                ▼
+           English Subtitle   Chinese Subtitle   Context
+                 │                │                │
+                 └────────────────┼────────────────┘
+                                  ▼
+                        Translation Memory
+                                  │
+                                  ▼
+                        Character Profile
+                                  │
+                                  ▼
+                          Qwen3 / Qwen3.5
+                                  │
+                                  ▼
+                        Dialogue Adaptation
+                                  │
+                                  ▼
+                         Consistency Check
+                                  │
+                                  ▼
+                         Duration Check
+                                  │
+                                  ▼
+                        Human Review Queue
+                                  │
+                                  ▼
+                         FINAL CHINESE LINE
+                                  │
+                                  ▼
+                           READY_FOR_TTS
+
+* * *
+
+# **07.60 下一模块**
+    
+    
+    MODULE 08 -- Prosody & Performance Planning
+
+这一模块**不生成声音**，而是把 MODULE 07 的中文台词进一步变成：
+    
+    
+    这句话应该怎么"说"
+
+包括：
+    
+    
+    语速
+    停顿
+    重音
+    音高变化
+    情绪强度
+    呼吸
+    句尾
+    喊叫
+    耳语
+    紧张程度
+    说话力度
+
+最终形成：
+    
+    
+    中文台词
+    +
+    人物 Voice Lock
+    +
+    情绪
+    +
+    表演参数
+    +
+    目标时长
+            ↓
+       TTS Performance Plan
+            ↓
+    MODULE 09 -- Voice Synthesis
+
+这样后面 TTS 就不是简单的：
+
+**把中文字幕朗读出来**
+
+而是：
+
+**让已经确定身份的 Walter、Jesse、Skyler 等人物，用各自固定的声音、语言习惯和当前剧情情绪，把中文台词重新"表演"出来。**

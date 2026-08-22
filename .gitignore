@@ -85,3 +85,19 @@ models/
 .tmp/
 scratch/
 projects/
+
+# 无人值守运行产物
+.omo/
+.claude/.round_mark
+.claude/ROTATE_NEXT
+.claude/FRESH_NEXT
+.claude/TEMP_DEEPSEEK
+.claude/venv-setup.log
+.claude/pi-driver.log
+.claude/driver-stdout.log
+.claude/driver-stderr.log
+
+# 模型/下载文件（大文件不入库）
+models/
+.unattended/
+test-output/

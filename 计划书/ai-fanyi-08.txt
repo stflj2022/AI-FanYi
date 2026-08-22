@@ -1,0 +1,1417 @@
+08
+
+# **MODULE 08 -- Prosody & Performance Planning**
+
+## **08.00 模块定位**
+
+**唯一任务：**
+    
+    
+    MODULE 07
+    最终中文台词
+            +
+    人物身份
+            +
+    人物语言风格
+            +
+    场景
+            +
+    剧情上下文
+            +
+    情绪
+            +
+    目标时长
+            ↓
+    MODULE 08
+    表演规划
+            ↓
+    MODULE 09
+    Voice Synthesis
+
+MODULE 08 **不生成音频**。
+
+它输出的是一份机器可执行的：
+
+**"这个人物应该怎样说这句话"的表演指令。**
+
+* * *
+
+# **08.01 核心输出**
+
+例如：
+    
+    
+    {
+      "dialogue_id": "dlg_001",
+      "character_id": "char_walter",
+    
+      "text": "你到底在干什么？",
+    
+      "performance": {
+        "emotion": "anger",
+        "emotion_intensity": 0.72,
+    
+        "speaking_rate": 1.04,
+    
+        "pitch_shift": -0.03,
+    
+        "energy": 0.82,
+    
+        "pause_before": 0.12,
+    
+        "pause_after": 0.18,
+    
+        "emphasis": [
+          {
+            "text": "到底",
+            "strength": 0.78
+          }
+        ],
+    
+        "ending": "falling",
+    
+        "breath": "short"
+      },
+    
+      "target_duration": 2.74,
+    
+      "confidence": 0.94,
+    
+      "status": "READY_FOR_TTS"
+    }
+
+MODULE 09 只需要执行：
+    
+    
+    Voice Profile
+    +
+    Text
+    +
+    Performance Plan
+
+* * *
+
+# **08.02 为什么必须独立出来**
+
+最简单的错误方案：
+    
+    
+    中文
+     ↓
+    TTS
+     ↓
+    完事
+
+结果通常是：
+    
+    
+    声音像
+    但不像人在说话
+
+尤其是影视剧：
+    
+    
+    你在干什么？
+
+可能是：
+    
+    
+    平静询问
+    疑惑
+    愤怒
+    恐惧
+    讥讽
+    震惊
+    威胁
+
+文字完全一样。
+
+因此：
+    
+    
+    TEXT ≠ PERFORMANCE
+
+* * *
+
+# **08.03 四层结构**
+    
+    
+                     PERFORMANCE
+                          │
+           ┌──────────────┼──────────────┐
+           ▼              ▼              ▼
+        Prosody         Emotion       Acting
+           │              │              │
+           ├─速度         ├─强度         ├─态度
+           ├─停顿         ├─情绪         ├─潜台词
+           ├─重音         ├─变化         ├─关系
+           ├─音高         └─转折         └─场景
+           └─力度
+
+* * *
+
+# **08.04 08.01 Emotion Detection**
+
+输入：
+    
+    
+    英文原文
+    中文台词
+    Scene
+    人物关系
+    前后对白
+
+判断：
+    
+    
+    emotion
+
+第一版标签：
+    
+    
+    neutral
+    happy
+    sad
+    angry
+    fear
+    surprise
+    disgust
+    contempt
+    excited
+    tense
+    calm
+    sarcastic
+    threatening
+    whisper
+    shouting
+    crying
+
+允许多标签：
+    
+    
+    {
+      "emotion": [
+        "angry",
+        "threatening"
+      ]
+    }
+
+* * *
+
+# **08.05 情绪不是单一分类**
+
+不要：
+    
+    
+    Walter = angry
+
+而是：
+    
+    
+    emotion_vector
+
+例如：
+    
+    
+    {
+      "anger": 0.78,
+      "fear": 0.21,
+      "sadness": 0.08,
+      "tension": 0.91,
+      "confidence": 0.84
+    }
+
+这样可以表现：
+
+**表面愤怒，实际上非常害怕。**
+
+影视表演尤其需要这一点。
+
+* * *
+
+# **08.06 情绪来源**
+
+不要只让 LLM 猜。
+
+采用：
+    
+    
+                     Emotion
+                        │
+           ┌────────────┼────────────┐
+           ▼            ▼            ▼
+         Text         Scene        Audio
+           │            │            │
+           └────────────┼────────────┘
+                        ▼
+                  Fusion Model
+
+三个来源：
+
+### **A. 文本**
+
+例如：
+    
+    
+    What the hell are you doing?!
+
+### **B. 剧情**
+
+例如：
+    
+    
+    枪指着 Jesse
+
+### **C. 原始演员表演**
+
+这是最重要的。
+
+MODULE 05 已经拥有：
+    
+    
+    原始英文语音
+
+因此可以分析原演员：
+    
+    
+    pitch
+    energy
+    speech rate
+    pauses
+
+然后把这些表演信息迁移到中文。
+
+* * *
+
+# **08.07 这一点是整个系统的关键优势**
+
+最终不是：
+    
+    
+    英文
+     ↓
+    中文
+     ↓
+    AI自己演
+
+而是：
+    
+    
+    Bryan Cranston 原始表演
+                  ↓
+           Performance Analysis
+                  ↓
+            表演参数
+                  ↓
+           中文台词
+                  ↓
+           新声音演绎
+
+也就是：
+
+**保留原演员的"表演"，只替换语言。**
+
+这会比单纯中文 TTS 好很多。
+
+* * *
+
+# **08.08 08.02 Original Performance Extraction**
+
+MODULE 05 的：
+    
+    
+    source_speaker_audio
+
+进入：
+    
+    
+    Performance Analyzer
+
+提取：
+    
+    
+    pitch contour
+    energy contour
+    speech rate
+    pause locations
+    phoneme duration
+    syllable emphasis
+    breath locations
+
+例如：
+    
+    
+    原句：
+    
+    WHAT are you DOING?
+
+检测：
+    
+    
+    WHAT ↑
+    DOING ↓
+
+得到：
+    
+    
+    {
+      "emphasis": [
+        {
+          "position": 0,
+          "strength": 0.82
+        },
+        {
+          "position": 11,
+          "strength": 0.76
+        }
+      ]
+    }
+
+* * *
+
+# **08.09 Pitch Contour**
+
+不是只保存：
+    
+    
+    pitch = 120Hz
+
+而是保存：
+    
+    
+    pitch(t)
+
+例如：
+    
+    
+    0.0s  110
+    0.2s  116
+    0.4s  128
+    0.6s  121
+    0.8s  108
+
+这代表：
+
+这句话是怎么"唱出来"的。
+
+* * *
+
+# **08.10 Energy Contour**
+
+同理：
+    
+    
+    energy(t)
+
+例如：
+    
+    
+    低
+    低
+    中
+    高
+    高
+    低
+
+用于：
+    
+    
+    愤怒
+    喊叫
+    强调
+
+* * *
+
+# **08.11 Speech Rate**
+
+计算：
+    
+    
+    syllables / second
+
+英文和中文不能直接一比一。
+
+因此不要：
+    
+    
+    英文 4.5 syllables/sec
+    → 中文也 4.5
+
+而是建立：
+    
+    
+    language-normalized rate
+
+最终输出：
+    
+    
+    slow
+    normal
+    fast
+    very_fast
+
+再结合目标时长。
+
+* * *
+
+# **08.12 08.03 Pause Detection**
+
+原演员：
+    
+    
+    You...
+    
+    don't understand...
+
+中文：
+    
+    
+    你……
+    
+    根本不明白……
+
+保留：
+    
+    
+    pause_before
+    pause_mid
+    pause_after
+
+而不是让 TTS 一口气念完。
+
+* * *
+
+# **08.13 Pause Types**
+    
+    
+    micro_pause
+    short_pause
+    dramatic_pause
+    breath_pause
+    hesitation
+
+例如：
+    
+    
+    {
+      "pause": [
+        {
+          "position": 1,
+          "type": "dramatic",
+          "duration": 0.42
+        }
+      ]
+    }
+
+* * *
+
+# **08.14 08.04 Emphasis Detection**
+
+确定：
+    
+    
+    哪个词最重要
+
+例如：
+
+我说了**不要**。
+
+重点：
+    
+    
+    不要
+
+不是：
+    
+    
+    我
+    说了
+
+输出：
+    
+    
+    {
+      "emphasis": [
+        {
+          "token": "不要",
+          "strength": 0.91
+        }
+      ]
+    }
+
+* * *
+
+# **08.15 中文与英文重音不能机械对应**
+
+英文：
+
+I **NEVER** said that.
+
+中文：
+
+我**从来没**说过。
+
+真正重音应该落在：
+    
+    
+    从来没
+
+因此 MODULE 08 必须根据：
+    
+    
+    中文语义
+
+重新映射重音。
+
+* * *
+
+# **08.16 08.05 Breath Planning**
+
+影视配音很容易出现：
+    
+    
+    一口气说完整段
+
+听起来像：
+
+AI朗读。
+
+因此规划：
+    
+    
+    breath
+
+例如：
+    
+    
+    我知道你想说什么。
+    
+    [breath]
+    
+    但这件事已经结束了。
+
+* * *
+
+# **08.17 呼吸不是每句话都添加**
+
+只在：
+    
+    
+    长句
+    高情绪
+    快速说话
+    奔跑
+    争吵
+    哭泣
+    喊叫
+
+等情况下使用。
+
+* * *
+
+# **08.18 08.06 Character Performance Profile**
+
+MODULE 04/06 已经知道人物。
+
+MODULE 08 建立：
+    
+    
+    character_performance_profile
+
+例如：
+    
+    
+    {
+      "character_id": "char_walter",
+    
+      "baseline": {
+        "speaking_rate": 0.96,
+        "energy": 0.62,
+        "pitch_variability": 0.32
+      },
+    
+      "acting_style": {
+        "pause_frequency": 0.41,
+        "emphasis_frequency": 0.36,
+        "dramatic_pause": 0.18
+      }
+    }
+
+* * *
+
+# **08.19 为什么每个人物都需要自己的 Prosody Profile**
+
+否则：
+    
+    
+    Walter
+    Jesse
+    Hank
+    Skyler
+
+全部使用：
+    
+    
+    同一语速
+    同一停顿
+    同一重音
+    同一情绪表达
+
+即使声音不同：
+
+还是会有明显的"AI配音感"。
+
+* * *
+
+# **08.20 从原剧自动学习**
+
+不人工填写：
+    
+    
+    Walter 说话慢
+    Jesse 说话快
+
+而是从原剧统计：
+    
+    
+    S01E01
+    S01E02
+    ...
+
+例如：
+    
+    
+    Walter
+    median rate = 0.92
+    
+    Jesse
+    median rate = 1.14
+    
+    Hank
+    median rate = 1.07
+
+形成 baseline。
+
+* * *
+
+# **08.21 08.07 Scene Performance**
+
+人物 baseline 还不够。
+
+因为：
+    
+    
+    Walter 在实验室
+
+和：
+    
+    
+    Walter 拿枪威胁人
+
+不是同一种表现。
+
+因此：
+    
+    
+    Character Baseline
+    +
+    Scene State
+    =
+    Performance
+
+* * *
+
+# **08.22 Scene State**
+
+从 MODULE 04 获取：
+    
+    
+    scene_type
+    location
+    participants
+    relationship
+    danger
+    action
+
+例如：
+    
+    
+    {
+      "scene_type": "confrontation",
+      "danger": 0.82,
+      "intimacy": 0.10,
+      "urgency": 0.74
+    }
+
+* * *
+
+# **08.23 08.08 Performance State Machine**
+
+每句对白：
+    
+    
+    previous_state
+           ↓
+    current_state
+           ↓
+    next_state
+
+例如：
+    
+    
+    calm
+     ↓
+    suspicious
+     ↓
+    angry
+     ↓
+    violent
+     ↓
+    exhausted
+
+因此不会出现：
+    
+    
+    上一句平静
+    下一句突然 100% 愤怒
+
+而会自然过渡。
+
+* * *
+
+# **08.24 情绪连续性**
+
+建立：
+    
+    
+    emotion_transition
+
+例如：
+    
+    
+    calm → tense
+    0.3 sec
+    
+    tense → angry
+    0.1 sec
+    
+    angry → shouting
+    0.0 sec
+
+这比逐句独立生成自然得多。
+
+* * *
+
+# **08.25 08.09 Original-to-Chinese Timing Map**
+
+这是本模块最难、也最重要的部分之一。
+
+英文：
+    
+    
+    0.0 ───────── 3.2s
+
+中文：
+    
+    
+    0.0 ──────── 3.1s
+
+建立：
+    
+    
+    source performance
+            ↓
+    semantic segments
+            ↓
+    Chinese segments
+            ↓
+    time mapping
+
+* * *
+
+# **08.26 不追求口型完全同步**
+
+你的目标明确：
+
+**不要求完美，只要求现在能实现。**
+
+所以第一版：
+    
+    
+    优先级
+    
+    
+    人物声音
+    ★★★★★
+    
+    情绪表演
+    ★★★★★
+    
+    中文自然度
+    ★★★★★
+    
+    时间同步
+    ★★★★☆
+    
+    口型同步
+    ★★☆☆☆
+
+* * *
+
+# **08.27 Time Budget**
+
+MODULE 07 已经给出：
+    
+    
+    target_duration
+
+MODULE 08 进一步拆：
+    
+    
+    {
+      "total": 3.12,
+    
+      "segments": [
+        {
+          "text": "你",
+          "start": 0.00,
+          "end": 0.22
+        },
+        {
+          "text": "到底",
+          "start": 0.31,
+          "end": 0.72
+        },
+        {
+          "text": "在干什么",
+          "start": 0.78,
+          "end": 2.56
+        }
+      ]
+    }
+
+* * *
+
+# **08.28 TTS 不一定需要严格执行每个时间点**
+
+第一版只传递：
+    
+    
+    总时长
+    +
+    停顿
+    +
+    重音
+    +
+    语速
+    +
+    情绪
+
+给 MODULE 09。
+
+真正音素级时间控制：
+    
+    
+    以后升级
+
+* * *
+
+# **08.29 08.10 Performance Instruction**
+
+统一成模型无关格式：
+    
+    
+    {
+      "text": "你到底在干什么？",
+    
+      "duration": 2.74,
+    
+      "emotion": {
+        "anger": 0.72,
+        "tension": 0.86
+      },
+    
+      "prosody": {
+        "rate": 1.04,
+        "pitch": -0.03,
+        "energy": 0.82
+      },
+    
+      "pause": {
+        "before": 0.12,
+        "after": 0.18
+      },
+    
+      "emphasis": [
+        {
+          "text": "到底",
+          "strength": 0.78
+        }
+      ],
+    
+      "ending": "falling",
+    
+      "breath": "short"
+    }
+
+* * *
+
+# **08.30 为什么采用模型无关格式**
+
+MODULE 09 可以换：
+    
+    
+    CosyVoice
+    XTTS
+    F5-TTS
+    Fish Speech
+    IndexTTS
+    其他未来模型
+
+MODULE 08 不需要改。
+
+只需要：
+    
+    
+    Performance Plan
+          ↓
+    TTS Adapter
+
+* * *
+
+# **08.31 TTS Adapter**
+
+架构：
+    
+    
+    MODULE 08
+    PerformancePlan
+          │
+          ▼
+    ┌───────────────────────┐
+    │ TTS Adapter Interface │
+    └──────────┬────────────┘
+               │
+         ┌─────┼─────┬─────┐
+         ▼     ▼     ▼     ▼
+       TTS-A TTS-B TTS-C TTS-D
+
+这样可以以后更换最好的声音模型。
+
+* * *
+
+# **08.32 08.11 Prosody Engine**
+
+建议拆成：
+    
+    
+    prosody/
+    ├── emotion.py
+    ├── pitch.py
+    ├── energy.py
+    ├── pause.py
+    ├── emphasis.py
+    ├── speech_rate.py
+    ├── breath.py
+    ├── timing.py
+    └── fusion.py
+
+* * *
+
+# **08.33 Emotion Engine**
+
+输入：
+    
+    
+    dialogue
+    scene
+    original_audio_features
+    character_profile
+
+输出：
+    
+    
+    EmotionVector
+
+* * *
+
+# **08.34 Prosody Engine**
+
+输入：
+    
+    
+    EmotionVector
+    CharacterPerformanceProfile
+    OriginalPerformance
+
+输出：
+    
+    
+    ProsodyPlan
+
+* * *
+
+# **08.35 Timing Engine**
+
+输入：
+    
+    
+    Chinese text
+    source duration
+    scene constraints
+
+输出：
+    
+    
+    TimingPlan
+
+* * *
+
+# **08.36 Fusion Engine**
+
+最终：
+    
+    
+    Emotion
+    +
+    Prosody
+    +
+    Timing
+    +
+    Character
+    +
+    Voice
+
+得到：
+    
+    
+    PerformancePlan
+
+* * *
+
+# **08.37 08.12 Quality Scoring**
+
+自动检查：
+    
+    
+    emotion_consistency
+    timing_fit
+    character_consistency
+    prosody_plausibility
+    scene_consistency
+
+例如：
+    
+    
+    {
+      "emotion_consistency": 0.94,
+      "timing_fit": 0.91,
+      "character_consistency": 0.96,
+      "prosody": 0.89,
+      "overall": 0.93
+    }
+
+* * *
+
+# **08.38 低分处理**
+    
+    
+    score >= 0.90
+           ↓
+    READY
+    
+    0.75--0.90
+           ↓
+    RECALCULATE
+    
+    < 0.75
+           ↓
+    REVIEW
+
+仍然不会阻塞整个项目。
+
+* * *
+
+# **08.39 失败隔离**
+
+例如：
+    
+    
+    dlg_342
+
+原始音频严重重叠：
+    
+    
+    PERFORMANCE_ANALYSIS_FAILED
+
+只标记：
+    
+    
+    dlg_342
+
+其他：
+    
+    
+    dlg_001
+    dlg_002
+    ...
+    dlg_341
+    dlg_343
+    ...
+
+继续处理。
+
+* * *
+
+# **08.40 浏览器页面**
+    
+    
+    ⑧ 表演规划
+    
+    
+    ┌──────────────────────────────────────────┐
+    │ Walter White                             │
+    │ Scene 18                                 │
+    ├──────────────────────────────────────────┤
+    │                                          │
+    │ 你到底在干什么？                         │
+    │                                          │
+    │ Emotion                                  │
+    │ ███████████████░░  Angry 72%             │
+    │ █████████████████░ Tension 86%           │
+    │                                          │
+    │ Rate          1.04×                      │
+    │ Energy        82%                        │
+    │ Pitch         -3%                        │
+    │                                          │
+    │ Emphasis                                   │
+    │        到底                               │
+    │                                          │
+    │ Pause                                     │
+    │ Before 0.12s                             │
+    │ After  0.18s                             │
+    │                                          │
+    │ Target duration: 2.74s                   │
+    │                                          │
+    │ [播放原声] [播放分析] [接受]             │
+    └──────────────────────────────────────────┘
+
+* * *
+
+# **08.41 批处理**
+
+整集：
+    
+    
+    734 dialogues
+
+自动：
+    
+    
+    734
+     ↓
+    Emotion Analysis
+     ↓
+    Performance Extraction
+     ↓
+    Prosody Planning
+     ↓
+    Timing Planning
+     ↓
+    Quality Check
+
+例如：
+    
+    
+    READY             706
+    RECALCULATE        21
+    REVIEW              7
+
+用户只看：
+    
+    
+    7
+
+* * *
+
+# **08.42 MODULE 08 的关键原则**
+
+### **原则 1**
+
+**原演员表演优先于 LLM 猜测。**
+
+* * *
+
+### **原则 2**
+
+**人物 baseline 优先于通用 TTS。**
+
+* * *
+
+### **原则 3**
+
+**剧情上下文优先于单句情绪分类。**
+
+* * *
+
+### **原则 4**
+
+**时长约束从一开始就进入规划。**
+
+* * *
+
+### **原则 5**
+
+**Performance Plan 与具体 TTS 模型完全解耦。**
+
+* * *
+
+# **08.43 最终文件结构**
+    
+    
+    module_08/
+    │
+    ├── emotion/
+    │   ├── dialogue_emotions.jsonl
+    │   └── scene_emotions.jsonl
+    │
+    ├── performance/
+    │   ├── original_features/
+    │   ├── character_profiles/
+    │   └── performance_plans.jsonl
+    │
+    ├── prosody/
+    │   ├── pitch/
+    │   ├── energy/
+    │   ├── pauses/
+    │   └── emphasis/
+    │
+    ├── timing/
+    │   └── timing_plans.jsonl
+    │
+    └── manifest.json
+
+* * *
+
+# **08.44 最终核心数据**
+    
+    
+    MODULE 08
+          │
+          ▼
+    performance_plan.jsonl
+
+每一条：
+    
+    
+    Dialogue
+        +
+    Character
+        +
+    Voice Lock
+        +
+    Emotion
+        +
+    Prosody
+        +
+    Timing
+        +
+    Performance
+
+* * *
+
+# **08.45 MODULE 08 完成标准**
+    
+    
+    ✓ 原演员情绪分析
+    ✓ 原演员语速分析
+    ✓ 原演员音高曲线
+    ✓ 原演员能量曲线
+    ✓ 停顿检测
+    ✓ 重音检测
+    ✓ 呼吸规划
+    ✓ 人物 Prosody Profile
+    ✓ Scene Emotion
+    ✓ Character Emotion
+    ✓ Emotion Transition
+    ✓ 中文重音重新映射
+    ✓ 中文语速规划
+    ✓ Dialogue Duration
+    ✓ Timing Plan
+    ✓ Performance Plan
+    ✓ TTS Model Adapter
+    ✓ Quality Score
+    ✓ 自动重试
+    ✓ 人工 Review
+    ✓ 失败隔离
+    ✓ GPU资源释放
+
+* * *
+
+# **08.46 MODULE 08 → MODULE 09**
+
+最终接口非常简单：
+    
+    
+    MODULE 08
+            │
+            │ PerformancePlan
+            ▼
+    MODULE 09
+    Voice Synthesis
+
+MODULE 09 收到：
+    
+    
+    {
+      "character": "Walter White",
+    
+      "voice_profile": "voice_walter_v1",
+    
+      "text": "你到底在干什么？",
+    
+      "emotion": "angry",
+    
+      "emotion_intensity": 0.72,
+    
+      "speaking_rate": 1.04,
+    
+      "energy": 0.82,
+    
+      "pitch": -0.03,
+    
+      "pauses": [
+        0.12,
+        0.18
+      ],
+    
+      "emphasis": [
+        ["到底", 0.78]
+      ],
+    
+      "target_duration": 2.74
+    }
+
+然后才真正：
+    
+    
+                        MODULE 09
+                           │
+                  ┌────────┴────────┐
+                  │                 │
+           Voice Identity      Performance
+                  │                 │
+                  └────────┬────────┘
+                           ▼
+                      TTS Engine
+                           │
+                           ▼
+                      中文人物声音
+                           │
+                           ▼
+                    duration check
+                           │
+                           ▼
+                     audio segment
+
+**MODULE 09 的工程重点将是：选择可真正实现"人物音色 + 中文 + 情绪/表演控制"的当前最佳开源 TTS，并设计 Voice Clone Adapter，使以后更换 CosyVoice、F5-TTS、IndexTTS 等模型不需要重做前面 01--08 模块。**

@@ -1,0 +1,1446 @@
+11
+
+# **MODULE 11 -- Video Assembly & Final Encoding**
+
+## **11.00 模块定位**
+
+MODULE 11 是**最终成片模块**。
+
+前面：
+    
+    
+    01 项目与素材
+    02 媒体情报
+    03 字幕/对白对齐
+    04 人物数据库
+    05 说话人/场景分析
+    06 音色身份
+    07 中文台词
+    08 表演规划
+    09 中文人物配音
+    10 场景混音
+
+到这里已经得到：
+    
+    
+    原始视频画面
+    +
+    中文完整混音声轨
+    +
+    可选中文字幕
+    +
+    章节/元数据
+
+MODULE 11 的任务只有一个：
+
+**把这些已经完成的素材可靠地组装成最终可播放的中文配音影视文件。**
+
+* * *
+
+# **11.01 总体架构**
+    
+    
+                        MODULE 10
+                  Episode Audio Master
+                           │
+                           │
+                           ▼
+    ┌──────────────────────────────────────────┐
+    │              MODULE 11                   │
+    │                                          │
+    │  11.01 Timeline Validation               │
+    │              ↓                           │
+    │  11.02 Video Source Validation           │
+    │              ↓                           │
+    │  11.03 Audio/Video Synchronization       │
+    │              ↓                           │
+    │  11.04 Audio Track Assembly              │
+    │              ↓                           │
+    │  11.05 Subtitle Track                    │
+    │              ↓                           │
+    │  11.06 Chapter / Metadata                │
+    │              ↓                           │
+    │  11.07 Container Assembly                │
+    │              ↓                           │
+    │  11.08 Video Encoding                    │
+    │              ↓                           │
+    │  11.09 Final QC                          │
+    │              ↓                           │
+    │  11.10 Deliverables                      │
+    └──────────────────────────────────────────┘
+                           │
+                           ▼
+                    FINAL VIDEO
+
+* * *
+
+# **11.02 核心原则**
+
+## **原则一：尽可能不重新编码视频**
+
+如果原视频已经是：
+    
+    
+    H.264
+    H.265 / HEVC
+    AV1
+
+并且没有必要改变画面：
+    
+    
+    Video Stream
+          ↓
+    COPY
+
+只重新封装音频。
+
+这样：
+    
+    
+    速度极快
+    +
+    没有二次画质损失
+    +
+    GPU几乎不参与
+
+* * *
+
+# **11.03 最理想情况**
+
+如果：
+    
+    
+    原视频
+    +
+    中文 Audio Master
+
+长度、时间基准完全一致：
+    
+    
+    Video → COPY
+    Audio → ENCODE
+    Container → MKV/MP4
+
+几分钟就可以完成一集的封装。
+
+* * *
+
+# **11.04 只有必要时才重新编码视频**
+
+例如：
+    
+    
+    原视频时间轴异常
+    VFR严重
+    视频损坏
+    需要烧录字幕
+    需要改变分辨率
+    需要改变帧率
+    需要加入视频水印
+
+才：
+    
+    
+    Video Decode
+     ↓
+    Video Encode
+
+否则不要浪费 GPU。
+
+* * *
+
+# **11.05 11.01 Timeline Validation**
+
+首先读取：
+    
+    
+    video_duration
+    audio_duration
+    fps
+    time_base
+    start_time
+    PTS
+    DTS
+
+例如：
+    
+    
+    {
+      "video": {
+        "duration": 2884.520,
+        "fps": 23.976,
+        "time_base": "1/24000"
+      },
+    
+      "audio": {
+        "duration": 2884.517,
+        "sample_rate": 48000
+      }
+    }
+
+* * *
+
+# **11.06 允许的误差**
+
+例如：
+    
+    
+    Video
+    2884.520s
+    
+    Audio
+    2884.517s
+
+差：
+    
+    
+    0.003s
+
+完全正常。
+
+不能因为这种微小差异重新编码整个视频。
+
+* * *
+
+# **11.07 AV Sync Validation**
+
+最终必须检查：
+    
+    
+    第一句对白
+    中间对白
+    最后一句对白
+
+例如：
+    
+    
+    00:01:24.520
+    00:23:17.210
+    00:47:32.110
+
+随机抽样。
+
+* * *
+
+# **11.08 为什么必须检查最后一句**
+
+很多配音工程：
+    
+    
+    开头正常
+    中间正常
+    最后不同步
+
+原因通常是：
+    
+    
+    累计时间漂移
+    VFR
+    错误 timebase
+    音频重采样
+
+所以至少检查：
+    
+    
+    Beginning
+    Middle
+    End
+
+* * *
+
+# **11.09 11.02 Source Video Validation**
+
+检查原视频：
+    
+    
+    codec
+    resolution
+    fps
+    HDR
+    color space
+    bit depth
+    audio streams
+    subtitle streams
+    chapters
+    metadata
+
+例如：
+    
+    
+    3840×2160
+    23.976 fps
+    HEVC Main10
+    HDR10
+
+* * *
+
+# **11.10 不改变原始画面参数**
+
+例如原片：
+    
+    
+    4K HDR
+
+最终不要无缘无故变成：
+    
+    
+    1080p SDR
+
+除非用户主动选择。
+
+* * *
+
+# **11.11 11.03 Audio Track Assembly**
+
+最终文件建议：
+    
+    
+    Track 1
+    Chinese Dub
+    
+    Track 2
+    Original English
+
+这样父母可以：
+    
+    
+    中文
+
+其他用户可以：
+    
+    
+    English
+
+* * *
+
+# **11.12 强烈建议保留原声**
+
+最终：
+    
+    
+    ┌─────────────────────────┐
+    │ Video                   │
+    ├─────────────────────────┤
+    │ Audio 1  中文配音       │ ← 默认
+    │ Audio 2  English        │
+    ├─────────────────────────┤
+    │ Subtitle 1 中文字幕     │
+    │ Subtitle 2 English      │
+    └─────────────────────────┘
+
+这是比直接替换原音更专业的做法。
+
+* * *
+
+# **11.13 默认音轨**
+
+设置：
+    
+    
+    default_audio = Chinese
+
+父母打开播放器：
+
+自动就是中文。
+
+不需要操作。
+
+* * *
+
+# **11.14 原声保留策略**
+
+原始英文音轨：
+    
+    
+    COPY
+
+不要重新编码。
+
+这样：
+    
+    
+    质量100%保持
+
+* * *
+
+# **11.15 11.04 中文字幕**
+
+因为你的工作流已经允许：
+    
+    
+    直接找到现成中文字幕
+
+所以字幕有两种来源：
+
+### **A**
+
+现成中文字幕。
+
+### **B**
+
+MODULE 07 自动翻译。
+
+* * *
+
+# **11.16 推荐默认方式**
+
+如果存在质量好的中文字幕：
+    
+    
+    现成中文字幕
+           ↓
+    时间轴校验
+           ↓
+    直接使用
+
+不重新翻译。
+
+* * *
+
+# **11.17 字幕不要烧进画面**
+
+默认：
+    
+    
+    Soft Subtitle
+
+即：
+    
+    
+    独立字幕轨
+
+而不是：
+    
+    
+    Burn-in
+
+* * *
+
+# **11.18 为什么**
+
+用户可以：
+    
+    
+    打开
+    关闭
+
+也可以选择：
+    
+    
+    中文
+    英文
+    双语
+
+而且：
+    
+    
+    视频无需重新编码
+
+* * *
+
+# **11.19 Subtitle Track**
+
+例如：
+    
+    
+    Subtitle 1
+    Chinese
+    
+    Subtitle 2
+    English
+
+默认：
+    
+    
+    Chinese = OFF
+
+因为你的目标是：
+
+父母观看中文配音。
+
+但如果他们需要文字：
+    
+    
+    一键打开。
+
+* * *
+
+# **11.20 11.05 Subtitle Validation**
+
+必须检查：
+    
+    
+    subtitle_start >= 0
+    subtitle_end > subtitle_start
+    subtitle_end <= episode_duration
+
+以及：
+    
+    
+    重叠
+    时间漂移
+    乱码
+
+* * *
+
+# **11.21 字幕编码**
+
+优先：
+    
+    
+    UTF-8
+
+避免：
+    
+    
+    GBK
+    BIG5
+
+导致播放器乱码。
+
+* * *
+
+# **11.22 11.06 Chapters**
+
+如果原视频有章节：
+    
+    
+    保留
+
+如果没有：
+
+可以使用：
+    
+    
+    Scene boundaries
+
+自动生成。
+
+例如：
+    
+    
+    00:00:00 Intro
+    00:03:14 Scene 01
+    00:07:52 Scene 02
+    00:13:28 Scene 03
+    ...
+
+* * *
+
+# **11.23 为什么章节很有用**
+
+对于父母：
+    
+    
+    上一章
+    下一章
+
+可以快速跳转。
+
+对于你：
+    
+    
+    某个 Scene
+
+出现问题时也能快速定位。
+
+* * *
+
+# **11.24 11.07 Metadata**
+
+最终文件写入：
+    
+    
+    Title
+    Season
+    Episode
+    Language
+    Audio
+    Subtitle
+    Source
+    Created by
+
+例如：
+    
+    
+    Title:
+    Breaking Bad
+    
+    Season:
+    01
+    
+    Episode:
+    01
+    
+    Audio:
+    Chinese Dub
+    
+    Subtitle:
+    Chinese / English
+
+* * *
+
+# **11.25 不要覆盖原始元数据**
+
+保留：
+    
+    
+    Original metadata
+
+在其基础上增加：
+    
+    
+    Chinese Dub metadata
+
+* * *
+
+# **11.26 11.08 Container**
+
+默认推荐：
+
+## **MKV**
+
+优点：
+    
+    
+    多音轨
+    多字幕
+    章节
+    Metadata
+    兼容性
+
+非常适合你的工程母版。
+
+* * *
+
+# **11.27 MP4**
+
+另外生成：
+    
+    
+    MP4
+
+作为：
+    
+    
+    手机
+    电视
+    平板
+    普通播放器
+
+的兼容版本。
+
+* * *
+
+# **11.28 所以最终可以输出两份**
+    
+    
+    S01E01_CN_Dub_Master.mkv
+
+和：
+    
+    
+    S01E01_CN_Dub.mp4
+
+* * *
+
+# **11.29 MKV 是工程母版**
+
+推荐：
+    
+    
+    MKV
+     ↓
+    长期保存
+
+包含：
+    
+    
+    4K Video
+    +
+    Chinese Audio
+    +
+    Original Audio
+    +
+    Chinese Subtitle
+    +
+    English Subtitle
+    +
+    Chapters
+    +
+    Metadata
+
+* * *
+
+# **11.30 MP4 是消费版本**
+
+例如：
+    
+    
+    iPhone
+    iPad
+    电视
+    Kodi
+    普通播放器
+
+输出：
+    
+    
+    MP4
+
+* * *
+
+# **11.31 11.09 Video Encoding**
+
+如果必须编码：
+
+优先：
+    
+    
+    H.265 / HEVC
+
+或者：
+    
+    
+    H.264
+
+如果设备支持：
+    
+    
+    AV1
+
+也可以作为高压缩版本。
+
+* * *
+
+# **11.32 但这里有一个重要原则**
+
+**不要为了"工程先进"而强制重新编码。**
+
+例如原视频已经：
+    
+    
+    HEVC 4K
+
+那么：
+    
+    
+    HEVC → HEVC
+
+通常没有必要。
+
+直接：
+    
+    
+    COPY
+
+* * *
+
+# **11.33 11.10 GPU Encoding**
+
+如果真的需要重新编码：
+
+NVIDIA：
+    
+    
+    NVENC
+
+例如：
+    
+    
+    H.264 NVENC
+    HEVC NVENC
+    AV1 NVENC
+
+* * *
+
+# **11.34 NVENC 的定位**
+
+不是：
+
+让画质最好。
+
+而是：
+
+**用 GPU 快速完成最终消费版编码。**
+
+因此保留两个 preset：
+    
+    
+    MASTER
+
+和：
+    
+    
+    DELIVERY
+
+* * *
+
+# **11.35 Master**
+
+尽可能：
+    
+    
+    Video COPY
+
+或者：
+    
+    
+    高质量编码
+
+Delivery：
+    
+    
+    适合电视/手机/网络
+
+* * *
+
+# **11.36 11.11 Audio Encoding**
+
+内部：
+    
+    
+    48kHz PCM
+
+最终 MKV：
+
+可以：
+    
+    
+    FLAC
+
+或：
+    
+    
+    AAC
+
+MP4：
+
+通常：
+    
+    
+    AAC
+
+* * *
+
+# **11.37 推荐**
+
+### **MKV Master**
+    
+    
+    Video: COPY
+    Chinese Audio: FLAC
+    Original Audio: COPY
+    Subtitle: ASS/SRT
+
+### **MP4 Delivery**
+    
+    
+    Video: COPY / HEVC
+    Chinese Audio: AAC
+    Original Audio: AAC/COPY
+    Subtitle: mov_text
+
+* * *
+
+# **11.38 11.12 Final Sync Repair**
+
+最终成片前再做一次：
+    
+    
+    audio master
+           ↓
+    video timeline
+           ↓
+    sync validator
+
+如果发现：
+    
+    
+    Audio +43ms
+
+不要返回 MODULE 01。
+
+直接在 MODULE 11：
+    
+    
+    Audio Offset
+
+修复。
+
+* * *
+
+# **11.39 如果出现累计漂移**
+
+例如：
+    
+    
+    开始       0ms
+    30分钟    +120ms
+    60分钟    +250ms
+
+这是严重问题。
+
+应该回到：
+    
+    
+    MODULE 10
+
+检查：
+    
+    
+    sample rate
+    timebase
+    resampling
+    audio duration
+
+而不是在 MODULE 11 强行拉伸整条音频。
+
+* * *
+
+# **11.40 11.13 Final QC**
+
+最终必须自动播放/分析：
+    
+    
+    Video
+    Audio
+    Subtitle
+    Chapter
+    Metadata
+
+* * *
+
+# **11.41 Video QC**
+
+检查：
+    
+    
+    黑屏
+    花屏
+    帧损坏
+    FPS异常
+    PTS异常
+    音视频长度
+
+* * *
+
+# **11.42 Audio QC**
+
+检查：
+    
+    
+    Clipping
+    True Peak
+    LUFS
+    Silence
+    Dropout
+    Channel imbalance
+
+* * *
+
+# **11.43 Dialogue QC**
+
+抽样：
+    
+    
+    前10分钟
+    中间10分钟
+    最后10分钟
+
+分析：
+    
+    
+    中文对白是否存在
+    对白是否突然消失
+    人物声音是否错位
+
+* * *
+
+# **11.44 自动检测"人物说错声音"**
+
+MODULE 09 已经有：
+    
+    
+    speaker embedding
+
+最终可以检查：
+    
+    
+    Timeline
+     ↓
+    Dialogue
+     ↓
+    Predicted Speaker
+     ↓
+    Expected Character
+
+例如：
+    
+    
+    Expected:
+    Walter
+    
+    Actual:
+    Jesse-like voice
+
+自动报警：
+    
+    
+    VOICE_MISMATCH
+
+* * *
+
+# **11.45 11.14 最终人工验收**
+
+整个系统最终不应该要求用户看完整一集检查。
+
+而是：
+    
+    
+    自动 QC
+          ↓
+    发现问题
+          ↓
+    Review Queue
+
+例如：
+    
+    
+    S01E01
+    
+    ✓ Video
+    ✓ Audio
+    ✓ Sync
+    
+    ⚠ Scene 12
+    ⚠ Scene 27
+    ⚠ dlg_482
+
+用户只看这几个。
+
+* * *
+
+# **11.46 浏览器页面**
+
+第 11 标签：
+    
+    
+    ⑪ 最终成片
+
+页面：
+    
+    
+    ┌─────────────────────────────────────────────┐
+    │              S01E01 FINAL                   │
+    ├─────────────────────────────────────────────┤
+    │                                             │
+    │             ┌───────────────┐               │
+    │             │               │               │
+    │             │   VIDEO       │               │
+    │             │   PREVIEW     │               │
+    │             │               │               │
+    │             └───────────────┘               │
+    │                                             │
+    │ Audio                                       │
+    │ ● 中文配音                                 │
+    │ ○ English                                  │
+    │                                             │
+    │ Subtitle                                    │
+    │ □ 中文字幕                                 │
+    │ □ English                                  │
+    │                                             │
+    │ Sync               ✓                        │
+    │ Audio Quality      ✓                        │
+    │ Video Quality      ✓                        │
+    │ Subtitle           ✓                        │
+    │                                             │
+    │ [生成 MKV]   [生成 MP4]                    │
+    └─────────────────────────────────────────────┘
+
+* * *
+
+# **11.47 一键生成**
+
+用户点击：
+    
+    
+    [生成最终视频]
+
+系统：
+    
+    
+    validate
+       ↓
+    assemble
+       ↓
+    mux
+       ↓
+    encode if needed
+       ↓
+    QC
+       ↓
+    READY
+
+* * *
+
+# **11.48 11.15 不要重新跑前面模块**
+
+例如：
+    
+    
+    MODULE 11
+
+发现：
+
+中文字幕有错。
+
+只重新：
+    
+    
+    Subtitle Track
+
+不要：
+    
+    
+    01 → 02 → 03 → ... → 11
+
+全部重跑。
+
+* * *
+
+# **11.49 依赖图**
+    
+    
+    Video Source ───────────────────────┐
+                                         │
+    Subtitle ────────────────────────────┤
+                                         ▼
+    MODULE 10 Audio Master ─────────► MODULE 11
+                                         │
+                                         ▼
+                                    Final Video
+
+MODULE 11 是一个：
+    
+    
+    Assembly Layer
+
+而不是重新处理层。
+
+* * *
+
+# **11.50 11.16 文件结构**
+    
+    
+    module_11/
+    │
+    ├── assembly/
+    │   ├── timeline.json
+    │   ├── audio_tracks.json
+    │   └── subtitle_tracks.json
+    │
+    ├── chapters/
+    │   └── chapters.xml
+    │
+    ├── metadata/
+    │   └── metadata.json
+    │
+    ├── output/
+    │   ├── S01E01_CN_Dub_Master.mkv
+    │   └── S01E01_CN_Dub.mp4
+    │
+    ├── qc/
+    │   ├── video_qc.json
+    │   ├── audio_qc.json
+    │   └── final_qc.json
+    │
+    └── manifest.json
+
+* * *
+
+# **11.51 11.17 Manifest**
+    
+    
+    {
+      "project": "breaking_bad",
+    
+      "episode": "S01E01",
+    
+      "video": {
+        "source": "original",
+        "codec": "hevc",
+        "resolution": "3840x2160",
+        "fps": 23.976
+      },
+    
+      "audio": {
+        "default": "Chinese",
+        "tracks": [
+          "Chinese",
+          "English"
+        ]
+      },
+    
+      "subtitles": {
+        "tracks": [
+          "Chinese",
+          "English"
+        ]
+      },
+    
+      "chapters": true,
+    
+      "qc": {
+        "video": "PASS",
+        "audio": "PASS",
+        "sync": "PASS",
+        "subtitle": "PASS"
+      },
+    
+      "status": "FINAL"
+    }
+
+* * *
+
+# **11.52 11.18 失败隔离**
+
+最终封装失败：
+    
+    
+    MKV_FAILED
+
+不影响：
+    
+    
+    MODULE 10
+    Audio Master
+
+重新运行：
+    
+    
+    MODULE 11
+
+即可。
+
+* * *
+
+如果：
+    
+    
+    MP4_FAILED
+
+也不影响：
+    
+    
+    MKV_MASTER
+
+所以两个输出必须独立：
+    
+    
+    MKV Master
+           │
+           └── PASS
+    
+    MP4 Delivery
+           │
+           └── FAIL
+
+只重做 MP4。
+
+* * *
+
+# **11.53 11.19 资源释放**
+
+MODULE 11 大部分工作不需要大模型。
+
+因此：
+    
+    
+    MODULE 10
+    GPU工作
+     ↓
+    释放GPU
+     ↓
+    MODULE 11
+    CPU/FFmpeg
+
+只有真正需要：
+    
+    
+    NVENC
+
+时才使用 GPU。
+
+完成：
+    
+    
+    ffmpeg process
+     ↓
+    exit
+     ↓
+    GPU resources released
+
+* * *
+
+# **11.54 11.20 最终交付结构**
+
+一集最终得到：
+    
+    
+    S01E01/
+    │
+    ├── S01E01_CN_Dub_Master.mkv
+    │
+    ├── S01E01_CN_Dub.mp4
+    │
+    ├── subtitles/
+    │   ├── zh-Hans.srt
+    │   └── en.srt
+    │
+    ├── audio/
+    │   └── S01E01_audio_master.wav
+    │
+    └── manifest.json
+
+* * *
+
+# **11.55 最终用户体验**
+
+你的父母最终看到的其实非常简单：
+    
+    
+    打开：
+    
+    S01E01_CN_Dub.mp4
+
+播放器直接：
+    
+    
+    画面
+    +
+    中文人物声音
+    +
+    原剧音乐
+    +
+    原剧音效
+    +
+    原剧环境声
+
+不需要他们知道：
+    
+    
+    Whisper
+    Qwen
+    CosyVoice
+    F5-TTS
+    Demucs
+    FFmpeg
+    CUDA
+
+整个复杂系统全部隐藏在后面。
+
+* * *
+
+# **11.56 到这里，第一条完整生产链已经闭环**
+    
+    
+    ┌──────────────────────────────────────────┐
+    │              PROJECT                      │
+    └──────────────────┬───────────────────────┘
+                       ↓
+    01 Project & Media Intake
+                       ↓
+    02 Media Intelligence
+                       ↓
+    03 Subtitle / Alignment
+                       ↓
+    04 Character Database
+                       ↓
+    05 Speaker / Scene Analysis
+                       ↓
+    06 Voice Identity
+                       ↓
+    07 Chinese Dialogue
+                       ↓
+    08 Performance Planning
+                       ↓
+    09 Voice Synthesis
+                       ↓
+    10 Audio Mixing
+                       ↓
+    11 Video Assembly
+                       ↓
+    ┌──────────────────────────────────────────┐
+    │        Chinese Dubbed Episode            │
+    └──────────────────────────────────────────┘
+
+* * *
+
+# **11.57 但还没有真正完成整个工程**
+
+这里还有三个非常重要的工程模块不能省。
+    
+    
+    MODULE 12
+    Project QA & Human Review
+
+负责：
+    
+    
+    整集自动检查
+    问题列表
+    人工复核
+    重新生成
+    版本批准
+
+然后：
+    
+    
+    MODULE 13
+    Batch / Season Pipeline
+
+负责：
+    
+    
+    S01E01
+     ↓
+    S01E02
+     ↓
+    S01E03
+    ...
+
+真正做到：
+
+**一季甚至整部剧无人值守批量运行，但任何一句出错都不会拖垮整个项目。**
+
+最后还应该有：
+    
+    
+    MODULE 14
+    Project Archive & Reproducibility
+
+把：
+    
+    
+    人物数据库
+    音色
+    字幕
+    翻译记忆
+    剧情上下文
+    Performance Profile
+    TTS版本
+    模型
+    参数
+    音频
+    最终视频
+
+全部建立可追溯关系。
+
+这样半年后你重新做：
+
+《绝命毒师》第二季
+
+系统不需要重新认识 Walter、Jesse、Hank，也不需要重新建立他们的声音和语言习惯。
+
+**这三个模块完成后，才是真正意义上的"影视剧 AI 中文配音生产系统"，而不是一个只能处理一集视频的脚本。**

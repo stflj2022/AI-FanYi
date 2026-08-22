@@ -1,0 +1,1583 @@
+12
+
+# **MODULE 12 -- Project QA & Human Review**
+
+## **12.00 模块定位**
+
+MODULE 12 是整个系统的**质量控制与人工审核层**。
+
+它不重新制作内容，只负责：
+    
+    
+    MODULE 01--11 的全部产物
+                ↓
+          自动质量检查
+                ↓
+           问题分类/评分
+                ↓
+           人工审核队列
+                ↓
+          返回指定模块重做
+                ↓
+             最终批准
+
+核心原则：
+
+**发现问题只回退到产生问题的模块，绝不整条流水线重跑。**
+
+* * *
+
+# **12.01 总体架构**
+    
+    
+                        MODULE 11
+                     Final Video
+                          │
+                          ▼
+                 ┌─────────────────┐
+                 │ 12.01 Ingest QA │
+                 └────────┬────────┘
+                          ↓
+                 ┌─────────────────┐
+                 │ 12.02 Structural │
+                 │      QA         │
+                 └────────┬────────┘
+                          ↓
+                 ┌─────────────────┐
+                 │ 12.03 Audio QA  │
+                 └────────┬────────┘
+                          ↓
+                 ┌─────────────────┐
+                 │ 12.04 Voice QA  │
+                 └────────┬────────┘
+                          ↓
+                 ┌─────────────────┐
+                 │ 12.05 Dialogue  │
+                 │      QA         │
+                 └────────┬────────┘
+                          ↓
+                 ┌─────────────────┐
+                 │ 12.06 Sync QA   │
+                 └────────┬────────┘
+                          ↓
+                 ┌─────────────────┐
+                 │ 12.07 Scene QA  │
+                 └────────┬────────┘
+                          ↓
+                 ┌─────────────────┐
+                 │ 12.08 Automatic │
+                 │      Scoring    │
+                 └────────┬────────┘
+                          ↓
+                 ┌─────────────────┐
+                 │ 12.09 Review    │
+                 │      Queue      │
+                 └────────┬────────┘
+                          ↓
+                 ┌─────────────────┐
+                 │ 12.10 Human     │
+                 │      Review     │
+                 └────────┬────────┘
+                          ↓
+                 ┌─────────────────┐
+                 │ 12.11 Decision  │
+                 └────────┬────────┘
+                          ↓
+                   FINAL APPROVED
+
+* * *
+
+# **12.02 QA 的核心不是"给整集打分"**
+
+错误设计：
+    
+    
+    S01E01
+    Quality = 87%
+
+这个数字没有实际意义。
+
+真正需要知道的是：
+    
+    
+    S01E01
+    │
+    ├── Scene 001 ✓
+    ├── Scene 002 ✓
+    ├── Scene 003 ⚠
+    │      └── dlg_184
+    │
+    ├── Scene 004 ✓
+    ├── Scene 005 ⚠
+    │      ├── voice mismatch
+    │      └── timing
+    │
+    └── Scene 006 ✓
+
+所以：
+
+**QA 的最小单位是 Dialogue / Scene，而不是 Episode。**
+
+* * *
+
+# **12.03 四级质量单位**
+    
+    
+    Episode
+       │
+       └── Scene
+              │
+              └── Dialogue
+                     │
+                     └── Audio Segment
+
+每一级都有自己的 QC。
+
+* * *
+
+# **12.04 12.01 Ingest QA**
+
+MODULE 12 开始时先验证：
+    
+    
+    MODULE 11 manifest
+    MODULE 10 audio master
+    MODULE 09 dialogue
+    MODULE 08 performance
+    MODULE 07 translation
+    MODULE 04 character DB
+
+确认：
+    
+    
+    文件存在
+    版本一致
+    Hash一致
+    时间轴一致
+    依赖关系一致
+
+* * *
+
+# **12.05 Manifest 完整性**
+
+例如：
+    
+    
+    {
+      "episode": "S01E01",
+    
+      "required_modules": {
+        "01": "PASS",
+        "04": "PASS",
+        "07": "PASS",
+        "09": "PASS",
+        "10": "PASS",
+        "11": "PASS"
+      },
+    
+      "status": "READY_FOR_QA"
+    }
+
+如果 MODULE 09：
+    
+    
+    status = FAILED
+
+MODULE 12：
+    
+    
+    停止
+
+而不是继续假装生成最终质量报告。
+
+* * *
+
+# **12.06 12.02 Structural QA**
+
+检查最终视频：
+    
+    
+    视频存在
+    音频存在
+    字幕存在
+    章节存在
+    Metadata存在
+
+检查：
+    
+    
+    duration
+    resolution
+    fps
+    codec
+    sample rate
+    channel layout
+
+* * *
+
+# **12.07 文件完整性**
+
+计算：
+    
+    
+    SHA-256
+
+例如：
+    
+    
+    {
+      "file": "S01E01_CN_Dub_Master.mkv",
+      "sha256": "...",
+      "size": 1847238912
+    }
+
+保证：
+
+后面复制、移动、归档之后仍然知道文件有没有损坏。
+
+* * *
+
+# **12.08 12.03 Audio QA**
+
+检查：
+    
+    
+    Integrated LUFS
+    Short-term LUFS
+    True Peak
+    RMS
+    Clipping
+    Silence
+    Dropout
+    Channel imbalance
+    DC offset
+
+* * *
+
+# **12.09 Clipping**
+
+检测：
+    
+    
+    sample > 0 dBFS
+
+或者：
+    
+    
+    True Peak > threshold
+
+如果：
+    
+    
+    clipping = true
+
+自动：
+    
+    
+    FAIL
+
+回退：
+    
+    
+    MODULE 10
+
+而不是重新生成 TTS。
+
+* * *
+
+# **12.10 音量异常**
+
+例如：
+    
+    
+    Scene 01  -16 LUFS
+    Scene 02  -16 LUFS
+    Scene 03  -28 LUFS
+    Scene 04  -16 LUFS
+
+Scene 03：
+    
+    
+    ⚠ Loudness anomaly
+
+进入 Review Queue。
+
+* * *
+
+# **12.11 12.04 Voice QA**
+
+这是本项目特别重要的一层。
+
+检查：
+
+**人物声音是不是正确的人物声音。**
+
+例如：
+    
+    
+    Expected:
+    Walter
+    
+    Generated:
+    Walter
+
+通过：
+    
+    
+    Speaker Embedding
+
+进行相似度比较。
+
+* * *
+
+# **12.12 Voice Similarity**
+
+数据库保存：
+    
+    
+    {
+      "character": "Walter",
+      "voice_embedding": "...",
+      "reference_segments": 37
+    }
+
+当前对白：
+    
+    
+    dlg_184.wav
+
+计算：
+    
+    
+    cosine_similarity
+
+例如：
+    
+    
+    Walter
+    0.94 ✓
+    
+    Jesse
+    0.61
+    
+    Hank
+    0.48
+
+判定：
+    
+    
+    PASS
+
+* * *
+
+# **12.13 相似度阈值**
+
+不要设计成：
+    
+    
+    similarity > 0.90 = PASS
+
+这么简单。
+
+因为：
+    
+    
+    愤怒
+    耳语
+    哭泣
+    喊叫
+    电话
+    远距离
+
+都会改变 embedding。
+
+应该：
+    
+    
+    Character-specific threshold
+    +
+    Emotion-aware threshold
+    +
+    Scene-aware threshold
+
+* * *
+
+# **12.14 Voice QA 结果**
+    
+    
+    {
+      "dialogue_id": "dlg_184",
+      "expected_character": "Walter",
+    
+      "similarity": 0.91,
+    
+      "emotion": "angry",
+    
+      "threshold": 0.86,
+    
+      "status": "PASS"
+    }
+
+* * *
+
+# **12.15 12.05 Dialogue QA**
+
+检查：
+    
+    
+    Dialogue 是否存在
+    Dialogue 是否完整
+    Dialogue 是否被截断
+    Dialogue 是否重复
+    Dialogue 是否为空
+
+* * *
+
+# **12.16 最重要的三个问题**
+
+### **① 漏句**
+
+原文：
+    
+    
+    你到底想干什么？
+
+中文：
+    
+    
+    你到底……
+
+检测：
+    
+    
+    semantic completeness
+
+* * *
+
+### **② 重复**
+    
+    
+    你听我说。
+    你听我说。
+
+检测：
+    
+    
+    duplicate dialogue
+
+* * *
+
+### **③ 错序**
+    
+    
+    A
+    B
+    C
+
+变成：
+    
+    
+    A
+    C
+    B
+
+通过 timeline 检测。
+
+* * *
+
+# **12.17 12.06 Sync QA**
+
+同步检查分三层。
+    
+    
+    Level 1
+    Timeline
+    
+    Level 2
+    Audio duration
+    
+    Level 3
+    Perceptual sync
+
+* * *
+
+# **12.18 Timeline Sync**
+
+例如：
+    
+    
+    Original:
+    00:13:24.520
+    
+    Chinese:
+    00:13:24.540
+
+误差：
+    
+    
+    20 ms
+
+PASS。
+
+* * *
+
+# **12.19 Dialogue Duration**
+
+例如：
+    
+    
+    Original:
+    2.40s
+    
+    Chinese:
+    2.91s
+
+虽然起点一致：
+    
+    
+    可能覆盖下一句
+
+所以必须检查：
+    
+    
+    next_dialogue_start
+
+* * *
+
+# **12.20 Overlap QA**
+
+检测：
+    
+    
+    A:
+    00:01:20--00:01:23
+    
+    B:
+    00:01:22--00:01:25
+
+如果原剧就是这样：
+    
+    
+    PASS
+
+如果中文变成：
+    
+    
+    A:
+    00:01:20--00:01:25
+    
+    B:
+    00:01:22--00:01:25
+
+可能：
+    
+    
+    ⚠ excessive overlap
+
+* * *
+
+# **12.21 12.07 Scene QA**
+
+Scene 是人工审核最重要的单位。
+
+每个 Scene 生成：
+    
+    
+    Scene Quality Report
+
+包括：
+    
+    
+    Dialogue
+    Voice
+    Timing
+    Mix
+    Music
+    SFX
+    Room
+    Translation
+
+* * *
+
+# **12.22 Scene Quality Score**
+
+例如：
+    
+    
+    Scene 12
+    
+    Voice          94
+    Timing         98
+    Mix            89
+    Dialogue       96
+    Translation    97
+    Environment    91
+    
+    Overall        94
+
+* * *
+
+# **12.23 不要简单平均**
+
+例如：
+    
+    
+    Voice = 100
+    Translation = 100
+    Timing = 100
+    Mix = 40
+
+平均：
+    
+    
+    85
+
+却可能非常难听。
+
+所以：
+    
+    
+    Critical Failure
+
+拥有最高优先级。
+
+例如：
+    
+    
+    Clipping
+    Voice mismatch
+    Missing dialogue
+    Severe sync error
+
+任何一个发生：
+    
+    
+    Scene = FAIL
+
+* * *
+
+# **12.24 12.08 Automatic Scoring**
+
+最终建立：
+    
+    
+    Quality Engine
+
+输入：
+    
+    
+    Audio features
+    Voice similarity
+    ASR
+    Translation semantics
+    Timing
+    Scene metadata
+
+输出：
+    
+    
+    {
+      "scene": "S01E12_SC07",
+    
+      "scores": {
+        "voice": 94,
+        "dialogue": 98,
+        "timing": 97,
+        "mix": 91,
+        "translation": 96
+      },
+    
+      "critical_errors": [],
+    
+      "overall": 95,
+    
+      "status": "PASS"
+    }
+
+* * *
+
+# **12.25 Quality 分成三种状态**
+
+不要只有：
+    
+    
+    PASS / FAIL
+
+采用：
+    
+    
+    PASS
+    REVIEW
+    FAIL
+
+* * *
+
+# **12.26 PASS**
+
+例如：
+    
+    
+    Overall ≥ 90
+    Critical errors = 0
+
+自动通过。
+
+* * *
+
+# **12.27 REVIEW**
+
+例如：
+    
+    
+    75--89
+
+进入人工队列。
+
+* * *
+
+# **12.28 FAIL**
+
+例如：
+    
+    
+    Voice mismatch
+    Missing dialogue
+    Clipping
+    Severe timing error
+
+直接返回产生问题的 MODULE。
+
+* * *
+
+# **12.29 12.09 Review Queue**
+
+浏览器：
+    
+    
+    ⑫ QA / 审核
+
+界面：
+    
+    
+    ┌────────────────────────────────────────────┐
+    │ S01E01 QUALITY CONTROL                    │
+    ├────────────────────────────────────────────┤
+    │                                            │
+    │ Overall: 93.4        PASS                  │
+    │                                            │
+    │ ✓ Voice       95                         │
+    │ ✓ Dialogue    97                         │
+    │ ✓ Timing      96                         │
+    │ ⚠ Mix         87                         │
+    │ ✓ Translation 94                         │
+    │                                            │
+    ├────────────────────────────────────────────┤
+    │ REVIEW QUEUE                              │
+    │                                            │
+    │ ⚠ Scene 07   Mix problem                 │
+    │ ⚠ Scene 19   Voice similarity low        │
+    │ ⚠ dlg_481    Timing                      │
+    │                                            │
+    │ [开始审核]                                │
+    └────────────────────────────────────────────┘
+
+* * *
+
+# **12.30 12.10 Human Review**
+
+人工审核界面不能只是：
+    
+    
+    播放
+
+必须：
+    
+    
+    原片
+    +
+    中文配音
+    +
+    原字幕
+    +
+    中文台词
+    +
+    人物信息
+    +
+    时间轴
+
+同时显示。
+
+* * *
+
+# **12.31 单句审核界面**
+    
+    
+    ┌──────────────────────────────────────────────┐
+    │ dlg_184                                      │
+    ├──────────────────────────────────────────────┤
+    │ Character: Walter                            │
+    │ Emotion: Angry                               │
+    │                                              │
+    │ Original:                                    │
+    │ "What the hell are you doing?"               │
+    │                                              │
+    │ Chinese:                                     │
+    │ "你到底在干什么？"                           │
+    │                                              │
+    │ Voice similarity: 0.91 ✓                     │
+    │ Timing: +23ms ✓                              │
+    │                                              │
+    │ [原声 ▶] [中文 ▶] [AB ▶]                    │
+    │                                              │
+    │ [✓ 通过] [重新生成] [修改参数] [跳过]        │
+    └──────────────────────────────────────────────┘
+
+* * *
+
+# **12.32 人工审核不要重新打开所有模块**
+
+例如用户认为：
+
+Walter 这一句声音太年轻。
+
+点击：
+    
+    
+    [重新生成]
+
+系统自动：
+    
+    
+    MODULE 09
+          ↓
+    重新生成 dlg_184
+          ↓
+    MODULE 10
+    重新混音
+          ↓
+    MODULE 11
+    重新封装
+          ↓
+    MODULE 12
+    重新QC
+
+只处理：
+    
+    
+    dlg_184
+
+* * *
+
+# **12.33 这是整个系统非常关键的设计**
+
+错误：
+    
+    
+    修改一句
+    ↓
+    重新生成整集
+
+正确：
+    
+    
+    修改一句
+    ↓
+    重新生成一句
+    ↓
+    重新混这一句所在 Scene
+    ↓
+    重新封装
+    ↓
+    局部 QC
+
+* * *
+
+# **12.34 12.11 问题分类**
+
+每个问题必须有：
+    
+    
+    problem_type
+    source_module
+    severity
+    object_id
+    recommended_action
+
+例如：
+    
+    
+    {
+      "problem_id": "QA-000184",
+    
+      "type": "VOICE_MISMATCH",
+    
+      "source_module": "09",
+    
+      "object": "dlg_184",
+    
+      "severity": "HIGH",
+    
+      "action": "REGENERATE_TTS"
+    }
+
+* * *
+
+# **12.35 问题 → 回退模块映射**
+
+这是 MODULE 12 最重要的数据库之一。
+    
+    
+    Translation Error
+            ↓
+    MODULE 07
+    
+    Character Error
+            ↓
+    MODULE 04
+    
+    Speaker Error
+            ↓
+    MODULE 05
+    
+    Voice Identity Error
+            ↓
+    MODULE 06
+    
+    Performance Error
+            ↓
+    MODULE 08
+    
+    TTS Error
+            ↓
+    MODULE 09
+    
+    Mix Error
+            ↓
+    MODULE 10
+    
+    Mux / Encoding Error
+            ↓
+    MODULE 11
+
+* * *
+
+# **12.36 不允许人工"猜应该回哪里"**
+
+系统自动给出：
+    
+    
+    Recommended Rollback:
+    MODULE 09
+
+用户只需要：
+    
+    
+    [重新处理]
+
+* * *
+
+# **12.37 12.12 局部重新处理**
+
+假设：
+    
+    
+    S01E01
+    1000 Scenes
+
+只有：
+    
+    
+    Scene 127
+
+有问题。
+
+不要：
+    
+    
+    1000 Scenes
+    重新混音
+
+而是：
+    
+    
+    Scene 127
+       ↓
+    重新处理
+       ↓
+    替换
+
+* * *
+
+# **12.38 Segment-level Versioning**
+
+例如：
+    
+    
+    dlg_184
+
+拥有：
+    
+    
+    v001
+    v002
+    v003
+
+当前：
+    
+    
+    v003 = APPROVED
+
+之前版本：
+    
+    
+    v001 = REJECTED
+    v002 = REJECTED
+
+* * *
+
+# **12.39 为什么必须保存旧版本**
+
+因为用户可能说：
+
+第三版其实没有第二版自然。
+
+可以立即：
+    
+    
+    Rollback → v002
+
+而不需要重新生成。
+
+* * *
+
+# **12.40 12.13 人工审核反馈**
+
+用户可以给：
+    
+    
+    1--5星
+
+但更重要的是：
+    
+    
+    Voice too loud
+    Voice too dry
+    Voice too young
+    Too emotional
+    Not emotional enough
+    Timing late
+    Timing early
+    Music too loud
+    Translation awkward
+
+* * *
+
+# **12.41 Feedback Taxonomy**
+    
+    
+    VOICE
+    ├── identity
+    ├── age
+    ├── gender perception
+    ├── timbre
+    └── emotion
+    
+    TIMING
+    ├── early
+    ├── late
+    └── duration
+    
+    MIX
+    ├── loud
+    ├── quiet
+    ├── dry
+    ├── wet
+    └── buried
+    
+    LANGUAGE
+    ├── wrong
+    ├── unnatural
+    ├── incomplete
+    └── context error
+
+这样反馈可以反过来优化后面的自动系统。
+
+* * *
+
+# **12.42 12.14 "父母满意度"指标**
+
+你的最终目标不是：
+
+AI Benchmark 第一。
+
+而是：
+
+**父母能不能舒服地看完整部美剧。**
+
+因此增加一个特殊指标：
+    
+    
+    Parent Viewing Score
+
+但它不由 AI 自动决定。
+
+由人工体验评价：
+    
+    
+    声音是否自然
+    人物是否容易区分
+    台词是否听得清
+    有没有明显 AI 感
+    音乐是否正常
+    剧情是否连贯
+
+* * *
+
+# **12.43 第一集必须进行人工黄金测试**
+
+第一集完成后：
+    
+    
+    自动 QC
+          ↓
+    人工完整观看
+          ↓
+    建立 Golden Profile
+
+记录：
+    
+    
+    Walter voice
+    Jesse voice
+    Hank voice
+    Skyler voice
+
+以及：
+    
+    
+    最佳 loudness
+    最佳 reverb
+    最佳 ducking
+    最佳 TTS 参数
+
+* * *
+
+# **12.44 Golden Profile**
+
+例如：
+    
+    
+    {
+      "project": "breaking_bad",
+    
+      "audio_style": {
+        "dialogue_target": -16,
+        "ducking": 4,
+        "room_matching": true
+      },
+    
+      "characters": {
+        "Walter": {
+          "voice_profile": "VP-WALTER-001"
+        },
+        "Jesse": {
+          "voice_profile": "VP-JESSE-001"
+        }
+      }
+    }
+
+后面的：
+    
+    
+    S01E02
+    S01E03
+    ...
+
+都继承。
+
+* * *
+
+# **12.45 这与人物数据库直接连接**
+
+你的核心资产：
+    
+    
+    Character Database
+            │
+            ├── Voice Profile
+            ├── Speaking Style
+            ├── Translation Style
+            ├── Emotion
+            ├── Relationships
+            └── Scene Context
+
+MODULE 12 的反馈可以更新：
+    
+    
+    Character Database
+
+但：
+
+**人工批准后才能更新。**
+
+避免错误反馈污染数据库。
+
+* * *
+
+# **12.46 12.15 QA Dashboard**
+
+整季：
+    
+    
+    Season 1
+
+显示：
+    
+    
+    Episodes       7 / 7
+    Scenes         823 / 823
+    Dialogue       18,421
+    
+    PASS            17,991
+    REVIEW             402
+    FAIL                28
+
+* * *
+
+# **12.47 问题热力图**
+    
+    
+    Episode 01  ███
+    Episode 02  ██
+    Episode 03  ███████
+    Episode 04  █
+    Episode 05  ██
+
+可以立即看出：
+
+哪一集质量有问题。
+
+* * *
+
+# **12.48 人物质量统计**
+    
+    
+    Walter       97%
+    Jesse        92%
+    Hank         95%
+    Skyler       94%
+    Saul         89% ⚠
+
+这意味着：
+
+Saul 的声音配置可能需要重新优化。
+
+* * *
+
+# **12.49 自动发现系统性问题**
+
+如果：
+    
+    
+    Jesse
+    1000句
+
+其中：
+    
+    
+    37句
+
+出现：
+    
+    
+    Voice similarity low
+
+而全部集中在：
+    
+    
+    angry
+
+那么系统应该发现：
+    
+    
+    Jesse + angry
+
+是问题。
+
+而不是把 37 句分别当成 37 个孤立错误。
+
+* * *
+
+# **12.50 自动生成 Root Cause**
+    
+    
+    37 errors
+           ↓
+    same character
+           ↓
+    same emotion
+           ↓
+    same voice model
+           ↓
+    ROOT CAUSE
+
+最终：
+    
+    
+    VOICE_PROFILE_JESSE
+    ANGER
+
+需要优化。
+
+* * *
+
+# **12.51 12.16 自动回归测试**
+
+修改：
+    
+    
+    Jesse voice profile
+
+不能只检查：
+    
+    
+    当前一句
+
+应该自动重新测试：
+    
+    
+    Jesse
+    10--50条黄金对白
+
+如果：
+    
+    
+    质量提升
+
+批准。
+
+如果：
+    
+    
+    质量下降
+
+回滚。
+
+* * *
+
+# **12.52 Golden Test Set**
+
+每个主要人物保存：
+    
+    
+    20--100条
+
+代表性对白：
+    
+    
+    普通
+    愤怒
+    悲伤
+    低声
+    喊叫
+    讽刺
+    哭泣
+    快速
+    慢速
+
+作为：
+    
+    
+    Voice Regression Test
+
+* * *
+
+# **12.53 12.17 Final Approval**
+
+所有问题：
+    
+    
+    FAIL = 0
+    REVIEW = 0
+
+并且：
+    
+    
+    Human Approval = YES
+
+才：
+    
+    
+    PROJECT_STATUS = APPROVED
+
+* * *
+
+# **12.54 最终状态机**
+    
+    
+    PROCESSING
+        ↓
+    AUTO_QA
+        ↓
+    ┌───────────────┐
+    │               │
+    PASS          REVIEW
+    │               │
+    │               ↓
+    │          HUMAN_REVIEW
+    │               │
+    │          ┌────┴────┐
+    │          ↓         ↓
+    │       APPROVE    REWORK
+    │                    │
+    │                    ↓
+    │              TARGET MODULE
+    │                    │
+    │                    ↓
+    │                  QA
+    │
+    └──────────→ APPROVED
+
+* * *
+
+# **12.55 12.18 项目级状态**
+    
+    
+    PROJECT
+    │
+    ├── INGEST
+    ├── PROCESSING
+    ├── AUTO_QA
+    ├── HUMAN_REVIEW
+    ├── REWORK
+    ├── FINAL_QA
+    ├── APPROVED
+    └── ARCHIVED
+
+* * *
+
+# **12.56 12.19 核心数据库**
+
+MODULE 12 至少需要：
+    
+    
+    qa_runs
+    qa_results
+    qa_issues
+    review_queue
+    review_decisions
+    golden_tests
+    rollback_jobs
+    quality_profiles
+
+* * *
+
+# **12.57 QA Issue Schema**
+    
+    
+    {
+      "id": "QA-001284",
+    
+      "project": "breaking_bad",
+    
+      "episode": "S01E01",
+    
+      "scene": "SC127",
+    
+      "dialogue": "dlg_184",
+    
+      "type": "VOICE_MISMATCH",
+    
+      "severity": "HIGH",
+    
+      "detected_by": "voice_similarity",
+    
+      "score": 0.71,
+    
+      "threshold": 0.86,
+    
+      "source_module": "09",
+    
+      "status": "OPEN",
+    
+      "recommended_action": "REGENERATE"
+    }
+
+* * *
+
+# **12.58 12.20 与浏览器的最终关系**
+
+整个浏览器到这里形成：
+    
+    
+    01 输入
+    02 信息
+    03 字幕
+    04 人物
+    05 分析
+    06 音色
+    07 台词
+    08 表演
+    09 配音
+    10 混音
+    11 成片
+    12 QA
+
+其中：
+    
+    
+    12 QA
+
+不是单纯的最后一页。
+
+它是整个系统的：
+
+**控制中心。**
+
+* * *
+
+# **12.59 最终设计原则**
+
+这个模块最终必须做到五件事：
+    
+    
+    ① 自动发现问题
+    
+    ② 准确定位问题
+    
+    ③ 找到问题来源模块
+    
+    ④ 只重新处理有问题的部分
+    
+    ⑤ 人工批准后才能成为最终版本
+
+最终形成：
+    
+    
+                    ┌───────────────┐
+                    │   MODULE 12   │
+                    │      QA       │
+                    └───────┬───────┘
+                            │
+              ┌─────────────┼─────────────┐
+              ↓             ↓             ↓
+           PASS          REVIEW          FAIL
+              │             │             │
+              │             ↓             ↓
+              │        Human Review   Root Cause
+              │             │             │
+              │        ┌────┴────┐         │
+              │        ↓         ↓         │
+              │     APPROVE    REWORK      │
+              │                  │         │
+              │                  └────┬────┘
+              │                       ↓
+              │                指定 MODULE
+              │                       ↓
+              └─────────────────── QA
+                                      ↓
+                                  APPROVED
+
+**MODULE 12 完成后，系统已经具备"生产--检测--局部返工--再检测--批准"的闭环。**
+
+下一模块 **MODULE 13 -- Batch / Season Pipeline** 将把现在的"**一集一集处理**"升级成真正的"**整季/整部剧流水线**"：任务队列、GPU/CPU 资源调度、断点续跑、失败重试、并行与串行策略、跨集共享人物数据库，以及最重要的**某一集失败不会影响其他集继续生产**。

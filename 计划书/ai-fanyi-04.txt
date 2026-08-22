@@ -1,0 +1,1436 @@
+04
+
+# **MODULE 04 -- Character Database Construction**
+
+**输入：**
+    
+    
+    MODULE 02 research_manifest.json
+    MODULE 03 dialogue_manifest.json
+    原始视频
+
+**输出：**
+    
+    
+    character_database
+    character_profiles
+    character_dialogue_index
+    character_scene_index
+    character_voice_priors
+
+本模块**不做声纹克隆、不做 TTS、不做最终人物声纹绑定**。它负责把"网上查到的人物资料 + 本剧实际对白 + 出场信息"整合成后续所有模块共用的人物数据库。
+* * *
+
+# **04.0 模块架构**
+    
+    
+    MODULE 04
+    │
+    ├── 04.01 Character Import
+    ├── 04.02 Character Entity Resolution
+    ├── 04.03 Character Profile
+    ├── 04.04 Alias & Name Graph
+    ├── 04.05 Character Relationship Graph
+    ├── 04.06 Episode Appearance Index
+    ├── 04.07 Dialogue Attribution Hints
+    ├── 04.08 Speech Style Profile
+    ├── 04.09 Vocabulary Profile
+    ├── 04.10 Emotional / Behavioral Profile
+    ├── 04.11 Scene Participation Index
+    ├── 04.12 Character Timeline
+    ├── 04.13 Character Knowledge Graph
+    └── 04.14 Character Database Manifest
+
+* * *
+
+# **04.1 核心原则**
+
+人物数据库分成四层：
+    
+    
+                     CHARACTER
+                         │
+            ┌────────────┼────────────┐
+            ▼            ▼            ▼
+       外部知识       剧情知识       语音知识
+            │            │            │
+       Actor/资料    Relationships   Voice
+       Alias         Timeline        Speaker
+       Biography     Scenes          Embedding
+                                    TTS
+
+其中：
+    
+    
+    外部知识
+    MODULE 02
+    
+    剧情/对白知识
+    MODULE 03 + MODULE 04
+    
+    语音知识
+    MODULE 05/06/09/10
+
+因此现在不要提前制造声纹。
+
+* * *
+
+# **04.2 数据目录**
+    
+    
+    data/projects/<project_id>/
+    │
+    ├── project.db
+    │
+    ├── characters/
+    │   ├── char_0001/
+    │   │   ├── profile.json
+    │   │   ├── aliases.json
+    │   │   ├── dialogue.jsonl
+    │   │   ├── scenes.jsonl
+    │   │   └── evidence.json
+    │   │
+    │   └── char_0002/
+    │
+    └── character_database_manifest.json
+
+* * *
+
+# **04.3 Character ID**
+
+绝不能用人物姓名作为主键。
+
+错误：
+    
+    
+    Walter White
+
+正确：
+    
+    
+    char_01J...
+
+例如：
+    
+    
+    char_7f4d8c1a
+
+姓名只是属性：
+    
+    
+    {
+      "character_id": "char_7f4d8c1a",
+      "canonical_name": "Walter White"
+    }
+
+这样可以处理：
+    
+    
+    Walter White
+    Walter White Jr.
+    Young Walter
+
+以及演员更换等情况。
+
+* * *
+
+# **04.4 Character Profile**
+
+核心数据结构：
+    
+    
+    {
+      "character_id": "char_001",
+    
+      "canonical_name": "Walter White",
+    
+      "aliases": [
+        "Walter",
+        "Mr. White",
+        "Heisenberg"
+      ],
+    
+      "actor": {
+        "actor_id": "actor_001",
+        "name": "Bryan Cranston"
+      },
+    
+      "role": {
+        "type": "main"
+      },
+    
+      "description": "...",
+    
+      "relationships": [],
+    
+      "appearances": [],
+    
+      "dialogue_stats": {},
+    
+      "speech_style": {},
+    
+      "vocabulary": {},
+    
+      "emotional_profile": {},
+    
+      "voice_profile": {},
+    
+      "confidence": {}
+    }
+
+* * *
+
+# **04.5 04.01 Character Import**
+
+从 MODULE 02：
+    
+    
+    characters
+    actors
+    aliases
+    relationships
+    appearances
+    evidence
+
+导入。
+
+从 MODULE 03：
+    
+    
+    dialogues
+    timestamps
+    speaker hints
+    translation
+
+导入。
+
+建立：
+    
+    
+    Character
+          │
+          ├── Actor
+          ├── Alias
+          ├── Episode
+          ├── Dialogue
+          └── Relationship
+
+* * *
+
+# **04.6 04.02 Character Entity Resolution**
+
+MODULE 02 可能得到：
+    
+    
+    Walter White
+    Walter H. White
+    Mr. White
+    Heisenberg
+
+MODULE 03 字幕可能出现：
+    
+    
+    WALTER
+    MR WHITE
+    HEISENBERG
+
+统一：
+    
+    
+    char_walter
+
+* * *
+
+# **04.7 Alias 类型**
+
+不要简单保存字符串。
+
+建立：
+    
+    
+    {
+      "alias": "Mr. White",
+      "type": "address",
+      "language": "en",
+      "confidence": 0.99
+    }
+
+类型：
+    
+    
+    canonical
+    first_name
+    last_name
+    nickname
+    title
+    address
+    alias
+    codename
+    insult
+    relationship_name
+
+例如：
+    
+    
+    Walter
+    → first_name
+    
+    Mr. White
+    → address
+    
+    Heisenberg
+    → codename
+
+* * *
+
+# **04.8 04.03 Character Profile**
+
+人物画像不应该由 LLM 一次性"编"。
+
+应该由：
+    
+    
+    事实
+    +
+    对白
+    +
+    场景
+    +
+    人物关系
+
+逐步构建。
+
+* * *
+
+# **04.9 Profile 数据分层**
+
+### **A. Verified Facts**
+    
+    
+    姓名
+    演员
+    职业
+    家庭关系
+    出场集数
+
+来源：
+    
+    
+    MODULE 02
+
+* * *
+
+### **B. Observed Behavior**
+
+从本剧实际内容统计：
+    
+    
+    经常说什么
+    怎样称呼别人
+    句子长度
+    语气
+    常用词
+
+* * *
+
+### **C. Inferred Traits**
+
+例如：
+    
+    
+    reserved
+    aggressive
+    sarcastic
+    formal
+
+必须标记：
+    
+    
+    inferred = true
+    confidence = 0.72
+
+不能伪装成事实。
+
+* * *
+
+# **04.10 04.04 Name Graph**
+
+建立人物称谓图：
+    
+    
+    Walter White
+    │
+    ├── Walter
+    ├── Mr. White
+    ├── Heisenberg
+    └── Dad
+
+再建立：
+    
+    
+    Jesse
+    │
+    ├── Jesse
+    ├── Pinkman
+    └── Mr. Pinkman
+
+这样后面翻译时：
+    
+    
+    "Mr. White"
+
+不会被 Qwen 误译成：
+    
+    
+    "白先生"
+
+而会结合：
+    
+    
+    character = Walter White
+
+决定最终中文表达。
+
+* * *
+
+# **04.11 04.05 Relationship Graph**
+
+关系数据库：
+    
+    
+    Walter
+    │
+    ├── spouse → Skyler
+    ├── son → Walter Jr.
+    ├── brother-in-law → Hank
+    ├── partner → Jesse
+    └── enemy → ...
+
+但关系必须带：
+    
+    
+    confidence
+    source
+    episode range
+
+例如：
+    
+    
+    {
+      "subject": "char_walter",
+      "relation": "partner",
+      "object": "char_jesse",
+    
+      "valid_from": "S01E01",
+    
+      "confidence": 0.98
+    }
+
+* * *
+
+# **04.12 关系不是静态的**
+
+例如：
+    
+    
+    S01E01
+    Walter → Jesse = partner
+
+后面可能：
+    
+    
+    S04
+    Walter → Jesse = adversarial
+
+所以数据库保留：
+    
+    
+    relationship_history
+
+而不是覆盖旧数据。
+
+* * *
+
+# **04.13 04.06 Episode Appearance Index**
+
+建立：
+    
+    
+    character_episode
+
+例如：
+    
+    
+    Walter
+    ├── S01E01
+    ├── S01E02
+    ├── S01E03
+    └── ...
+
+每次出现：
+    
+    
+    {
+      "character_id": "char_walter",
+      "episode_id": "S01E01",
+      "appearance_type": "onscreen",
+      "confidence": 0.99
+    }
+
+* * *
+
+# **04.14 Scene Appearance**
+
+进一步建立：
+    
+    
+    Character
+         ↓
+    Scene
+         ↓
+    Dialogue
+
+例如：
+    
+    
+    Scene 08
+    ├── Walter
+    ├── Jesse
+    └── Hank
+
+这对 MODULE 06 极其重要。
+
+因为如果某段音频只有：
+    
+    
+    Speaker A
+    Speaker B
+
+而当前场景只有：
+    
+    
+    Walter
+    Jesse
+
+那么候选空间立刻缩小。
+
+* * *
+
+# **04.15 04.07 Dialogue Attribution Hints**
+
+注意：
+
+这里仍然不进行最终 Speaker Identification。
+
+只建立候选。
+
+例如：
+    
+    
+    Dialogue 001
+    
+    text:
+    "What are you doing?"
+    
+    scene:
+    SCENE_08
+    
+    candidate characters:
+    Walter 0.85
+    Jesse  0.15
+
+来源可能是：
+    
+    
+    字幕角色标签
+    场景人物
+    对话上下文
+    称谓
+
+* * *
+
+# **04.16 Dialogue Attribution 数据**
+    
+    
+    {
+      "dialogue_id": "dlg_001",
+    
+      "candidate_characters": [
+        {
+          "character_id": "char_walter",
+          "score": 0.86,
+          "reasons": [
+            "scene_presence",
+            "subtitle_context"
+          ]
+        },
+        {
+          "character_id": "char_jesse",
+          "score": 0.14,
+          "reasons": [
+            "scene_presence"
+          ]
+        }
+      ]
+    }
+
+* * *
+
+# **04.17 04.08 Speech Style Profile**
+
+这是这个模块真正开始变得重要的地方。
+
+从人物历史对白提取：
+    
+    
+    平均句长
+    词汇量
+    口头禅
+    语法习惯
+    正式程度
+    粗俗程度
+    缩写使用
+    疑问句比例
+    感叹句比例
+    重复词
+    停顿习惯
+
+* * *
+
+# **04.18 Speech Style Schema**
+    
+    
+    {
+      "speech_style": {
+    
+        "formality": 0.72,
+    
+        "verbosity": 0.42,
+    
+        "aggressiveness": 0.31,
+    
+        "sarcasm": 0.65,
+    
+        "certainty": 0.81,
+    
+        "hesitation": 0.12,
+    
+        "average_sentence_length": 8.4,
+    
+        "contraction_rate": 0.76
+      }
+    }
+
+这些不是"人格诊断"。
+
+只是：
+
+**用于生成配音台词的语言风格参数。**
+
+* * *
+
+# **04.19 口头禅数据库**
+
+例如：
+    
+    
+    Walter
+    ├── "You know..."
+    ├── "I mean..."
+    └── ...
+
+数据：
+    
+    
+    {
+      "phrase": "you know",
+      "count": 38,
+      "normalized_frequency": 0.021
+    }
+
+后面翻译时非常有用。
+
+* * *
+
+# **04.20 04.09 Vocabulary Profile**
+
+统计人物：
+    
+    
+    top words
+    top phrases
+    technical vocabulary
+    slang
+    profanity
+    nicknames
+    names
+
+分成：
+    
+    
+    general
+    technical
+    slang
+    insult
+    relationship
+    profession
+    recurring_phrase
+
+* * *
+
+# **04.21 人物专属词典**
+
+例如某人物经常使用某个词：
+    
+    
+    source:
+    "capable"
+    
+    previous translation:
+    "有能力的"
+
+后面如果再次出现：
+    
+    
+    same character
+    same context
+
+优先保持一致。
+
+* * *
+
+# **04.22 Character Translation Style**
+
+人物数据库增加：
+    
+    
+    {
+      "translation_style": {
+        "sentence_length": "short",
+        "formality": "low",
+        "slang": "medium",
+        "profanity": "high",
+        "literalness": 0.35,
+        "naturalness": 0.82
+      }
+    }
+
+这直接服务 MODULE 07/08。
+
+* * *
+
+# **04.23 04.10 Emotional Profile**
+
+从对白中统计：
+    
+    
+    anger
+    fear
+    sadness
+    joy
+    surprise
+    disgust
+    neutral
+
+但不把一整部剧平均成：
+    
+    
+    Walter = angry
+
+而应该按场景：
+    
+    
+    Walter
+    │
+    ├── Scene 01
+    │   neutral
+    │
+    ├── Scene 08
+    │   tense
+    │
+    └── Scene 15
+        angry
+
+* * *
+
+# **04.24 情绪必须具有时间维度**
+
+数据库：
+    
+    
+    character_emotional_events
+    
+    
+    {
+      "character_id": "char_walter",
+      "scene_id": "scene_008",
+    
+      "emotion": "tense",
+    
+      "confidence": 0.81,
+    
+      "source": "dialogue_analysis"
+    }
+
+这会成为以后 TTS 的输入。
+
+* * *
+
+# **04.25 04.11 Scene Participation Index**
+
+建立：
+    
+    
+    scene
+    │
+    ├── characters
+    ├── dialogue
+    ├── location
+    ├── time
+    └── emotional state
+
+例如：
+    
+    
+    {
+      "scene_id": "scene_008",
+    
+      "characters": [
+        "char_walter",
+        "char_jesse"
+      ],
+    
+      "dialogue_count": 21
+    }
+
+* * *
+
+# **04.26 Scene Context**
+
+场景必须有：
+    
+    
+    previous_scene
+    current_scene
+    next_scene
+
+因为一句：
+
+"好。"
+
+脱离上下文根本无法正确翻译。
+
+* * *
+
+# **04.27 04.12 Character Timeline**
+
+建立：
+    
+    
+    Character Timeline
+
+例如：
+    
+    
+    S01E01
+    │
+    ├── appearance
+    ├── relationship
+    ├── event
+    └── dialogue
+    
+    S01E02
+    │
+    ├── appearance
+    └── dialogue
+
+随着整个剧集处理：
+    
+    
+    Character Timeline
+
+越来越完整。
+
+* * *
+
+# **04.28 重要：支持增量构建**
+
+不能要求：
+
+必须先分析完整 5 季才能建立人物数据库。
+
+正确：
+    
+    
+    S01E01
+    ↓
+    Character DB v1
+    
+    S01E02
+    ↓
+    Character DB v2
+    
+    S01E03
+    ↓
+    Character DB v3
+
+每集处理完立即更新。
+
+* * *
+
+# **04.29 Database Versioning**
+    
+    
+    character_db_version
+
+例如：
+    
+    
+    v1.0
+    S01E01
+    
+    v1.1
+    S01E02
+    
+    v1.2
+    S01E03
+
+出现错误：
+    
+    
+    rollback
+
+而不是破坏整个数据库。
+
+* * *
+
+# **04.30 Character Knowledge Graph**
+
+最终：
+    
+    
+                             Actor
+                               │
+                            portrays
+                               │
+                               ▼
+                          CHARACTER
+                        /      │       \
+                       /       │        \
+                 aliases   relationships  scenes
+                             │             │
+                             │             ▼
+                             │          dialogue
+                             │             │
+                             ▼             ▼
+                         CHARACTER     emotion
+                           │
+                           ▼
+                       vocabulary
+
+这就是后面整个配音系统的核心知识层。
+
+* * *
+
+# **04.31 数据库表**
+
+最终增加：
+    
+    
+    characters
+    character_aliases
+    character_relationships
+    character_appearances
+    character_scenes
+    character_dialogues
+    character_vocabulary
+    character_phrases
+    character_emotions
+    character_style
+    character_timeline
+    character_evidence
+
+* * *
+
+# **04.32 character_dialogues**
+    
+    
+    CREATE TABLE character_dialogues (
+        character_id TEXT NOT NULL,
+        dialogue_id TEXT NOT NULL,
+    
+        attribution_score REAL,
+    
+        attribution_method TEXT,
+    
+        confirmed INTEGER DEFAULT 0,
+    
+        PRIMARY KEY(character_id, dialogue_id)
+    );
+
+注意：
+    
+    
+    confirmed = 0
+
+意味着：
+
+只是候选，不是最终声纹确认。
+
+* * *
+
+# **04.33 Character Voice Profile**
+
+现在只建立：
+    
+    
+    {
+      "voice_profile": {
+        "expected_gender": "male",
+        "age_range": "adult",
+        "accent": "unknown",
+        "voice_source": "actor",
+        "status": "pending"
+      }
+    }
+
+**不生成 embedding。**
+
+embedding 属于 MODULE 05。
+
+* * *
+
+# **04.34 Actor 与 Voice 必须分离**
+
+结构：
+    
+    
+    Actor
+       │
+       ▼
+    Character
+       │
+       ▼
+    Speaker
+       │
+       ▼
+    Voice Profile
+       │
+       ▼
+    TTS Voice
+
+四者不能混成一个对象。
+
+* * *
+
+# **04.35 为什么这一点非常重要**
+
+例如：
+    
+    
+    Bryan Cranston
+
+是演员。
+    
+    
+    Walter White
+
+是角色。
+
+视频中：
+    
+    
+    Speaker_03
+
+是声学说话人。
+
+最终：
+    
+    
+    voice_walter
+
+才是用于 TTS 的目标声音。
+
+四个概念必须独立。
+
+* * *
+
+# **04.36 Qwen 在 MODULE 04 的任务**
+
+Qwen 用来：
+    
+    
+    ① speech style analysis
+    ② vocabulary extraction
+    ③ phrase extraction
+    ④ relationship interpretation
+    ⑤ emotion/context analysis
+
+不允许：
+    
+    
+    Qwen直接覆盖事实数据库
+
+所有生成结果：
+    
+    
+    inference = true
+
+并保存：
+    
+    
+    model
+    prompt_version
+    confidence
+    source_dialogues
+
+* * *
+
+# **04.37 Qwen 输出示例**
+    
+    
+    {
+      "character_id": "char_walter",
+    
+      "observations": [
+        {
+          "type": "speech_style",
+          "property": "formality",
+          "value": 0.71,
+          "confidence": 0.84,
+    
+          "evidence": [
+            "dlg_001",
+            "dlg_008",
+            "dlg_021"
+          ]
+        }
+      ],
+    
+      "model": "Qwen3",
+      "prompt_version": "character_style_v1"
+    }
+
+* * *
+
+# **04.38 防止人物画像"越分析越跑偏"**
+
+每次新集数加入：
+    
+    
+    旧 profile
+    +
+    新 observations
+
+而不是：
+    
+    
+    新 LLM
+    ↓
+    重新写整个 profile
+
+采用：
+    
+    
+    immutable observations
+            ↓
+    aggregated profile
+
+* * *
+
+# **04.39 Character Database 的三层结构**
+
+最终：
+    
+    
+    CHARACTER DATABASE
+    │
+    ├── FACTS
+    │   └── MODULE 02 evidence
+    │
+    ├── OBSERVATIONS
+    │   └── MODULE 03/04 actual dialogue
+    │
+    └── INFERENCES
+        └── Qwen analysis
+
+这是整个设计里非常重要的防幻觉机制。
+
+* * *
+
+# **04.40 浏览器页面**
+
+第四标签：
+    
+    
+    ④ 人物数据库
+
+页面：
+    
+    
+    ┌─────────────────────────────────────────┐
+    │ Breaking Bad · Character Database       │
+    ├─────────────────────────────────────────┤
+    │                                         │
+    │ Walter White                            │
+    │ Bryan Cranston                          │
+    │                                         │
+    │ ┌──────────┐                            │
+    │ │人物概览  │                            │
+    │ └──────────┘                            │
+    │                                         │
+    │ 别名：Walter / Mr. White / Heisenberg   │
+    │ 出场：S01E01                            │
+    │ 对白：143                               │
+    │                                         │
+    │ 人物关系                                │
+    │   Skyler → spouse                       │
+    │   Jesse  → partner                      │
+    │   Hank   → brother-in-law               │
+    │                                         │
+    │ 语言特征                                │
+    │   正式程度       71%                    │
+    │   俚语           23%                    │
+    │   粗俗程度       18%                    │
+    │                                         │
+    │ 常用表达                                │
+    │   "you know"                            │
+    │   ...                                   │
+    │                                         │
+    │ 情绪                                    │
+    │   Neutral      42%                      │
+    │   Tense       28%                       │
+    │   Angry       18%                       │
+    │                                         │
+    │ 声音                                    │
+    │   状态：待分析                          │
+    │                                         │
+    │ [查看对白] [查看证据] [编辑人物]       │
+    └─────────────────────────────────────────┘
+
+* * *
+
+# **04.41 人工修正**
+
+允许用户修改：
+    
+    
+    人物名称
+    别名
+    人物关系
+    人物类型
+    语言风格
+    翻译偏好
+
+但所有修改记录：
+    
+    
+    {
+      "field": "translation_style.formality",
+    
+      "old": 0.71,
+      "new": 0.60,
+    
+      "source": "user"
+    }
+
+用户修改优先级：
+    
+    
+    USER
+      >
+    VERIFIED FACT
+      >
+    MODEL INFERENCE
+
+* * *
+
+# **04.42 MODULE 04 Job Pipeline**
+    
+    
+    04.01 Import
+       ↓
+    04.02 Entity Resolution
+       ↓
+    04.03 Profile
+       ↓
+    04.04 Alias Graph
+       ↓
+    04.05 Relationship Graph
+       ↓
+    04.06 Appearance
+       ↓
+    04.07 Dialogue Candidates
+       ↓
+    04.08 Speech Style
+       ↓
+    04.09 Vocabulary
+       ↓
+    04.10 Emotion
+       ↓
+    04.11 Scene Index
+       ↓
+    04.12 Timeline
+       ↓
+    04.13 Knowledge Graph
+       ↓
+    04.14 Manifest
+
+每一步：
+    
+    
+    SAVE
+    ↓
+    RELEASE
+    ↓
+    NEXT
+
+* * *
+
+# **04.43 资源策略**
+
+CPU：
+    
+    
+    数据库
+    文本统计
+    规则分析
+
+GPU：
+    
+    
+    Qwen
+
+GPU 不常驻。
+
+例如：
+    
+    
+    04.08 Speech Style
+    ↓
+    启动 Qwen
+    ↓
+    分析
+    ↓
+    保存
+    ↓
+    释放 GPU
+
+然后：
+    
+    
+    04.09 Vocabulary
+    ↓
+    如果规则算法足够
+    ↓
+    不启动 GPU
+
+* * *
+
+# **04.44 最终 Manifest**
+    
+    
+    {
+      "schema_version": "1.0",
+    
+      "project_id": "breaking_bad",
+    
+      "database_version": "1.0",
+    
+      "characters": [
+        {
+          "character_id": "char_walter",
+          "name": "Walter White",
+          "actor_id": "actor_bryan_cranston",
+    
+          "dialogue_count": 143,
+    
+          "episode_count": 1,
+    
+          "profile_status": "complete",
+    
+          "voice_status": "pending"
+        }
+      ],
+    
+      "statistics": {
+        "characters": 27,
+        "actors": 25,
+        "dialogues": 734,
+        "relationships": 41,
+        "scenes": 32
+      }
+    }
+
+* * *
+
+# **04.45 验收标准**
+
+MODULE 04 完成必须满足：
+    
+    
+    ✓ 每个人物有唯一 Character ID
+    ✓ Actor / Character 分离
+    ✓ 别名统一
+    ✓ 人物关系结构化
+    ✓ 人物出场集数
+    ✓ 人物场景索引
+    ✓ 人物对白索引
+    ✓ 语言风格统计
+    ✓ 词汇统计
+    ✓ 常用表达
+    ✓ 情绪观察
+    ✓ 时间线
+    ✓ Evidence 可追溯
+    ✓ Model inference 与事实分离
+    ✓ 支持人工 Override
+    ✓ 支持增量更新
+    ✓ 支持版本回滚
+    ✓ 未绑定最终声纹
+
+* * *
+
+# **04.46 MODULE 04 → MODULE 05**
+
+输出：
+    
+    
+    character_database_manifest.json
+    project.db
+    character_profiles/
+
+交给：
+    
+    
+    MODULE 05 -- Audio & Scene Analysis
+
+数据流：
+    
+    
+    MODULE 02
+    External Character Knowledge
+              │
+              ▼
+    MODULE 03
+    Dialogue + Subtitle Timeline
+              │
+              ▼
+    MODULE 04
+    CHARACTER DATABASE
+              │
+              │
+              ├── Character
+              ├── Actor
+              ├── Alias
+              ├── Relationship
+              ├── Scene
+              ├── Dialogue
+              ├── Vocabulary
+              ├── Speech Style
+              ├── Emotion
+              └── Timeline
+                        │
+                        ▼
+                 MODULE 05
+
+**MODULE 05 开始真正进入视频/音频层：场景切分、对白音频提取、VAD、说话人分离（Diarization）、语音片段质量检测，为后面的 ****`Speaker → Character → Voice`**** 最终绑定提供数据。**

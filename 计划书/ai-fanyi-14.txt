@@ -1,0 +1,1822 @@
+14
+
+# **MODULE 14 -- Project Archive & Reproducibility**
+
+## **项目档案、版本控制、长期保存与完整复现系统**
+
+* * *
+
+# **14.00 模块定位**
+
+MODULE 14 负责解决一个核心问题：
+
+**几年以后，能否拿着这个项目档案，在另一台有 NVIDIA GPU 的机器上，把当年的成片完整复现出来？**
+
+必须保存的不只是最终 MP4，而是：
+    
+    
+    原始视频
+    +
+    字幕
+    +
+    人物数据库
+    +
+    人物音色
+    +
+    翻译记忆
+    +
+    剧情上下文
+    +
+    所有模型
+    +
+    模型版本
+    +
+    Prompt
+    +
+    参数
+    +
+    Module版本
+    +
+    Artifact
+    +
+    QA结果
+    +
+    人工修改
+    +
+    最终成片
+
+目标：
+    
+    
+    REPRODUCIBLE
+    可复现
+    
+    PORTABLE
+    可迁移
+    
+    AUDITABLE
+    可追溯
+    
+    IMMUTABLE
+    历史版本不可被偷偷修改
+
+* * *
+
+# **14.01 总体架构**
+    
+    
+                        PROJECT
+                           │
+                           ▼
+                  ┌──────────────────┐
+                  │ Project Manifest │
+                  └────────┬─────────┘
+                           │
+           ┌───────────────┼────────────────┐
+           ↓               ↓                ↓
+       Media Archive   Knowledge Archive   Model Archive
+           │               │                │
+           └───────────────┼────────────────┘
+                           ↓
+                    Artifact Archive
+                           │
+                           ↓
+                     Version Store
+                           │
+                 ┌─────────┴─────────┐
+                 ↓                   ↓
+           Reproduction Pack     Final Package
+
+* * *
+
+# **14.02 三种保存级别**
+
+系统提供：
+    
+    
+    LEVEL 1 -- Final
+    LEVEL 2 -- Production
+    LEVEL 3 -- Full Reproducible
+* * *
+
+# **14.03 LEVEL 1 -- Final Archive**
+
+只保存最终结果：
+    
+    
+    final/
+    ├── S01E01.mp4
+    ├── S01E02.mp4
+    ├── ...
+    └── subtitles/
+
+适合：
+    
+    
+    父母观看
+    长期收藏
+
+* * *
+
+# **14.04 LEVEL 2 -- Production Archive**
+
+保存：
+    
+    
+    Final
+    +
+    字幕
+    +
+    配音音频
+    +
+    混音
+    +
+    人物数据库
+    +
+    翻译记忆
+    +
+    QA
+    +
+    Manifest
+
+适合：
+    
+    
+    以后重新剪辑
+    重新混音
+    更换字幕
+
+* * *
+
+# **14.05 LEVEL 3 -- Full Reproducible Archive**
+
+保存：
+    
+    
+    LEVEL 2
+    +
+    所有模型
+    +
+    模型权重
+    +
+    Docker Images
+    +
+    代码版本
+    +
+    Python dependencies
+    +
+    CUDA版本
+    +
+    GPU信息
+    +
+    Prompt
+    +
+    参数
+    +
+    全部中间 Artifact
+
+目标：
+
+**从零恢复整个生产环境。**
+
+* * *
+
+# **14.06 Project Manifest**
+
+项目根目录：
+    
+    
+    project.json
+
+示例：
+    
+    
+    {
+      "project_id": "breaking_bad_cn_dub",
+      "title": "Breaking Bad",
+      "language": {
+        "source": "en",
+        "target": "zh-CN"
+      },
+      "created_at": "2026-08-20T10:00:00Z",
+    
+      "archive": {
+        "format_version": "1.0",
+        "reproducibility": "FULL"
+      },
+    
+      "memory_version": "MEM-V03",
+    
+      "pipeline_version": "PIPELINE-V01",
+    
+      "episodes": 62
+    }
+
+* * *
+
+# **14.07 Project ID 永久固定**
+
+例如：
+    
+    
+    breaking_bad_cn_dub
+
+以后不能因为：
+    
+    
+    换机器
+    换目录
+    换 GPU
+
+而改变。
+
+* * *
+
+# **14.08 Episode ID**
+
+统一：
+    
+    
+    S01E01
+    S01E02
+    S01E03
+
+多季：
+    
+    
+    S02E01
+    S02E02
+
+绝不使用：
+    
+    
+    episode1_final2_new.mp4
+
+这种人工命名方式。
+
+* * *
+
+# **14.09 文件命名标准**
+
+统一：
+    
+    
+    PROJECT/
+    SEASON/
+    EPISODE/
+    MODULE/
+    ARTIFACT/
+    VERSION/
+
+例如：
+    
+    
+    breaking_bad/
+    S01/
+    E01/
+    module09/
+    tts/
+    dlg_000184/
+    v003/
+    audio.wav
+
+* * *
+
+# **14.10 Artifact Manifest**
+
+每一个 Artifact 都必须记录：
+    
+    
+    {
+      "artifact_id": "ART-S01E01-M09-00184",
+    
+      "episode": "S01E01",
+    
+      "module": "09",
+    
+      "version": 3,
+    
+      "type": "tts_audio",
+    
+      "sha256": "...",
+    
+      "size": 1837462,
+    
+      "created_at": "...",
+    
+      "producer": "module09-v1.4.2",
+    
+      "model": "MODEL-VOICE-07",
+    
+      "status": "APPROVED"
+    }
+
+* * *
+
+# **14.11 SHA-256**
+
+每个重要文件计算：
+    
+    
+    SHA256
+
+例如：
+    
+    
+    source.mp4
+    → 91f3....
+    
+    audio.wav
+    → 3a17....
+    
+    final.mp4
+    → 8bd2....
+
+以后任何文件发生变化：
+    
+    
+    hash ≠ 原 hash
+
+系统立即知道。
+
+* * *
+
+# **14.12 为什么不能只保存文件名**
+
+错误：
+    
+    
+    final.mp4
+
+正确：
+    
+    
+    final.mp4
+    SHA256:
+    8bd2...
+
+这样可以证明：
+
+这是当时生成的那个文件。
+
+* * *
+
+# **14.13 Immutable Artifact**
+
+生产完成后：
+    
+    
+    Artifact
+
+默认：
+    
+    
+    READ ONLY
+
+修改不能覆盖原文件。
+
+必须：
+    
+    
+    v001
+    v002
+    v003
+
+* * *
+
+# **14.14 禁止这种操作**
+    
+    
+    audio.wav
+
+直接覆盖：
+    
+    
+    audio.wav
+
+必须：
+    
+    
+    audio/
+    ├── v001.wav
+    ├── v002.wav
+    └── v003.wav
+
+* * *
+
+# **14.15 Golden Artifact**
+
+人工确认最好的结果：
+    
+    
+    GOLDEN
+
+例如：
+    
+    
+    Walter Voice
+    VOICE-V07
+
+被确定为：
+    
+    
+    GOLDEN
+
+以后默认使用。
+
+* * *
+
+# **14.16 Golden Character Profile**
+
+人物数据库：
+    
+    
+    characters/
+    └── walter_white/
+        ├── profile-v01.json
+        ├── profile-v02.json
+        └── profile-v03.json
+
+其中：
+    
+    
+    profile-v03 = GOLDEN
+
+* * *
+
+# **14.17 Golden Voice**
+    
+    
+    voice_profiles/
+    └── walter_white/
+        ├── voice-v01/
+        ├── voice-v02/
+        └── voice-v03/
+             └── GOLDEN
+
+记录：
+    
+    
+    speaker embedding
+    voice model
+    reference audio
+    TTS parameters
+    prosody parameters
+
+* * *
+
+# **14.18 Translation Memory Archive**
+    
+    
+    translation_memory/
+    ├── TM-V01/
+    ├── TM-V02/
+    └── TM-V03/
+
+每一个版本都保存：
+    
+    
+    术语
+    人物称呼
+    固定译法
+    上下文
+    人工修正
+    来源
+    时间
+
+* * *
+
+# **14.19 Story Bible Archive**
+    
+    
+    story_bible/
+    ├── V01/
+    ├── V02/
+    └── V03/
+
+保存：
+    
+    
+    人物
+    关系
+    地点
+    事件
+    时间线
+    剧情摘要
+    世界观
+    专有名词
+
+* * *
+
+# **14.20 14.01 Memory Snapshot**
+
+每集开始生产时生成：
+    
+    
+    MEMORY SNAPSHOT
+
+例如：
+    
+    
+    S01E05
+    使用：
+    
+    Character DB = V03
+    Voice DB     = V05
+    Glossary     = V04
+    Story Bible  = V03
+    TM           = V07
+
+这样几年以后可以准确知道：
+
+E05 当时使用的是哪套记忆。
+
+* * *
+
+# **14.21 为什么必须 Snapshot**
+
+假设：
+    
+    
+    E01
+    使用 Memory V02
+
+后来：
+    
+    
+    Memory V05
+
+如果没有 Snapshot：
+    
+    
+    重新生产 E01
+
+就可能得到不同结果。
+
+有 Snapshot：
+    
+    
+    E01 → Memory V02
+
+结果可以复现。
+
+* * *
+
+# **14.22 14.02 Pipeline Version**
+
+整个系统也必须版本化：
+    
+    
+    PIPELINE-V01
+    PIPELINE-V02
+    PIPELINE-V03
+
+例如：
+    
+    
+    MODULE 09
+    TTS Engine
+
+从：
+    
+    
+    v1.2
+
+升级：
+    
+    
+    v1.3
+
+并不会改变历史任务。
+
+* * *
+
+# **14.23 Module Version**
+
+每个 Module 独立：
+    
+    
+    module01-v1.0
+    module02-v1.3
+    module03-v2.0
+    ...
+    module09-v1.7
+
+因此完整生产环境可以记录：
+    
+    
+    {
+      "module_versions": {
+        "01": "1.0.2",
+        "02": "1.4.0",
+        "03": "1.1.7",
+        "04": "2.0.1",
+        "05": "1.2.0",
+        "06": "1.0.8",
+        "07": "3.1.2",
+        "08": "1.5.0",
+        "09": "2.2.1",
+        "10": "1.3.4",
+        "11": "1.0.9",
+        "12": "2.1.0"
+      }
+    }
+
+* * *
+
+# **14.24 14.03 Model Registry**
+
+建立：
+    
+    
+    MODEL REGISTRY
+
+统一记录所有模型。
+
+例如：
+    
+    
+    MODEL-001
+    Qwen3
+    
+    MODEL-002
+    Qwen3.5
+    
+    MODEL-003
+    Whisper
+    
+    MODEL-004
+    Voice Model A
+    
+    MODEL-005
+    Voice Model B
+
+* * *
+
+# **14.25 Model Manifest**
+    
+    
+    {
+      "model_id": "MODEL-QWEN3-001",
+    
+      "name": "Qwen3",
+    
+      "version": "X",
+    
+      "format": "GGUF",
+    
+      "quantization": "Q4_K_M",
+    
+      "sha256": "...",
+    
+      "source": "...",
+    
+      "license": "...",
+    
+      "runtime": "llama.cpp"
+    }
+
+* * *
+
+# **14.26 模型文件也必须 Hash**
+
+例如：
+    
+    
+    qwen3.gguf
+
+记录：
+    
+    
+    SHA256
+
+因为以后：
+    
+    
+    同名模型
+
+可能实际已经被替换。
+
+* * *
+
+# **14.27 14.04 Container Registry**
+
+每个 Module 的 Docker Image 也保存。
+
+例如：
+    
+    
+    module09:v1.3.2
+
+记录：
+    
+    
+    Docker image digest
+
+例如：
+    
+    
+    sha256:xxxx
+
+* * *
+
+# **14.28 为什么不能只保存 Dockerfile**
+
+因为：
+    
+    
+    FROM ubuntu:latest
+
+五年后：
+    
+    
+    latest
+
+已经变了。
+
+因此必须固定：
+    
+    
+    image digest
+
+* * *
+
+# **14.29 完整环境 Manifest**
+
+例如：
+    
+    
+    {
+      "runtime": {
+        "os": "Ubuntu 24.04",
+        "cuda": "13.x",
+        "driver": "...",
+        "docker": "...",
+        "python": "3.12"
+      },
+    
+      "gpu": {
+        "vendor": "NVIDIA",
+        "model": "...",
+        "compute_capability": "..."
+      }
+    }
+
+* * *
+
+# **14.30 14.05 Git**
+
+代码：
+    
+    
+    Git
+
+管理：
+    
+    
+    backend
+    frontend
+    orchestrator
+    workers
+    module definitions
+    schemas
+    configuration
+
+* * *
+
+# **14.31 Git 不保存大型模型**
+
+不要：
+    
+    
+    git add model.gguf
+
+模型进入：
+    
+    
+    Model Registry
+
+代码 Git：
+    
+    
+    commit
+
+模型：
+    
+    
+    artifact
+
+二者分离。
+
+* * *
+
+# **14.32 Git Commit 与 Production Run 绑定**
+
+例如：
+    
+    
+    Run:
+    RUN-S01E01-20260820-001
+
+记录：
+    
+    
+    Git commit:
+    8f3e92a
+
+这样可以知道：
+
+当时到底使用哪一版程序。
+
+* * *
+
+# **14.33 14.06 Prompt Archive**
+
+Qwen 的 Prompt 不能只存在代码里。
+
+必须保存：
+    
+    
+    prompts/
+    ├── translation/
+    ├── context/
+    ├── dialogue/
+    ├── QA/
+    └── correction/
+
+例如：
+    
+    
+    translation_prompt_v07.txt
+
+* * *
+
+# **14.34 Prompt Version**
+
+每次修改：
+    
+    
+    PROMPT-V01
+    PROMPT-V02
+    PROMPT-V03
+
+而不是覆盖。
+
+* * *
+
+# **14.35 Prompt + Model + Memory**
+
+一次翻译真正的输入实际上是：
+    
+    
+    Model
+    +
+    Prompt
+    +
+    Character DB
+    +
+    Story Context
+    +
+    Translation Memory
+    +
+    Dialogue
+
+因此必须整体记录。
+
+* * *
+
+# **14.36 Reproduction Manifest**
+
+最终形成：
+    
+    
+    reproduction.json
+
+例如：
+    
+    
+    {
+      "project": "breaking_bad_cn_dub",
+    
+      "episode": "S01E01",
+    
+      "pipeline": "PIPELINE-V03",
+    
+      "git_commit": "8f3e92a",
+    
+      "memory": "MEM-V03",
+    
+      "prompt": "PROMPT-V07",
+    
+      "models": {
+        "translation": "MODEL-QWEN3-001",
+        "asr": "MODEL-ASR-003",
+        "tts": "MODEL-TTS-007"
+      },
+    
+      "modules": {
+        "09": "module09-v2.2.1",
+        "10": "module10-v1.3.4"
+      },
+    
+      "artifacts": {
+        "input": "sha256:...",
+        "output": "sha256:..."
+      }
+    }
+
+* * *
+
+# **14.37 14.07 一键复现**
+
+最终提供：
+    
+    
+    restore_project.sh
+
+执行：
+    
+    
+    读取 Archive
+          ↓
+    检查 SHA256
+          ↓
+    恢复数据库
+          ↓
+    恢复 Models
+          ↓
+    恢复 Docker Images
+          ↓
+    恢复 Memory
+          ↓
+    恢复 Pipeline
+          ↓
+    恢复 Artifact Registry
+          ↓
+    运行 Reproduction Check
+
+* * *
+
+# **14.38 Reproduction Check**
+
+不是恢复完就认为成功。
+
+系统执行：
+    
+    
+    CHECK 01
+    Project Manifest
+    
+    CHECK 02
+    Database
+    
+    CHECK 03
+    Models
+    
+    CHECK 04
+    Docker Images
+    
+    CHECK 05
+    Memory
+    
+    CHECK 06
+    Artifacts
+    
+    CHECK 07
+    Pipeline
+    
+    CHECK 08
+    Hashes
+
+全部：
+    
+    
+    PASS
+
+才显示：
+    
+    
+    REPRODUCTION READY
+
+* * *
+
+# **14.39 14.08 Dry Run**
+
+提供：
+    
+    
+    DRY RUN
+
+不真正生成视频。
+
+只检查：
+    
+    
+    模型是否存在
+    GPU是否满足
+    依赖是否满足
+    Artifact是否完整
+    Memory是否完整
+
+* * *
+
+# **14.40 14.09 Partial Reproduction**
+
+不一定需要重新生产整部剧。
+
+例如：
+    
+    
+    只复现 S01E03
+
+系统：
+    
+    
+    读取 E03 Manifest
+           ↓
+    恢复依赖
+           ↓
+    恢复必要 Artifact
+           ↓
+    重新运行指定 Module
+
+* * *
+
+# **14.41 甚至可以：**
+    
+    
+    只重新生成 Walter 的所有台词
+
+因为 Artifact 已经具有：
+    
+    
+    character_id
+    dialogue_id
+    episode
+    module
+
+索引。
+
+* * *
+
+# **14.42 14.10 迁移到另一台机器**
+
+旧服务器：
+    
+    
+    Machine A
+
+导出：
+    
+    
+    Project Archive
+
+复制到：
+    
+    
+    Machine B
+
+然后：
+    
+    
+    IMPORT
+
+系统检测：
+    
+    
+    GPU
+    CUDA
+    Storage
+    Docker
+
+然后恢复。
+
+* * *
+
+# **14.43 GPU 不同也允许迁移**
+
+例如：
+    
+    
+    RTX 4090
+
+迁移到：
+    
+    
+    RTX 5090
+
+如果：
+    
+    
+    Model
+    Runtime
+    CUDA
+
+兼容：
+    
+    
+    PASS
+
+* * *
+
+# **14.44 GPU 不兼容**
+
+例如：
+    
+    
+    旧 GPU
+
+无法运行：
+    
+    
+    某 TTS Model
+
+系统不要直接失败。
+
+应该显示：
+    
+    
+    MODEL INCOMPATIBLE
+
+然后：
+    
+    
+    推荐替代 Runtime / Model
+
+但：
+
+替换模型属于新的 Reproduction Profile，而不是偷偷改变原始档案。
+
+* * *
+
+# **14.45 14.11 Reproduction Profile**
+
+例如：
+    
+    
+    PROFILE-ORIGINAL
+
+使用：
+    
+    
+    原模型
+
+而：
+    
+    
+    PROFILE-NEW-GPU
+
+使用：
+    
+    
+    兼容的新模型
+
+二者并存。
+
+* * *
+
+# **14.46 14.12 Archive Storage**
+
+推荐三层：
+    
+    
+    HOT
+    WARM
+    COLD
+
+* * *
+
+# **14.47 HOT**
+
+当前项目：
+    
+    
+    NVMe
+
+保存：
+    
+    
+    正在生产
+    最近 Artifact
+
+* * *
+
+# **14.48 WARM**
+
+例如：
+    
+    
+    NAS
+
+保存：
+    
+    
+    已经完成的 Episode
+
+* * *
+
+# **14.49 COLD**
+
+长期：
+    
+    
+    外置 HDD
+    +
+    异地备份
+
+保存：
+    
+    
+    完整 Project Archive
+
+* * *
+
+# **14.50 14.13 3-2-1 Backup**
+
+最终：
+    
+    
+    3 copies
+    2 different media
+    1 off-site
+
+例如：
+    
+    
+    主服务器
+       +
+    NAS
+       +
+    异地硬盘
+
+* * *
+
+# **14.51 14.14 Archive Package**
+
+最终一个项目可以导出：
+    
+    
+    Breaking_Bad_CN_Dub_FULL_V03.tar.zst
+
+结构：
+    
+    
+    archive/
+    ├── manifest/
+    ├── database/
+    ├── characters/
+    ├── voices/
+    ├── translation/
+    ├── story/
+    ├── models/
+    ├── containers/
+    ├── prompts/
+    ├── artifacts/
+    ├── final/
+    ├── qa/
+    └── reproduction/
+
+* * *
+
+# **14.52 大文件不能全部压进一个包**
+
+所以实际：
+    
+    
+    Archive Manifest
+
+记录：
+    
+    
+    文件在哪里
+    SHA256
+    版本
+    依赖
+
+大型视频：
+    
+    
+    独立存储
+
+* * *
+
+# **14.53 14.15 Archive Integrity**
+
+每天/每周执行：
+    
+    
+    Integrity Scan
+
+检查：
+    
+    
+    SHA256
+
+发现：
+    
+    
+    FILE CORRUPTED
+
+立即：
+    
+    
+    从 Backup 恢复
+
+* * *
+
+# **14.54 14.16 数据库备份**
+
+PostgreSQL：
+    
+    
+    daily dump
+    +
+    WAL
+
+至少：
+    
+    
+    每日完整备份
+
+重要项目：
+    
+    
+    连续归档
+
+* * *
+
+# **14.55 14.17 数据库和 Artifact 必须一致**
+
+不能出现：
+    
+    
+    DB:
+    Artifact v003 exists
+    
+    Storage:
+    v003 missing
+
+因此 Archive Validator 检查：
+    
+    
+    DB → Storage
+    Storage → DB
+
+双向验证。
+
+* * *
+
+# **14.56 14.18 Disaster Recovery**
+
+假设：
+    
+    
+    服务器完全损坏
+
+新机器：
+    
+    
+    Ubuntu
+    Docker
+    NVIDIA Driver
+
+导入：
+    
+    
+    Archive
+
+恢复：
+    
+    
+    PostgreSQL
+    Redis
+    MinIO
+    Models
+    Containers
+    Project
+
+最终：
+    
+    
+    PROJECT RESTORED
+
+* * *
+
+# **14.57 14.19 人工修改也必须进入版本系统**
+
+例如父母观看后发现：
+
+"这个人物这里应该叫'老白'，不是'沃尔特'。"
+
+人工修改：
+    
+    
+    Translation Memory
+
+生成：
+    
+    
+    TM-V08
+
+然后：
+    
+    
+    E05
+    E06
+    E07
+
+根据依赖关系决定是否需要重新生产。
+
+* * *
+
+# **14.58 Feedback Ledger**
+
+建立：
+    
+    
+    feedback/
+
+记录：
+    
+    
+    {
+      "episode": "S01E05",
+      "dialogue": "dlg_00184",
+    
+      "type": "translation",
+    
+      "old": "沃尔特",
+      "new": "老白",
+    
+      "reason": "家庭观看习惯",
+    
+      "approved": true
+    }
+
+* * *
+
+# **14.59 这会反过来增强人物数据库**
+
+例如发现：
+    
+    
+    父母更喜欢：
+    老白
+
+那么：
+    
+    
+    Character Profile
+
+增加：
+    
+    
+    preferred_name = 老白
+
+* * *
+
+# **14.60 14.20 "父母观看版"成为独立 Profile**
+
+这是整个系统很值得保留的设计。
+
+例如：
+    
+    
+    PROFILE-A
+    原始忠实翻译
+
+以及：
+    
+    
+    PROFILE-B
+    父母观看版
+
+父母版可以：
+    
+    
+    更自然
+    更口语
+    固定人物称呼
+    减少生硬直译
+
+* * *
+
+# **14.61 Profile 不修改原始版本**
+
+例如：
+    
+    
+    Translation V05
+
+仍然存在。
+
+生成：
+    
+    
+    Translation V06
+
+作为：
+    
+    
+    PARENT-FRIENDLY
+
+* * *
+
+# **14.62 最终可以拥有：**
+    
+    
+    Breaking Bad
+    │
+    ├── Original Translation
+    │
+    ├── Academic Translation
+    │
+    └── Parent Friendly Chinese Dub
+
+同一套：
+    
+    
+    人物数据库
+    声音
+    剧情数据库
+
+可以生成不同版本。
+
+* * *
+
+# **14.63 14.21 Archive UI**
+
+新增：
+    
+    
+    ⑭ 项目档案
+
+页面：
+    
+    
+    ┌─────────────────────────────────────────┐
+    │ PROJECT ARCHIVE                         │
+    ├─────────────────────────────────────────┤
+    │ Project Version      V03                │
+    │ Pipeline             V03                │
+    │ Memory               V07                │
+    │ Episodes             62                 │
+    │ Approved             62                 │
+    │                                         │
+    │ Archive Integrity     ✓ PASS            │
+    │ Reproducibility       ✓ READY           │
+    │ Last Backup           2026-08-20        │
+    │                                         │
+    │ [创建快照]                              │
+    │ [导出项目]                              │
+    │ [验证档案]                              │
+    │ [恢复项目]                              │
+    └─────────────────────────────────────────┘
+
+* * *
+
+# **14.64 14.22 Project Snapshot**
+
+用户可以随时：
+    
+    
+    CREATE SNAPSHOT
+
+例如：
+    
+    
+    SNAPSHOT-2026-08-20-V03
+
+冻结：
+    
+    
+    Character DB
+    Voice DB
+    Translation Memory
+    Story Bible
+    Pipeline
+    Models
+    Prompts
+    QA
+
+* * *
+
+# **14.65 Snapshot 的意义**
+
+例如：
+    
+    
+    Breaking Bad
+
+有：
+    
+    
+    SNAPSHOT V01
+    SNAPSHOT V02
+    SNAPSHOT V03
+
+以后可以：
+    
+    
+    恢复 V01
+    恢复 V02
+    恢复 V03
+
+* * *
+
+# **14.66 14.23 最终数据关系**
+    
+    
+    PROJECT
+     │
+     ├── SNAPSHOT
+     │      │
+     │      ├── Memory Version
+     │      ├── Pipeline Version
+     │      ├── Model Versions
+     │      └── Prompt Versions
+     │
+     ├── SEASON
+     │      │
+     │      └── EPISODE
+     │             │
+     │             └── MODULE
+     │                    │
+     │                    └── ARTIFACT
+     │
+     └── QA / FEEDBACK
+
+* * *
+
+# **14.67 14.24 最重要的原则**
+
+整个工程以后必须遵守：
+
+### **原则 1**
+    
+    
+    Never overwrite production data.
+
+### **原则 2**
+    
+    
+    Everything important has a version.
+
+### **原则 3**
+    
+    
+    Every Artifact has a hash.
+
+### **原则 4**
+    
+    
+    Every production run has a manifest.
+
+### **原则 5**
+    
+    
+    Every Episode knows exactly which Project Memory it used.
+
+### **原则 6**
+    
+    
+    Every final video can trace back to its source artifacts.
+
+* * *
+
+# **14.68 完整追溯链**
+
+最终一个：
+    
+    
+    S01E03_final.mp4
+
+可以反向追踪：
+    
+    
+    FINAL VIDEO
+        ↓
+    MODULE 12
+        ↓
+    MODULE 11
+        ↓
+    MODULE 10
+        ↓
+    MODULE 09
+        ↓
+    VOICE PROFILE V05
+        ↓
+    CHARACTER DATABASE V03
+        ↓
+    TRANSLATION V07
+        ↓
+    QWEN3.5 MODEL
+        ↓
+    PROMPT V09
+        ↓
+    STORY BIBLE V04
+        ↓
+    SOURCE VIDEO
+
+这就是：
+
+**完整 Provenance（生产血缘）链。**
+
+* * *
+
+# **14.69 MODULE 14 完成后的系统能力**
+    
+    
+    ✓ 项目长期保存
+    ✓ 整季/整剧归档
+    ✓ 所有版本可追踪
+    ✓ 所有 Artifact 可验证
+    ✓ 模型版本可追踪
+    ✓ Prompt 可追踪
+    ✓ 人物数据库可追踪
+    ✓ 翻译记忆可追踪
+    ✓ 剧情上下文可追踪
+    ✓ Docker 环境可追踪
+    ✓ GPU/CUDA环境可追踪
+    ✓ 代码版本可追踪
+    ✓ 人工修改可追踪
+    ✓ 可以迁移到另一台机器
+    ✓ 可以灾难恢复
+    ✓ 可以局部复现
+    ✓ 可以整项目复现
+    ✓ 可以生成不同翻译 Profile
+    ✓ 可以生成"父母观看版"
+
+* * *
+
+# **14.70 MODULE 14 完成后的完整工程闭环**
+    
+    
+                        PROJECT
+                           │
+                           ▼
+                  MODULE 01--04
+               项目 / 媒体 / 人物
+                           │
+                           ▼
+                  MODULE 05--08
+              字幕 / 翻译 / 上下文
+                           │
+                           ▼
+                  MODULE 09--11
+              TTS / 混音 / 视频封装
+                           │
+                           ▼
+                     MODULE 12
+                         QA
+                           │
+                           ▼
+                     MODULE 13
+                 Batch / Season
+                           │
+                           ▼
+                     MODULE 14
+             Archive / Version / Restore
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │  Reproducible   │
+                  │  Project        │
+                  └─────────────────┘
+
+到这里，**第一阶段的 14 个核心模块形成完整闭环**：
+    
+    
+    输入一部美剧
+         ↓
+    建立人物数据库
+         ↓
+    建立人物音色
+         ↓
+    建立剧情/人物/术语记忆
+         ↓
+    提取或导入中文字幕
+         ↓
+    翻译（中文字幕存在时可跳过）
+         ↓
+    对白切分
+         ↓
+    人物识别
+         ↓
+    中文 TTS
+         ↓
+    声音/情绪/语速处理
+         ↓
+    重新混音
+         ↓
+    合成视频
+         ↓
+    自动 QA
+         ↓
+    批量整季生产
+         ↓
+    完整归档
+         ↓
+    几年后仍能重新生成
+
+**最终架构的核心不是某一个 TTS、Qwen、Whisper 或 VideoTranslatorAI，而是 MODULE + Artifact + Version + Memory + Orchestrator 五层解耦。**这样以后哪怕出现比当前方案明显更好的中文 TTS，只替换对应 Module，不需要推翻整个系统。

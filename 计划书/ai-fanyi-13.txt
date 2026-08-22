@@ -1,0 +1,2488 @@
+13
+
+# **MODULE 13 -- Batch / Season Pipeline**
+
+## **13.00 模块定位**
+
+MODULE 13 将前面的：
+
+**"一集影视剧 AI 中文配音系统"**
+
+升级为：
+
+**"整季 / 整部影视剧自动化生产系统"。**
+
+核心目标：
+    
+    
+    S01E01 ──→ 独立生产
+    S01E02 ──→ 独立生产
+    S01E03 ──→ 独立生产
+    S01E04 ──→ 独立生产
+    ...
+
+任何一集失败：
+    
+    
+    S01E03 = FAILED
+
+不影响：
+    
+    
+    S01E01 = DONE
+    S01E02 = DONE
+    S01E04 = PROCESSING
+    S01E05 = PROCESSING
+
+* * *
+
+# **13.01 总体架构**
+    
+    
+                        PROJECT
+                           │
+                           ▼
+                 ┌──────────────────┐
+                 │ Episode Discovery│
+                 └────────┬─────────┘
+                          ↓
+                 ┌──────────────────┐
+                 │   Job Generator  │
+                 └────────┬─────────┘
+                          ↓
+                 ┌──────────────────┐
+                 │   Job Queue      │
+                 └────────┬─────────┘
+                          ↓
+           ┌──────────────┼──────────────┐
+           ↓              ↓              ↓
+       Worker #1      Worker #2      Worker #3
+           │              │              │
+           ↓              ↓              ↓
+        E01 Pipeline    E02 Pipeline    E03 Pipeline
+           │              │              │
+           └──────────────┼──────────────┘
+                          ↓
+                     MODULE 12 QA
+                          ↓
+                 ┌──────────────────┐
+                 │ Episode Registry │
+                 └────────┬─────────┘
+                          ↓
+                     Season Status
+
+* * *
+
+# **13.02 最大原则：项目级共享，Episode 级隔离**
+
+整个系统分成：
+    
+    
+    PROJECT SHARED
+
+和：
+    
+    
+    EPISODE ISOLATED
+
+* * *
+
+## **PROJECT SHARED**
+
+跨整部剧共享：
+    
+    
+    人物数据库
+    角色关系
+    人物音色
+    翻译术语表
+    剧情背景
+    世界观
+    地名
+    机构名
+    专有名词
+    语言风格
+    Golden Voice Profiles
+    Golden Translation Profiles
+
+* * *
+
+## **EPISODE ISOLATED**
+
+每集独立：
+    
+    
+    字幕
+    对白
+    场景
+    TTS
+    混音
+    最终视频
+    QA
+
+* * *
+
+# **13.03 项目目录**
+    
+    
+    project/
+    │
+    ├── project.json
+    │
+    ├── media/
+    │
+    ├── characters/
+    │   ├── characters.json
+    │   ├── relationships.json
+    │   ├── voice_profiles/
+    │   └── golden_tests/
+    │
+    ├── translation/
+    │   ├── glossary.json
+    │   ├── terminology.json
+    │   └── translation_memory/
+    │
+    ├── context/
+    │   ├── story_bible/
+    │   ├── episode_summaries/
+    │   └── scene_context/
+    │
+    ├── seasons/
+    │   └── S01/
+    │       ├── E01/
+    │       ├── E02/
+    │       ├── E03/
+    │       └── ...
+    │
+    ├── jobs/
+    │
+    ├── qa/
+    │
+    └── archive/
+
+* * *
+
+# **13.04 Episode Job**
+
+每一集生成一个独立 Job：
+    
+    
+    {
+      "job_id": "BB-S01-E01",
+    
+      "project": "breaking_bad",
+    
+      "season": 1,
+    
+      "episode": 1,
+    
+      "status": "QUEUED",
+    
+      "priority": 100,
+    
+      "pipeline": {
+        "01": "PENDING",
+        "02": "PENDING",
+        "03": "PENDING",
+        "04": "READY",
+        "05": "PENDING",
+        "06": "PENDING",
+        "07": "PENDING",
+        "08": "PENDING",
+        "09": "PENDING",
+        "10": "PENDING",
+        "11": "PENDING",
+        "12": "PENDING"
+      }
+    }
+
+* * *
+
+# **13.05 Job 状态机**
+    
+    
+    CREATED
+       ↓
+    QUEUED
+       ↓
+    RUNNING
+       ↓
+    MODULE_x
+       │
+       ├── SUCCESS
+       │      ↓
+       │   NEXT_MODULE
+       │
+       └── FAILED
+              ↓
+           RETRY
+              │
+              ├── SUCCESS → NEXT
+              │
+              └── FAILED
+                     ↓
+                   BLOCKED
+
+* * *
+
+# **13.06 Episode 状态**
+    
+    
+    QUEUED
+    RUNNING
+    PAUSED
+    WAITING_REVIEW
+    REWORK
+    FAILED
+    COMPLETED
+    APPROVED
+    ARCHIVED
+
+* * *
+
+# **13.07 Module 状态**
+
+每个模块也独立：
+    
+    
+    PENDING
+    READY
+    RUNNING
+    SUCCESS
+    FAILED
+    RETRYING
+    SKIPPED
+    INVALIDATED
+
+* * *
+
+# **13.08 为什么必须"双层状态"**
+
+不能只记录：
+    
+    
+    Episode = RUNNING
+
+因为不知道：
+    
+    
+    当前正在运行 MODULE 09
+
+还是：
+    
+    
+    MODULE 09 已完成
+    MODULE 10 正在运行
+
+所以：
+    
+    
+    Episode State
+    +
+    Module State
+
+必须同时存在。
+
+* * *
+
+# **13.09 13.01 Job Queue**
+
+核心组件：
+    
+    
+    Job Queue
+
+推荐设计：
+    
+    
+    Redis
+    +
+    PostgreSQL
+
+其中：
+    
+    
+    Redis
+
+负责：
+    
+    
+    实时队列
+    worker调度
+    锁
+    heartbeat
+
+PostgreSQL：
+    
+    
+    永久状态
+    任务历史
+    版本
+    QA
+    日志
+
+* * *
+
+# **13.10 不让 Redis 成为唯一数据库**
+
+错误：
+    
+    
+    所有状态 → Redis
+
+Redis 崩溃：
+    
+    
+    整个项目状态丢失
+
+正确：
+    
+    
+    PostgreSQL
+       ↑
+    永久真相源
+    
+    Redis
+       ↑
+    临时任务队列
+
+* * *
+
+# **13.11 13.02 Worker**
+
+每个 Worker 是：
+    
+    
+    独立进程
+
+负责：
+    
+    
+    领取一个 Job
+     ↓
+    执行一个 Module
+     ↓
+    保存结果
+     ↓
+    释放资源
+     ↓
+    领取下一个 Job
+
+* * *
+
+# **13.12 Worker 不应该自己决定流程**
+
+Worker 不应该：
+    
+    
+    if module09:
+    ...
+    if module10:
+    ...
+
+所有流程由：
+    
+    
+    Orchestrator
+
+统一控制。
+
+* * *
+
+# **13.13 Orchestrator**
+    
+    
+    ┌──────────────────────────┐
+    │       ORCHESTRATOR       │
+    ├──────────────────────────┤
+    │ Job Scheduler            │
+    │ Dependency Manager       │
+    │ Retry Manager            │
+    │ Resource Manager         │
+    │ Failure Manager          │
+    │ Version Manager          │
+    └────────────┬─────────────┘
+                 ↓
+              Workers
+
+* * *
+
+# **13.14 13.03 Dependency Graph**
+
+一集内部：
+    
+    
+    01
+     ↓
+    02
+     ↓
+    03
+     ↓
+    04
+     ↓
+    05
+     ↓
+    06
+     ↓
+    07
+     ↓
+    08
+     ↓
+    09
+     ↓
+    10
+     ↓
+    11
+     ↓
+    12
+
+但是实际工程不应该全部串成一条线。
+
+例如：
+    
+    
+    MODULE 04 Character DB
+
+属于：
+    
+    
+    PROJECT LEVEL
+
+完成一次后：
+    
+    
+    E01
+    E02
+    E03
+    ...
+
+全部复用。
+
+* * *
+
+# **13.15 更准确的 DAG**
+    
+    
+    Project
+     │
+     ├── Character DB ─────────┐
+     │                         │
+     ├── Voice Profiles ───────┤
+     │                         │
+     └── Translation Memory ───┤
+                               ↓
+                        Episode Pipeline
+                               │
+                      ┌────────┴────────┐
+                      ↓                 ↓
+                    E01               E02
+                      ↓                 ↓
+                    E03               E04
+
+* * *
+
+# **13.16 Episode 间可以并行**
+
+例如：
+    
+    
+    E01 → MODULE 09
+    E02 → MODULE 09
+    E03 → MODULE 07
+    E04 → MODULE 05
+
+可以同时进行。
+
+但是：
+
+**同一 GPU 上的重型任务必须由 Resource Scheduler 控制。**
+
+* * *
+
+# **13.17 13.04 GPU Resource Scheduler**
+
+系统不简单地：
+    
+    
+    worker = GPU
+
+而是：
+    
+    
+    GPU Resource Pool
+
+例如：
+    
+    
+    GPU 0
+     ├── VRAM 24GB
+     └── compute slots
+    
+    GPU 1
+     ├── VRAM 24GB
+     └── compute slots
+
+* * *
+
+# **13.18 GPU Job 描述**
+
+每个模块声明：
+    
+    
+    {
+      "module": "09",
+    
+      "requirements": {
+        "gpu": true,
+        "vram_min": 12000,
+        "compute": "high"
+      }
+    }
+
+调度器决定：
+    
+    
+    GPU 0 → E01 MODULE 09
+    GPU 1 → E02 MODULE 09
+
+* * *
+
+# **13.19 CPU 模块**
+
+例如：
+    
+    
+    MODULE 11
+
+如果只是封装：
+    
+    
+    GPU = false
+
+则：
+    
+    
+    CPU Worker
+
+直接处理。
+
+* * *
+
+# **13.20 资源声明**
+
+每个 Module 都拥有：
+    
+    
+    CPU
+    RAM
+    GPU
+    VRAM
+    Disk
+    Network
+
+需求。
+
+例如：
+    
+    
+    {
+      "module": "07",
+    
+      "resources": {
+        "cpu": 8,
+        "ram_gb": 16,
+        "gpu": true,
+        "vram_gb": 10,
+        "disk_gb": 20
+      }
+    }
+
+* * *
+
+# **13.21 13.05 独立容器**
+
+推荐：
+    
+    
+    Docker
+
+每个模块：
+    
+    
+    module-01
+    module-02
+    ...
+    module-12
+
+拥有独立运行环境。
+
+* * *
+
+# **13.22 为什么**
+
+例如：
+    
+    
+    TTS Library A
+
+要求：
+    
+    
+    PyTorch 2.x
+
+而：
+    
+    
+    TTS Library B
+
+要求：
+    
+    
+    PyTorch 1.x
+
+不会互相污染。
+
+* * *
+
+# **13.23 容器原则**
+
+每个 Module：
+    
+    
+    Input
+     ↓
+    Container
+     ↓
+    Output
+     ↓
+    Container Destroy
+
+而不是：
+    
+    
+    一个巨大 Python 环境
+    跑整个项目
+
+* * *
+
+# **13.24 13.06 Artifact**
+
+模块之间不能通过：
+    
+    
+    内存
+
+传递。
+
+必须：
+    
+    
+    文件 Artifact
+
+例如：
+    
+    
+    MODULE 09
+     ↓
+    audio/dialogue_001.wav
+     ↓
+    MODULE 10
+
+* * *
+
+# **13.25 Artifact Manifest**
+
+每个输出都有：
+    
+    
+    {
+      "artifact_id": "ART-009-00184",
+    
+      "module": "09",
+    
+      "type": "tts_audio",
+    
+      "episode": "S01E01",
+    
+      "dialogue_id": "dlg_184",
+    
+      "version": 3,
+    
+      "sha256": "...",
+    
+      "created_at": "...",
+    
+      "status": "VALID"
+    }
+
+* * *
+
+# **13.26 Artifact 是系统真正的"接口"**
+
+模块之间不直接互相调用。
+
+而是：
+    
+    
+    Module 09
+          ↓
+    Artifact
+          ↓
+    Module 10
+
+这样：
+    
+    
+    09 可以换掉
+    10 不需要改
+
+* * *
+
+# **13.27 13.07 断点续跑**
+
+例如：
+    
+    
+    E01
+    MODULE 01 ✓
+    MODULE 02 ✓
+    MODULE 03 ✓
+    MODULE 04 ✓
+    MODULE 05 ✓
+    MODULE 06 ✓
+    MODULE 07 ✓
+    MODULE 08 ✓
+    MODULE 09 ✓
+    MODULE 10 FAILED
+
+第二天重新启动：
+    
+    
+    MODULE 10
+
+而不是：
+    
+    
+    MODULE 01
+
+* * *
+
+# **13.28 判断是否可以跳过**
+
+根据：
+    
+    
+    Artifact
+    +
+    Version
+    +
+    Hash
+    +
+    Config
+    +
+    Dependency
+
+如果全部一致：
+    
+    
+    VALID
+
+直接跳过。
+
+* * *
+
+# **13.29 Cache Key**
+
+例如：
+    
+    
+    cache_key =
+    SHA256(
+        input_artifact
+        +
+        module_version
+        +
+        model_version
+        +
+        parameters
+    )
+
+相同输入：
+    
+    
+    → 不重复计算
+
+* * *
+
+# **13.30 13.08 模型升级**
+
+假设：
+    
+    
+    TTS v1
+
+完成了：
+    
+    
+    E01--E10
+
+后来：
+    
+    
+    TTS v2
+
+只想重新生成 TTS。
+
+系统计算：
+    
+    
+    MODULE 09 cache key
+
+发生变化：
+    
+    
+    v1 ≠ v2
+
+于是：
+    
+    
+    MODULE 09
+
+自动 invalidated。
+
+* * *
+
+# **13.31 依赖失效传播**
+    
+    
+    MODULE 09
+        ↓
+    MODULE 10
+        ↓
+    MODULE 11
+        ↓
+    MODULE 12
+
+因此：
+    
+    
+    09 changed
+
+自动：
+    
+    
+    10 INVALIDATED
+    11 INVALIDATED
+    12 INVALIDATED
+
+但是：
+    
+    
+    01--08
+
+仍然有效。
+
+* * *
+
+# **13.32 这是整个系统的核心能力之一**
+
+例如更换：
+
+Qwen3 → Qwen3.5
+
+只需要：
+    
+    
+    MODULE 07
+
+失效。
+
+系统自动知道：
+    
+    
+    07
+     ↓
+    08
+     ↓
+    09
+     ↓
+    10
+     ↓
+    11
+     ↓
+    12
+
+需要重新处理。
+
+人物数据库：
+    
+    
+    MODULE 04
+
+完全不动。
+
+* * *
+
+# **13.33 13.09 失败重试**
+
+不是所有失败都一样。
+
+分：
+    
+    
+    TRANSIENT
+    PERMANENT
+    CONTENT
+    SYSTEM
+
+* * *
+
+# **13.34 TRANSIENT**
+
+例如：
+    
+    
+    CUDA out of memory
+    network timeout
+    temporary API error
+    disk busy
+
+自动：
+    
+    
+    Retry
+
+* * *
+
+# **13.35 PERMANENT**
+
+例如：
+    
+    
+    文件损坏
+    模型不存在
+    参数错误
+    输入格式错误
+
+不应该无限重试。
+
+直接：
+    
+    
+    FAILED
+
+* * *
+
+# **13.36 Retry Policy**
+
+例如：
+    
+    
+    Attempt 1
+     ↓
+    30s
+     ↓
+    Attempt 2
+     ↓
+    2min
+     ↓
+    Attempt 3
+     ↓
+    10min
+     ↓
+    FAILED
+
+采用：
+    
+    
+    Exponential Backoff
+
+* * *
+
+# **13.37 13.10 单集失败隔离**
+
+例如：
+    
+    
+    E01 DONE
+    E02 DONE
+    E03 FAILED
+    E04 RUNNING
+    E05 RUNNING
+
+E03：
+    
+    
+    FAILED
+
+不会：
+    
+    
+    STOP SEASON
+
+除非：
+    
+    
+    Project-level dependency
+
+发生错误。
+
+* * *
+
+# **13.38 Project-level Failure**
+
+例如：
+    
+    
+    Character Database corrupted
+
+则：
+    
+    
+    E01
+    E02
+    E03
+    ...
+
+都不能继续。
+
+状态：
+    
+    
+    BLOCKED_BY_PROJECT
+
+这与：
+    
+    
+    EPISODE_FAILED
+
+严格区分。
+
+* * *
+
+# **13.39 13.11 Episode Priority**
+
+允许：
+    
+    
+    Priority 1
+    Priority 2
+    Priority 3
+
+例如：
+    
+    
+    E01 = 100
+    E02 = 100
+    E03 = 50
+
+* * *
+
+# **13.40 人工指定优先级**
+
+浏览器：
+    
+    
+    E01   ★★★★★
+    E02   ★★★★★
+    E03   ★★★
+    E04   ★
+
+系统优先：
+    
+    
+    E01
+    E02
+
+* * *
+
+# **13.41 13.12 资源调度策略**
+
+不是简单：
+    
+    
+    先来先服务
+
+而是：
+    
+    
+    Priority
+    +
+    Resource Fit
+    +
+    Dependency
+    +
+    Fairness
+
+* * *
+
+# **13.42 例如**
+
+GPU 24GB：
+    
+    
+    Job A = 20GB
+    Job B = 8GB
+    Job C = 8GB
+
+不能：
+    
+    
+    A + B
+
+但可以：
+    
+    
+    B + C
+
+调度器选择：
+    
+    
+    B + C
+
+提高 GPU 利用率。
+
+* * *
+
+# **13.43 13.13 GPU 显存隔离**
+
+每个 Worker 运行前检查：
+    
+    
+    free VRAM
+
+启动：
+    
+    
+    TTS
+
+前预留资源。
+
+如果：
+    
+    
+    required = 18GB
+    free = 12GB
+
+不要启动。
+
+进入：
+    
+    
+    WAITING_FOR_RESOURCE
+
+* * *
+
+# **13.44 13.14 OOM Recovery**
+
+如果运行过程中：
+    
+    
+    CUDA OOM
+
+Worker：
+    
+    
+    terminate
+
+释放：
+    
+    
+    GPU memory
+
+然后：
+    
+    
+    retry
+
+可自动降低：
+    
+    
+    batch size
+
+例如：
+    
+    
+    16
+     ↓
+    8
+     ↓
+    4
+     ↓
+    2
+
+* * *
+
+# **13.45 但不要无限自动降低**
+
+否则：
+    
+    
+    batch = 1
+
+还在跑几个小时。
+
+所以：
+    
+    
+    min_batch = 2
+
+仍然失败：
+    
+    
+    FAILED
+
+进入人工处理。
+
+* * *
+
+# **13.46 13.15 Episode 并行度**
+
+默认：
+    
+    
+    重型 GPU 模块
+    parallel = GPU count
+
+轻量模块：
+    
+    
+    CPU parallel = CPU cores / 2
+
+但最终由资源调度器动态决定。
+
+* * *
+
+# **13.47 13.16 不同模块采用不同并行策略**
+
+例如：
+    
+    
+    MODULE 07 Translation
+
+可以：
+    
+    
+    多个 Episode 并行
+
+MODULE 09：
+    
+    
+    GPU 限制
+
+MODULE 11：
+    
+    
+    大量 CPU 并行
+
+因此：
+
+**并行策略属于 Module，而不是整个系统统一设置。**
+
+* * *
+
+# **13.48 13.17 浏览器页面**
+
+第 13 标签：
+    
+    
+    ⑬ 批量生产
+
+页面：
+    
+    
+    ┌─────────────────────────────────────────────┐
+    │ BREAKING BAD -- SEASON 01                  │
+    ├─────────────────────────────────────────────┤
+    │                                             │
+    │ Episodes: 7                                │
+    │                                             │
+    │ E01  ████████████████████  APPROVED        │
+    │ E02  ████████████████████  APPROVED        │
+    │ E03  ██████████████░░░░░░  RUNNING         │
+    │ E04  ███████████░░░░░░░░░  RUNNING         │
+    │ E05  ████████████████████  APPROVED        │
+    │ E06  ███████░░░░░░░░░░░░░  QUEUED          │
+    │ E07  ███████░░░░░░░░░░░░░  QUEUED          │
+    │                                             │
+    │ GPU 0     82%                              │
+    │ GPU 1     76%                              │
+    │                                             │
+    │ [暂停] [继续] [停止新任务]                 │
+    └─────────────────────────────────────────────┘
+
+* * *
+
+# **13.49 单集展开**
+
+点击 E03：
+    
+    
+    E03
+    │
+    ├── 01 ✓
+    ├── 02 ✓
+    ├── 03 ✓
+    ├── 04 ✓
+    ├── 05 ✓
+    ├── 06 ✓
+    ├── 07 ✓
+    ├── 08 ✓
+    ├── 09 RUNNING
+    ├── 10 WAITING
+    ├── 11 WAITING
+    └── 12 WAITING
+
+* * *
+
+# **13.50 实时日志**
+
+点击：
+    
+    
+    MODULE 09
+
+看到：
+    
+    
+    GPU 0
+    VRAM 17.2 / 24 GB
+    
+    Dialogue:
+    1842 / 2387
+    
+    Speed:
+    4.2x realtime
+    
+    ETA:
+    08:31
+
+* * *
+
+# **13.51 13.18 暂停**
+
+点击：
+    
+    
+    [暂停]
+
+不要杀死当前 Job。
+
+状态：
+    
+    
+    PAUSING
+
+当前安全点：
+    
+    
+    checkpoint
+
+完成当前 Dialogue / Scene 后：
+    
+    
+    PAUSED
+
+* * *
+
+# **13.52 继续**
+    
+    
+    PAUSED
+     ↓
+    RESUME
+     ↓
+    继续未完成 Artifact
+
+* * *
+
+# **13.53 停止新任务**
+
+增加：
+    
+    
+    STOP ACCEPTING NEW JOBS
+
+意思：
+    
+    
+    当前运行
+    继续完成
+    
+    新任务
+    不再领取
+
+这是服务器维护非常重要的功能。
+
+* * *
+
+# **13.54 13.19 断电恢复**
+
+系统重启后：
+    
+    
+    Orchestrator
+     ↓
+    读取 PostgreSQL
+     ↓
+    寻找 RUNNING Job
+     ↓
+    检查 Worker heartbeat
+
+如果发现：
+    
+    
+    worker disappeared
+
+则：
+    
+    
+    RUNNING
+     ↓
+    RECOVERING
+     ↓
+    检查 Artifact
+     ↓
+    重新排队
+
+* * *
+
+# **13.55 Heartbeat**
+
+Worker 每：
+    
+    
+    5--10秒
+
+发送：
+    
+    
+    {
+      "worker": "gpu-worker-01",
+      "job": "BB-S01-E03-M09",
+      "status": "RUNNING",
+      "progress": 0.72,
+      "heartbeat": "..."
+    }
+
+超过：
+    
+    
+    timeout
+
+认为：
+    
+    
+    WORKER_LOST
+
+* * *
+
+# **13.56 13.20 原子提交**
+
+Worker 完成 Artifact：
+
+不能直接写：
+    
+    
+    final.wav
+
+而应该：
+    
+    
+    temp.wav
+
+完成后：
+    
+    
+    SHA256
+     ↓
+    rename
+     ↓
+    register DB
+
+这样服务器突然断电不会得到：
+    
+    
+    半个 WAV
+
+却被系统误认为成功。
+
+* * *
+
+# **13.57 13.21 Episode Lock**
+
+同一集不能同时被两个 Worker 修改。
+
+例如：
+    
+    
+    E03 MODULE 09
+
+必须拥有：
+    
+    
+    JOB LOCK
+
+防止：
+    
+    
+    Worker A
+    +
+    Worker B
+
+同时生成。
+
+* * *
+
+# **13.58 13.22 Idempotency**
+
+同一个 Job 执行两次：
+    
+    
+    结果应该一致
+
+或者：
+    
+    
+    旧 Artifact
+    +
+    新 Artifact
+
+不会破坏项目。
+
+这要求每次执行都具有：
+    
+    
+    Run ID
+    Artifact ID
+    Version
+    Hash
+
+* * *
+
+# **13.59 13.23 Run**
+
+一个 Module 不只有一个状态。
+
+例如：
+    
+    
+    MODULE 09
+
+可能：
+    
+    
+    RUN-001 FAILED
+    RUN-002 FAILED
+    RUN-003 SUCCESS
+
+数据库保存全部。
+
+* * *
+
+# **13.60 13.24 最终版本选择**
+    
+    
+    Artifact
+    ├── v001
+    ├── v002
+    └── v003 ← APPROVED
+
+最终视频只能引用：
+    
+    
+    v003
+
+* * *
+
+# **13.61 13.25 Season级共享记忆**
+
+这是你特别强调的：
+
+人物数据库 + 剧情上下文翻译记忆。
+
+MODULE 13 必须正式把它提升为：
+    
+    
+    PROJECT MEMORY
+
+* * *
+
+# **13.62 Project Memory**
+    
+    
+    characters
+    voice_profiles
+    relationships
+    glossary
+    translation_memory
+    story_bible
+    scene_context
+    performance_profiles
+    qa_feedback
+
+* * *
+
+# **13.63 新一集进入时**
+
+例如：
+    
+    
+    E05
+
+自动加载：
+    
+    
+    Project Memory
+           ↓
+    Episode Context
+           ↓
+    Scene Context
+           ↓
+    Dialogue
+
+所以 Qwen 在翻译 E05 时已经知道：
+    
+    
+    Walter
+    Jesse
+    Hank
+
+以及：
+    
+    
+    他们之间的关系
+    过去发生的事情
+    专有名词
+    说话习惯
+
+* * *
+
+# **13.64 Translation Memory**
+
+例如 E01：
+    
+    
+    meth lab
+    → 制毒实验室
+
+E08 又出现：
+    
+    
+    meth lab
+
+不应该重新随机翻译成：
+    
+    
+    冰毒实验室
+
+除非上下文要求改变。
+
+* * *
+
+# **13.65 Character Memory**
+
+例如：
+    
+    
+    Walter
+
+拥有：
+    
+    
+    称呼
+    语气
+    口头禅
+    语言习惯
+    与Jesse关系
+    与Skyler关系
+
+后续集全部继承。
+
+* * *
+
+# **13.66 13.26 跨集上下文**
+
+但必须避免：
+
+把整部剧全部塞进 LLM context。
+
+正确：
+    
+    
+    Project Memory
+           ↓
+    Relevant Retrieval
+           ↓
+    Current Episode
+           ↓
+    Current Scene
+           ↓
+    Current Dialogue
+
+只取相关内容。
+
+* * *
+
+# **13.67 13.27 生产顺序**
+
+对于整季：
+    
+    
+    第一阶段
+    建立 Project Memory
+    
+    第二阶段
+    处理 E01
+    
+    第三阶段
+    E01 QA
+    
+    第四阶段
+    E02
+
+但是不需要：
+    
+    
+    E01 完全批准
+
+才能：
+    
+    
+    E02 开始。
+
+只要：
+    
+    
+    E01 的 Project Memory
+
+已经稳定即可。
+
+* * *
+
+# **13.68 Memory Freeze**
+
+这是很重要的版本概念：
+    
+    
+    MEMORY V1
+
+例如：
+    
+    
+    E01--E03
+
+使用：
+    
+    
+    Memory V1
+
+之后发现：
+    
+    
+    Walter voice profile
+
+优化成：
+    
+    
+    Memory V2
+
+那么：
+    
+    
+    E04+
+
+使用 V2。
+
+而：
+    
+    
+    E01--E03
+
+仍然保持 V1。
+
+* * *
+
+# **13.69 为什么不能偷偷修改历史**
+
+否则：
+    
+    
+    E01
+
+今天重新打开：
+    
+    
+    Walter
+
+声音可能和当初不同。
+
+最终：
+
+项目不可复现。
+
+所以所有 Memory 都必须版本化。
+
+* * *
+
+# **13.70 13.28 Season Manifest**
+    
+    
+    {
+      "project": "breaking_bad",
+    
+      "season": "S01",
+    
+      "episodes": 7,
+    
+      "memory_version": "MEM-V03",
+    
+      "episodes_status": {
+        "E01": "APPROVED",
+        "E02": "APPROVED",
+        "E03": "RUNNING",
+        "E04": "RUNNING",
+        "E05": "APPROVED",
+        "E06": "QUEUED",
+        "E07": "QUEUED"
+      }
+    }
+
+* * *
+
+# **13.71 13.29 Season级 QA**
+
+MODULE 12 是：
+    
+    
+    Episode QA
+
+MODULE 13 还要增加：
+    
+    
+    Season Consistency QA
+
+例如：
+    
+    
+    E01 Walter
+    声音 A
+    
+    E02 Walter
+    声音 A
+    
+    E03 Walter
+    声音 A
+    
+    E04 Walter
+    声音 B  ← ERROR
+
+* * *
+
+# **13.72 跨集一致性检查**
+
+自动检测：
+    
+    
+    人物声音
+    人物称呼
+    术语
+    翻译
+    音量
+    字幕风格
+    TTS参数
+
+* * *
+
+# **13.73 Character Consistency**
+
+例如：
+    
+    
+    Walter
+    E01 voice embedding = 0.94
+    E02 = 0.93
+    E03 = 0.95
+    E04 = 0.72
+
+自动：
+    
+    
+    WARNING
+
+* * *
+
+# **13.74 Translation Consistency**
+
+例如：
+    
+    
+    DEA
+
+E01：
+    
+    
+    缉毒局
+
+E02：
+    
+    
+    缉毒署
+
+系统发现：
+    
+    
+    TERM_INCONSISTENCY
+
+进入 Review。
+
+* * *
+
+# **13.75 13.30 Season Dashboard**
+
+最终：
+    
+    
+    ┌─────────────────────────────────────────────┐
+    │ BREAKING BAD -- SEASON 01                  │
+    ├─────────────────────────────────────────────┤
+    │ Episodes       7                            │
+    │ Approved       4                            │
+    │ Running        2                            │
+    │ Failed         0                            │
+    │ Review         1                            │
+    │                                             │
+    │ Character Consistency      97.8%            │
+    │ Translation Consistency    96.4%            │
+    │ Voice Consistency          98.1%            │
+    │ Audio Consistency          95.7%            │
+    └─────────────────────────────────────────────┘
+
+* * *
+
+# **13.76 13.31 完整自动生产**
+
+用户最终只需要：
+    
+    
+    ① 输入整季视频
+            ↓
+    ② 建立人物数据库
+            ↓
+    ③ 确认人物声音
+            ↓
+    ④ 点击：
+       「开始整季生产」
+
+之后：
+    
+    
+    E01 → E02 → E03...
+
+自动执行。
+
+* * *
+
+# **13.77 但不是简单"一条流水线"**
+
+真正运行状态：
+    
+    
+                 ┌── E01 ── MODULE 09 ── MODULE 10
+                 │
+    Queue ───────┼── E02 ── MODULE 07
+                 │
+                 ├── E03 ── MODULE 09
+                 │
+                 ├── E04 ── MODULE 05
+                 │
+                 └── E05 ── MODULE 11
+
+所有 Episode：
+    
+    
+    独立
+    并行
+    可暂停
+    可恢复
+    可重试
+    可回退
+
+* * *
+
+# **13.78 13.32 失败案例**
+
+假设：
+    
+    
+    E03
+    MODULE 09
+    CUDA OOM
+
+系统：
+    
+    
+    E03-M09
+    FAILED
+
+自动：
+    
+    
+    retry × 3
+
+仍失败：
+    
+    
+    E03 = BLOCKED
+
+但是：
+    
+    
+    E04
+    E05
+    E06
+
+继续运行。
+
+浏览器显示：
+    
+    
+    ⚠ E03 needs attention
+
+* * *
+
+# **13.79 人工修复 E03**
+
+用户点击：
+    
+    
+    E03 → Resume
+
+系统：
+    
+    
+    MODULE 09
+
+重新执行。
+
+成功：
+    
+    
+    09
+     ↓
+    10
+     ↓
+    11
+     ↓
+    12
+
+只重新执行受影响的模块。
+
+* * *
+
+# **13.80 13.33 一个非常重要的扩展**
+
+以后不仅可以：
+    
+    
+    整季
+
+还可以：
+    
+    
+    整部剧
+
+任务层级：
+    
+    
+    PROJECT
+      │
+      ├── SEASON 01
+      │     ├── E01
+      │     ├── E02
+      │     └── ...
+      │
+      ├── SEASON 02
+      │
+      └── SEASON 03
+
+* * *
+
+# **13.81 13.34 最终系统架构**
+    
+    
+                         WEB UI
+                           │
+                           ▼
+                     API Gateway
+                           │
+                           ▼
+                     ORCHESTRATOR
+                           │
+              ┌────────────┼────────────┐
+              ↓            ↓            ↓
+           PostgreSQL     Redis       Storage
+              │            │            │
+              │            ▼            │
+              │        Job Queue        │
+              │            │            │
+              └────────────┼────────────┘
+                           ↓
+                     Worker Pool
+                           │
+            ┌──────────────┼──────────────┐
+            ↓              ↓              ↓
+         CPU Worker     GPU Worker     GPU Worker
+            │              │              │
+            ↓              ↓              ↓
+         MODULES        MODULES        MODULES
+            │              │              │
+            └──────────────┼──────────────┘
+                           ↓
+                       ARTIFACTS
+                           ↓
+                        MODULE 12
+                           ↓
+                          QA
+
+* * *
+
+# **13.82 13.35 推荐技术栈**
+
+| 
+
+**层**
+
+ | 
+
+**技术**
+
+ | 
+| ---- | ----  |
+| 
+
+Web UI
+
+ | 
+
+React / Next.js
+
+ | 
+| 
+
+API
+
+ | 
+
+FastAPI
+
+ | 
+| 
+
+Orchestrator
+
+ | 
+
+Python
+
+ | 
+| 
+
+Queue
+
+ | 
+
+Redis
+
+ | 
+| 
+
+Database
+
+ | 
+
+PostgreSQL
+
+ | 
+| 
+
+Object Storage
+
+ | 
+
+MinIO
+
+ | 
+| 
+
+Container
+
+ | 
+
+Docker
+
+ | 
+| 
+
+GPU
+
+ | 
+
+NVIDIA Container Toolkit
+
+ | 
+| 
+
+Worker
+
+ | 
+
+Python
+
+ | 
+| 
+
+Video
+
+ | 
+
+FFmpeg
+
+ | 
+| 
+
+Monitoring
+
+ | 
+
+Prometheus
+
+ | 
+| 
+
+Dashboard
+
+ | 
+
+Grafana
+
+ | 
+| 
+
+Logs
+
+ | 
+
+Loki
+
+ | 
+| 
+
+Reverse Proxy
+
+ | 
+
+Caddy / Nginx
+
+ | 
+
+* * *
+
+# **13.83 为什么采用 MinIO**
+
+不要把：
+    
+    
+    几十 TB 视频
+
+塞进 PostgreSQL。
+
+数据库只保存：
+    
+    
+    Artifact metadata
+
+真正的视频、音频、字幕：
+    
+    
+    MinIO / filesystem
+
+* * *
+
+# **13.84 Artifact Storage**
+    
+    
+    s3://project/
+    
+    breaking_bad/
+    ├── source/
+    ├── artifacts/
+    │   ├── module04/
+    │   ├── module07/
+    │   ├── module09/
+    │   ├── module10/
+    │   └── module11/
+    └── final/
+
+* * *
+
+# **13.85 13.36 监控**
+
+必须监控：
+    
+    
+    GPU utilization
+    GPU VRAM
+    CPU
+    RAM
+    Disk
+    Queue length
+    Worker status
+    Episode progress
+    Failure rate
+    Processing speed
+
+* * *
+
+# **13.86 核心指标**
+
+例如：
+    
+    
+    Queue:
+    18 jobs
+    
+    GPU:
+    92%
+    
+    VRAM:
+    21.4 / 24 GB
+    
+    Throughput:
+    3.2 episodes/day
+    
+    Failed:
+    2
+    
+    Review:
+    7
+
+* * *
+
+# **13.87 13.37 最终用户页面**
+
+整个项目最终可以浓缩成：
+    
+    
+    ① 项目
+    ② 人物数据库
+    ③ 单集生产
+    ④ 整季生产
+    ⑤ QA
+    ⑥ 最终成片
+    ⑦ 记忆/版本
+
+而底层：
+    
+    
+    01--12
+
+全部隐藏在系统内部。
+
+* * *
+
+# **13.88 MODULE 13 的核心成果**
+
+完成后，系统具备：
+    
+    
+    ✓ 整季批量处理
+    ✓ Episode 独立
+    ✓ Module 独立
+    ✓ GPU 动态调度
+    ✓ CPU 动态调度
+    ✓ 断点续跑
+    ✓ 失败重试
+    ✓ 失败隔离
+    ✓ Artifact 版本控制
+    ✓ Cache
+    ✓ 局部重跑
+    ✓ 跨集人物记忆
+    ✓ 跨集翻译记忆
+    ✓ 跨集剧情上下文
+    ✓ 跨集声音一致性
+    ✓ Season QA
+    ✓ 服务器重启恢复
+    ✓ 多 GPU
+    ✓ Docker 隔离
+
+* * *
+
+# **13.89 最终生产模式**
+
+以后你拿到：
+    
+    
+    《Breaking Bad》
+    S01--S05
+
+不是：
+    
+    
+    打开 E01
+    → 手动处理
+    → 打开 E02
+    → 手动处理
+    → ...
+
+而是：
+    
+    
+    PROJECT
+       │
+       ▼
+    建立人物数据库
+       │
+       ▼
+    建立 Voice Profiles
+       │
+       ▼
+    建立 Translation Memory
+       │
+       ▼
+    建立 Story Bible
+       │
+       ▼
+    导入全部 62 集
+       │
+       ▼
+    Generate Jobs
+       │
+       ▼
+    Scheduler
+       │
+       ├── E01
+       ├── E02
+       ├── E03
+       ├── E04
+       ├── ...
+       └── E62
+              │
+              ▼
+           自动生产
+              │
+              ▼
+           自动 QA
+              │
+              ▼
+           人工审核异常
+              │
+              ▼
+           局部返工
+              │
+              ▼
+          APPROVED
+
+**到 MODULE 13 为止，已经从"AI 配音工具"变成了一个真正的影视剧批量生产系统。**
+
+下一模块应进入 **MODULE 14 -- Project Archive & Reproducibility**：把人物数据库、音色模型、翻译记忆、剧情上下文、模型版本、参数、所有 Artifact、QA 记录和最终视频建立成**可长期保存、可迁移、可复现的项目档案系统**。这一步完成后，整个工程架构才真正闭环。

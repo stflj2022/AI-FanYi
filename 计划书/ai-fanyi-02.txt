@@ -1,0 +1,1100 @@
+02
+
+# **MODULE 02 -- Project Research & Identity Resolution**
+
+下面直接进入**工程实现方案**。目标：输入 MODULE 01 生成的 `media_manifest.json`，自动联网确认作品/集数，建立演员、人物、人物关系及证据库，输出 `research_manifest.json`。不处理视频音频。
+
+* * *
+
+## **02.0 工程目录**
+    
+    
+    video-dubbing/
+    ├── app/
+    │   ├── api/
+    │   │   └── research.py
+    │   ├── core/
+    │   │   ├── config.py
+    │   │   ├── models.py
+    │   │   └── job.py
+    │   ├── research/
+    │   │   ├── identity.py
+    │   │   ├── search.py
+    │   │   ├── sources/
+    │   │   │   ├── tmdb.py
+    │   │   │   ├── wikidata.py
+    │   │   │   ├── wikipedia.py
+    │   │   │   └── generic_web.py
+    │   │   ├── extract.py
+    │   │   ├── resolve.py
+    │   │   ├── verify.py
+    │   │   └── manifest.py
+    │   └── main.py
+    │
+    ├── data/
+    │   └── projects/
+    │       └── <project_id>/
+    │           ├── media/
+    │           ├── research/
+    │           │   ├── raw/
+    │           │   ├── cache/
+    │           │   ├── evidence/
+    │           │   ├── entities/
+    │           │   └── research_manifest.json
+    │           └── logs/
+    │
+    ├── frontend/
+    │   └── research/
+    │
+    ├── tests/
+    │   └── research/
+    │
+    └── docker/
+        └── research.Dockerfile
+
+* * *
+
+# **02.1 输入**
+
+MODULE 01 必须提供：
+    
+    
+    data/projects/<project_id>/media/media_manifest.json
+
+例如：
+    
+    
+    {
+      "project_id": "breaking_bad",
+      "media_id": "s01e01",
+      "file": {
+        "name": "Breaking.Bad.S01E01.mkv",
+        "duration": 3612.4
+      },
+      "video": {
+        "width": 1920,
+        "height": 1080
+      },
+      "audio": [
+        {
+          "id": "audio_0",
+          "language": "eng"
+        }
+      ],
+      "subtitle": [
+        {
+          "id": "sub_0",
+          "language": "eng"
+        }
+      ],
+      "hints": {
+        "title": "Breaking Bad",
+        "season": 1,
+        "episode": 1
+      }
+    }
+
+* * *
+
+# **02.2 输出**
+    
+    
+    research_manifest.json
+
+核心结构：
+    
+    
+    {
+      "schema_version": "1.0",
+    
+      "project": {
+        "id": "breaking_bad",
+        "title": "Breaking Bad",
+        "original_title": "Breaking Bad",
+        "year": 2008
+      },
+    
+      "episode": {
+        "season": 1,
+        "episode": 1,
+        "title": "Pilot"
+      },
+    
+      "characters": [],
+      "actors": [],
+      "relationships": [],
+    
+      "evidence": [],
+      "sources": [],
+    
+      "confidence": {
+        "project": 0.99,
+        "episode": 0.99
+      },
+    
+      "warnings": []
+    }
+
+* * *
+
+# **02.3 数据库**
+
+采用：
+    
+    
+    SQLite
+
+而不是直接用 JSON 当数据库。
+
+原因：
+
+- 单机部署简单
+- 不需要 PostgreSQL
+- 支持事务
+- 支持关系查询
+- 后期可以迁移 PostgreSQL
+- 人物数据库需要关系结构
+
+数据库：
+    
+    
+    data/projects/<project_id>/project.db
+
+* * *
+
+# **02.4 数据表**
+
+## **projects**
+    
+    
+    CREATE TABLE projects (
+        id TEXT PRIMARY KEY,
+        canonical_title TEXT NOT NULL,
+        original_title TEXT,
+        year INTEGER,
+        media_type TEXT,
+        tmdb_id INTEGER,
+        wikidata_id TEXT,
+        confidence REAL,
+        created_at TEXT,
+        updated_at TEXT
+    );
+
+## **episodes**
+    
+    
+    CREATE TABLE episodes (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        season INTEGER NOT NULL,
+        episode INTEGER NOT NULL,
+        title TEXT,
+        air_date TEXT,
+        runtime INTEGER,
+        tmdb_id INTEGER,
+        confidence REAL,
+        FOREIGN KEY(project_id) REFERENCES projects(id)
+    );
+
+## **actors**
+    
+    
+    CREATE TABLE actors (
+        id TEXT PRIMARY KEY,
+        canonical_name TEXT NOT NULL,
+        original_name TEXT,
+        tmdb_id INTEGER,
+        wikidata_id TEXT,
+        gender TEXT,
+        confidence REAL
+    );
+
+## **characters**
+    
+    
+    CREATE TABLE characters (
+        id TEXT PRIMARY KEY,
+        canonical_name TEXT NOT NULL,
+        actor_id TEXT,
+        character_type TEXT,
+        description TEXT,
+        confidence REAL,
+        FOREIGN KEY(actor_id) REFERENCES actors(id)
+    );
+
+## **character_aliases**
+    
+    
+    CREATE TABLE character_aliases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        character_id TEXT NOT NULL,
+        alias TEXT NOT NULL,
+        language TEXT,
+        source_id TEXT,
+        FOREIGN KEY(character_id) REFERENCES characters(id)
+    );
+
+## **appearances**
+    
+    
+    CREATE TABLE appearances (
+        character_id TEXT NOT NULL,
+        episode_id TEXT NOT NULL,
+        appearance_type TEXT,
+        confidence REAL,
+        PRIMARY KEY(character_id, episode_id)
+    );
+
+## **relationships**
+    
+    
+    CREATE TABLE relationships (
+        id TEXT PRIMARY KEY,
+        subject_id TEXT NOT NULL,
+        relation TEXT NOT NULL,
+        object_id TEXT NOT NULL,
+        valid_from_episode TEXT,
+        valid_to_episode TEXT,
+        confidence REAL
+    );
+
+* * *
+
+# **02.5 Evidence 表**
+
+这是整个系统的核心。
+    
+    
+    CREATE TABLE evidence (
+        id TEXT PRIMARY KEY,
+    
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+    
+        predicate TEXT NOT NULL,
+        value TEXT NOT NULL,
+    
+        source_id TEXT NOT NULL,
+    
+        confidence REAL,
+    
+        retrieved_at TEXT NOT NULL
+    );
+
+例如：
+    
+    
+    entity:
+    character:walter_white
+    
+    predicate:
+    portrayed_by
+    
+    value:
+    actor:bryan_cranston
+
+* * *
+
+# **02.6 Sources 表**
+    
+    
+    CREATE TABLE sources (
+        id TEXT PRIMARY KEY,
+    
+        source_type TEXT NOT NULL,
+    
+        url TEXT NOT NULL,
+    
+        title TEXT,
+    
+        retrieved_at TEXT,
+    
+        content_hash TEXT,
+    
+        status TEXT,
+    
+        reliability REAL
+    );
+
+例如：
+    
+    
+    {
+      "id": "src_00001",
+      "source_type": "tmdb",
+      "url": "...",
+      "reliability": 0.95
+    }
+
+* * *
+
+# **02.7 Source 优先级**
+    
+    
+    Priority 100
+    官方资料
+    
+    Priority 90
+    TMDB / Wikidata
+    
+    Priority 85
+    Wikipedia
+    
+    Priority 80
+    IMDb
+    
+    Priority 70
+    Fandom / 专业影视数据库
+    
+    Priority 50
+    普通网页
+    
+    Priority 30
+    论坛 / 社交媒体
+
+普通网页不能覆盖高可信来源，除非人工确认。
+
+* * *
+
+# **02.8 Research Pipeline**
+
+执行：
+    
+    
+    POST /api/projects/{project_id}/research
+
+后台 Job：
+    
+    
+    02.01 Identity
+          ↓
+    02.02 Structured Sources
+          ↓
+    02.03 Web Search
+          ↓
+    02.04 Episode
+          ↓
+    02.05 Cast
+          ↓
+    02.06 Characters
+          ↓
+    02.07 Relationships
+          ↓
+    02.08 Qwen Extraction
+          ↓
+    02.09 Entity Resolution
+          ↓
+    02.10 Verification
+          ↓
+    02.11 Manifest
+
+每个步骤都是独立 Job。
+
+* * *
+
+# **02.9 Job 状态**
+    
+    
+    QUEUED
+    RUNNING
+    SUCCESS
+    SUCCESS_WITH_WARNINGS
+    FAILED
+    SKIPPED
+
+数据库：
+    
+    
+    CREATE TABLE research_jobs (
+        id TEXT PRIMARY KEY,
+        project_id TEXT,
+        step TEXT,
+        status TEXT,
+        started_at TEXT,
+        finished_at TEXT,
+        error TEXT
+    );
+
+* * *
+
+# **02.10 Identity Resolution**
+
+先解析：
+    
+    
+    Breaking.Bad.S01E01
+
+提取：
+    
+    
+    {
+      "title": "Breaking Bad",
+      "season": 1,
+      "episode": 1
+    }
+
+如果文件名不可靠：
+    
+    
+    filename
+    ↓
+    subtitle filename
+    ↓
+    metadata
+    ↓
+    OCR/embedded metadata
+    ↓
+    web search
+
+* * *
+
+# **02.11 Search Query Generator**
+
+生成：
+    
+    
+    "Breaking Bad" season 1 episode 1
+    "Breaking Bad" S01E01
+    "Breaking Bad" "Pilot"
+
+不要让 Qwen 任意搜索。
+
+Search Query 是模板化生成。
+
+* * *
+
+# **02.12 TMDB**
+
+TMDB 用于：
+    
+    
+    TV identity
+    Season
+    Episode
+    Cast
+    Episode runtime
+    Air date
+    Images
+
+API Key：
+    
+    
+    export TMDB_API_KEY="..."
+
+* * *
+
+# **02.13 Wikidata**
+
+用于：
+    
+    
+    人物实体
+    演员实体
+    别名
+    人物关系
+    作品关系
+
+Wikidata SPARQL 可以作为第二事实源。
+
+* * *
+
+# **02.14 Web Search**
+
+搜索结果统一转换：
+    
+    
+    ResearchDocument(
+        source_id=...,
+        url=...,
+        title=...,
+        text=...,
+        retrieved_at=...
+    )
+
+后面所有处理器只处理：
+    
+    
+    ResearchDocument
+
+因此更换搜索引擎不会影响后续模块。
+
+* * *
+
+# **02.15 Research Cache**
+
+缓存 Key：
+    
+    
+    sha256(url)
+
+目录：
+    
+    
+    research/cache/
+    ├── 01/
+    ├── 02/
+    └── ...
+
+文件：
+    
+    
+    {
+      "url": "...",
+      "retrieved_at": "...",
+      "status": 200,
+      "content_hash": "...",
+      "text": "..."
+    }
+
+再次运行：
+    
+    
+    Cache HIT
+
+直接使用。
+
+* * *
+
+# **02.16 Qwen Extraction**
+
+Qwen 只接收清洗后的资料：
+    
+    
+    ResearchDocument[]
+
+Prompt 要求：
+    
+    
+    仅根据提供的证据提取事实。
+    
+    禁止：
+    1. 使用自身记忆补充事实
+    2. 猜测
+    3. 创造人物
+    4. 创造人物关系
+    
+    每条事实必须引用 source_id。
+
+输出严格 JSON：
+    
+    
+    {
+      "characters": [
+        {
+          "name": "Walter White",
+          "actor": "Bryan Cranston",
+          "aliases": [
+            "Walter",
+            "Mr. White"
+          ],
+          "evidence": [
+            "src_001",
+            "src_004"
+          ]
+        }
+      ]
+    }
+
+* * *
+
+# **02.17 Qwen Schema Validation**
+
+Qwen 输出不能直接入库。
+
+流程：
+    
+    
+    Qwen
+     ↓
+    JSON Parse
+     ↓
+    Pydantic
+     ↓
+    Schema Validation
+     ↓
+    Evidence Validation
+     ↓
+    Database
+
+例如发现：
+    
+    
+    {
+      "character": "Walter White",
+      "actor": "Tom Hanks"
+    }
+
+如果没有证据：
+    
+    
+    REJECT
+
+而不是入库。
+
+* * *
+
+# **02.18 Entity Resolution**
+
+不同网站：
+    
+    
+    Walter White
+    Walter H. White
+    Mr. White
+    Heisenberg
+
+需要合并：
+    
+    
+    character_id = char_walter_white
+
+但：
+    
+    
+    Walter White Jr.
+
+不能合并。
+
+规则：
+    
+    
+    canonical entity
+    +
+    aliases
+    +
+    actor
+    +
+    external IDs
+
+综合判断。
+
+* * *
+
+# **02.19 Character Resolution Score**
+
+例如：
+    
+    
+    Name similarity       0.90
+    Actor match            1.00
+    TMDB ID                1.00
+    Wikidata ID             1.00
+    Context                 0.95
+
+最终：
+    
+    
+    0.97
+
+阈值：
+    
+    
+    >= 0.90
+    AUTO MERGE
+    
+    0.70--0.89
+    REVIEW
+    
+    < 0.70
+    KEEP SEPARATE
+
+* * *
+
+# **02.20 Conflict Detection**
+
+例如：
+    
+    
+    Source A:
+    Walter White → Bryan Cranston
+    
+    Source B:
+    Walter White → Bryan Cranston
+    
+    Source C:
+    Walter White → X
+
+建立：
+    
+    
+    conflict_001
+
+但整个模块：
+    
+    
+    SUCCESS_WITH_WARNINGS
+
+继续执行。
+
+* * *
+
+# **02.21 人物关系提取**
+
+Qwen 输入：
+    
+    
+    人物资料
+    剧情简介
+    角色资料
+
+输出：
+    
+    
+    {
+      "relationships": [
+        {
+          "subject": "Walter White",
+          "relation": "spouse",
+          "object": "Skyler White",
+          "evidence": ["src_12"]
+        },
+        {
+          "subject": "Walter White",
+          "relation": "partner",
+          "object": "Jesse Pinkman",
+          "evidence": ["src_15"]
+        }
+      ]
+    }
+
+* * *
+
+# **02.22 Relationship Ontology**
+
+统一关系名称：
+    
+    
+    spouse
+    parent
+    child
+    sibling
+    friend
+    partner
+    employer
+    employee
+    enemy
+    relative
+    colleague
+    associate
+
+不允许数据库里出现：
+    
+    
+    wife_of
+    married_to
+    husband_of
+    spouse_of
+
+四种不同写法。
+
+统一：
+    
+    
+    spouse
+
+* * *
+
+# **02.23 Episode Appearance**
+
+必须区分：
+    
+    
+    series_cast
+    episode_cast
+
+例如：
+    
+    
+    Walter
+    episode 1 → yes
+    
+    Saul
+    episode 1 → no
+
+这样 MODULE 06 才能限制候选人物范围。
+
+* * *
+
+# **02.24 最终 API**
+
+### **创建研究任务**
+    
+    
+    POST /api/projects/{id}/research
+
+### **查看状态**
+    
+    
+    GET /api/projects/{id}/research/status
+
+### **查看人物**
+    
+    
+    GET /api/projects/{id}/characters
+
+### **查看证据**
+    
+    
+    GET /api/projects/{id}/evidence
+
+### **查看冲突**
+    
+    
+    GET /api/projects/{id}/research/conflicts
+
+### **手工确认**
+    
+    
+    POST /api/projects/{id}/research/override
+
+* * *
+
+# **02.25 浏览器页面**
+
+第二个标签：
+    
+    
+    ② 作品研究
+
+页面：
+    
+    
+    ┌─────────────────────────────────────┐
+    │ Project Research                    │
+    ├─────────────────────────────────────┤
+    │                                     │
+    │ Breaking Bad                        │
+    │ S01E01 · Pilot                      │
+    │                                     │
+    │ Research: ████████████████ 100%     │
+    │                                     │
+    ├─────────────────────────────────────┤
+    │ Identity        ✓ 99%               │
+    │ Episode         ✓ 99%               │
+    │ Cast            ✓ 98%               │
+    │ Characters      ✓ 98%               │
+    │ Relationships   ✓ 94%               │
+    │ Verification   ✓                    │
+    ├─────────────────────────────────────┤
+    │ Characters                          │
+    │                                     │
+    │ Walter White      Bryan Cranston    │
+    │ Jesse Pinkman     Aaron Paul        │
+    │ Skyler White      Anna Gunn         │
+    │ Hank Schrader     Dean Norris       │
+    │                                     │
+    ├─────────────────────────────────────┤
+    │ Evidence: 126                       │
+    │ Sources: 18                         │
+    │ Conflicts: 0                        │
+    │                                     │
+    │ [查看证据] [查看冲突] [重新研究]    │
+    │                                     │
+    │             [进入 MODULE 03]        │
+    └─────────────────────────────────────┘
+
+* * *
+
+# **02.26 失败隔离**
+
+每个 Job 使用独立工作目录：
+    
+    
+    research/jobs/
+    ├── job_001/
+    ├── job_002/
+    ├── job_003/
+    └── ...
+
+例如：
+    
+    
+    TMDB
+    ↓
+    FAILED
+
+只标记：
+    
+    
+    tmdb_job = FAILED
+
+Wikidata：
+    
+    
+    SUCCESS
+
+Web：
+    
+    
+    SUCCESS
+
+最终仍然可以：
+    
+    
+    SUCCESS_WITH_WARNINGS
+
+* * *
+
+# **02.27 GPU 使用原则**
+
+MODULE 02 **默认不长期占用 GPU**。
+
+只有：
+    
+    
+    Qwen extraction
+
+才启动 LLM Worker：
+    
+    
+    Web Research
+     ↓
+    释放网络/CPU资源
+     ↓
+    启动 Qwen
+     ↓
+    JSON extraction
+     ↓
+    释放 GPU
+     ↓
+    Verification
+
+符合你要求的：
+
+**处理完一个功能块，释放资源，再处理下一个。**
+
+* * *
+
+# **02.28 Docker 服务**
+
+最终只需要：
+    
+    
+    docker compose up
+
+服务：
+    
+    
+    frontend
+    backend
+    worker
+    database
+
+Qwen 不常驻。
+
+需要时：
+    
+    
+    llama-server
+
+启动：
+    
+    
+    Qwen Job
+       ↓
+    完成
+       ↓
+    shutdown
+
+* * *
+
+# **02.29 MODULE 02 完成条件**
+
+必须生成：
+    
+    
+    data/projects/<project_id>/
+    └── research/
+        ├── cache/
+        ├── raw/
+        ├── evidence/
+        ├── entities/
+        └── research_manifest.json
+
+数据库：
+    
+    
+    project.db
+
+至少存在：
+    
+    
+    Project
+    Episode
+    Actor
+    Character
+    Alias
+    Appearance
+    Relationship
+    Source
+    Evidence
+    ResearchJob
+
+并且：
+    
+    
+    research_manifest.json
+
+通过 Schema Validation。
+
+* * *
+
+# **02.30 MODULE 02 → MODULE 03 接口**
+
+MODULE 03 **只能读取**：
+    
+    
+    research_manifest.json
+    project.db
+
+绝不能依赖：
+    
+    
+    TMDB
+    IMDb
+    Wikipedia
+    搜索引擎
+
+也就是说：
+    
+    
+                     INTERNET
+                        │
+                        ▼
+                   MODULE 02
+                        │
+                        ▼
+              ┌──────────────────┐
+              │ research_manifest │
+              │    project.db     │
+              └────────┬─────────┘
+                       │
+                       ▼
+                    MODULE 03
+
+这是整个工程实现**模块独立性**的关键。
+
+* * *
+
+## **MODULE 02 最终交付物**
+    
+    
+    [✓] Research Engine
+    [✓] TMDB Adapter
+    [✓] Wikidata Adapter
+    [✓] Web Search Adapter
+    [✓] Research Cache
+    [✓] Qwen Structured Extraction
+    [✓] Entity Resolution
+    [✓] Evidence Graph
+    [✓] Conflict Detection
+    [✓] Character/Actor Database
+    [✓] Episode Appearance
+    [✓] Relationship Graph
+    [✓] FastAPI
+    [✓] Browser UI
+    [✓] Job Isolation
+    [✓] GPU 按需启动
+    [✓] research_manifest.json
+
+**下一步直接进入 ****`MODULE 03 -- Subtitle & Dialogue Acquisition`****。**
