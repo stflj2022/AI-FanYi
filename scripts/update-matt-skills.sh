@@ -12,8 +12,8 @@ echo "════════════════════════�
 
 # Where this repo is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUBMODULE_DIR="$SCRIPT_DIR/matt-pocock-skills"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+SUBMODULE_DIR="$REPO_ROOT/matt-pocock-skills"
 
 cd "$REPO_ROOT"
 
@@ -26,10 +26,11 @@ echo "🔄 Step 2: Fetching latest from official upstream (mattpocock/skills)...
 cd "$SUBMODULE_DIR"
 git fetch origin
 
-echo ""
 echo "🎯 Step 3: Checking out latest version..."
-# Track the default branch
-DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | awk '{print $3}')
+# Resolve the upstream default branch robustly (works regardless of locale)
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@refs/remotes/origin/@@')
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
+echo "  → Upstream default branch: $DEFAULT_BRANCH"
 git checkout "$DEFAULT_BRANCH"
 git pull origin "$DEFAULT_BRANCH"
 
