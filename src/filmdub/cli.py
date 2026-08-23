@@ -11,7 +11,7 @@ import click
 from dotenv import load_dotenv
 
 from filmdub.core.config import settings
-from filmdub.core.orchestrator_db import get_database_manager
+from filmdub.core.database import get_database_manager
 from filmdub.core.database.init_db import init_database
 from filmdub.core.models import Episode, Job, MediaAsset, Project
 from filmdub.core.storage import StorageManager

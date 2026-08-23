@@ -1,4 +1,5 @@
 """认证 API 端点"""
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -113,7 +114,7 @@ async def refresh_token(
             detail="无效的 Token",
         )
 
-    user = await AuthService.get_user_by_id(db, user_id)
+    user = await AuthService.get_user_by_id(db, uuid.UUID(user_id))
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

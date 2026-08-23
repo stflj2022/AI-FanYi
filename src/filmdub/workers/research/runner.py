@@ -10,7 +10,7 @@ from typing import Any, Optional
 from sqlalchemy import select
 
 from filmdub.core.config import settings
-from filmdub.core.orchestrator_db import get_database_manager
+from filmdub.core.database import get_database_manager
 from filmdub.workers.research.config import get_research_config
 from filmdub.workers.research.identity import IdentityResolver
 from filmdub.workers.research.init_db import init_research_database

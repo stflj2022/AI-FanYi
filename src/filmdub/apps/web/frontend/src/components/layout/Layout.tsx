@@ -1,12 +1,15 @@
-import { Outlet, Link, useLocation } from 'react-router-dom'
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAppStore } from '../../store/app'
+import { useAuthStore } from '../../store/authStore'
 import { Button } from '../ui/Button'
-import { Home, FolderOpen, List, Users, Settings, Cpu, LogOut } from 'lucide-react'
+import { Home, FolderOpen, List, Users, Settings, Cpu, LogOut, User } from 'lucide-react'
 
 export function Layout() {
   const location = useLocation()
+  const navigate = useNavigate()
   const sidebarCollapsed = useAppStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
+  const { user, logout } = useAuthStore()
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: Home },
@@ -70,9 +73,9 @@ export function Layout() {
           </Link>
           <button
             className="w-full flex items-center px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
-            onClick={() => {
-              localStorage.removeItem('access_token')
-              window.location.href = '/login'
+            onClick={async () => {
+              await logout()
+              navigate('/login')
             }}
           >
             <LogOut className={cn('flex-shrink-0', sidebarCollapsed ? 'mx-auto' : 'mr-3')} size={20} />
@@ -93,6 +96,18 @@ export function Layout() {
             ☰
           </Button>
           <div className="flex items-center space-x-4">
+            {user && (
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <User size={16} />
+                <span>{user.username}</span>
+                {user.is_admin && (
+                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                    Admin
+                  </span>
+                )}
+              </div>
+            )}
+            <span className="text-sm text-gray-400">|</span>
             <span className="text-sm text-gray-600">Web UI v1.0.0</span>
           </div>
         </header>

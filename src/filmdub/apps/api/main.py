@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from filmdub.core.config import settings
-from filmdub.core.orchestrator_db import close_all_databases, get_database_manager
+from filmdub.core.database import close_all_databases, get_database_manager
 from filmdub.core.models import Episode, Job, JobEvent, MediaAsset, Project
 from filmdub.core.schemas import (
     MediaResponse,

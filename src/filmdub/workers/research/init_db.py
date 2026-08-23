@@ -14,7 +14,7 @@ async def init_research_database(project_id: str) -> None:
     Args:
         project_id: Project ID.
     """
-    from filmdub.core.orchestrator_db import get_database_manager
+    from filmdub.core.database import get_database_manager
     from filmdub.workers.research import Base
 
     db = get_database_manager(project_id)
@@ -41,7 +41,7 @@ async def drop_research_tables(project_id: str) -> None:
     Args:
         project_id: Project ID.
     """
-    from filmdub.core.orchestrator_db import get_database_manager
+    from filmdub.core.database import get_database_manager
     from filmdub.workers.research import Base
 
     db = get_database_manager(project_id)

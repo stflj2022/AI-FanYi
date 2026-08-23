@@ -1,7 +1,8 @@
 """认证相关的 Pydantic schemas"""
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, validator
+import uuid
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 
 
 class UserRegister(BaseModel):
@@ -11,8 +12,10 @@ class UserRegister(BaseModel):
     password: str = Field(..., min_length=6, max_length=100, description="密码")
     confirm_password: str = Field(..., description="确认密码")
 
-    @validator('confirm_password')
-    def passwords_match(cls, v, values):
+    @field_validator('confirm_password')
+    @classmethod
+    def passwords_match(cls, v: str, info) -> str:
+        values = info.data
         if 'password' in values and v != values['password']:
             raise ValueError('两次输入的密码不一致')
         return v
@@ -34,8 +37,26 @@ class UserResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={uuid.UUID: lambda v: str(v)}
+    )
+
+    @classmethod
+    def model_validate(cls, obj):
+        """从数据库模型验证，自动转换 UUID"""
+        if hasattr(obj, 'id') and isinstance(obj.id, uuid.UUID):
+            obj_dict = {
+                'id': str(obj.id),
+                'username': obj.username,
+                'email': obj.email,
+                'is_admin': obj.is_admin,
+                'is_active': obj.is_active,
+                'created_at': obj.created_at,
+                'updated_at': obj.updated_at,
+            }
+            return cls(**obj_dict)
+        return super().model_validate(obj)
 
 
 class TokenResponse(BaseModel):

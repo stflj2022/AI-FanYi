@@ -6,7 +6,7 @@ from typing import Optional
 from sqlalchemy import text
 
 from filmdub.core.config import settings
-from filmdub.core.orchestrator_db import get_database_manager
+from filmdub.core.database import get_database_manager
 from filmdub.core.models import Base, Episode, Job, JobEvent, MediaAsset, MediaStream, Project, SubtitleAsset
 
 

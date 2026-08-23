@@ -43,16 +43,23 @@ apiClient.interceptors.response.use(
 // 通用 API 方法
 export const api = {
   get: <T>(url: string, params?: any) =>
-    apiClient.get<ApiResponse<T>>(url, { params }).then((res) => res.data),
+    apiClient.get<ApiResponse<T>>(url, { params }).then((res) => res.data.data),
 
   post: <T>(url: string, data?: any) =>
-    apiClient.post<ApiResponse<T>>(url, data).then((res) => res.data),
+    apiClient.post<ApiResponse<T>>(url, data).then((res) => res.data.data),
 
   put: <T>(url: string, data?: any) =>
-    apiClient.put<ApiResponse<T>>(url, data).then((res) => res.data),
+    apiClient.put<ApiResponse<T>>(url, data).then((res) => res.data.data),
 
   delete: <T>(url: string) =>
-    apiClient.delete<ApiResponse<T>>(url).then((res) => res.data),
+    apiClient.delete<ApiResponse<T>>(url).then((res) => res.data.data),
+
+  // 原始响应方法（直接返回完整响应）
+  getRaw: <T>(url: string, params?: any) =>
+    apiClient.get<T>(url, { params }).then((res) => res.data),
+
+  postRaw: <T>(url: string, data?: any) =>
+    apiClient.post<T>(url, data).then((res) => res.data),
 }
 
 export default apiClient

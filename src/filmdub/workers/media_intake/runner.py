@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from filmdub.core.config import settings
-from filmdub.core.orchestrator_db import get_database_manager
+from filmdub.core.database import get_database_manager
 from filmdub.core.models import (
     Episode,
     Job,
