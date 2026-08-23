@@ -149,10 +149,10 @@
 ✓ 03-project-management-ui
 ✓ 04-video-upload
 ✓ 05-job-creation-and-management
-- [ ] 06-websocket-realtime-events
+✓ 06-websocket-realtime-events
 - [ ] 07-dashboard-ui
-- [ ] 08-character-database-ui
-- [ ] 09-output-video-playback
+✓ 08-character-database-ui (前端组件)
+✓ 09-output-video-playback
 - [ ] 10-error-handling-and-user-feedback
 ✓ 11-settings-page
 ✓ 12-system-status-page-admin
