@@ -72,7 +72,7 @@
 |----|---------|------|--------|------|
 | 016 | Adapter 层集成到各模块 | done | 高 | - |
 | 017 | qwen-tts Service 健康检查与自动重启 | done | 高 | 016, 015 |
-| 018 | 短视频端到端测试 | todo | 高 | 016, 017 |
+| 018 | 短视频端到端测试 | done | 高 | 016, 017 |
 
 ### 阶段2：理解层模块
 
@@ -126,6 +126,26 @@
 - 进行中: 0
 - 已完成: 23
 - 已阻塞: 0
+
+## Ticket 018: 短视频端到端测试完成
+
+**完成时间**: 2026-08-23
+
+**解决问题**:
+- qwen-tts 服务端口冲突（8080 被 llama-server 占用）
+- 修改 VoiceAdapter 默认端口从 8080 改为 8081
+- 启动 tts-server（127.0.0.1:8081）
+- 安装 pytest-mock 修复测试依赖
+
+**测试结果**:
+- TestEndToEndLaobai::test_full_pipeline_laobai: PASSED
+- TestEndToEndPingi::test_full_pipeline_pingi: PASSED
+- TestEndToEndPerformance::test_performance_metrics: PASSED
+- **全量测试**: 407 passed, 5 skipped, 534 warnings
+
+**性能指标**:
+- laobai.mp4: 分离 34.6s, 转写 114.1s, 克隆 0.01s(使用默认音色), 合成 ~56s
+- pingi.mp4: 类似性能
 
 ## 阶段2复验（第3轮）完成
 

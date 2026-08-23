@@ -61,7 +61,7 @@ class QwenTTSAdapter(VoiceAdapterInterface):
     Supports both custom API and OpenAI-compatible API endpoints.
     """
 
-    def __init__(self, base_url: str = "http://localhost:8080", timeout: int = 300, use_openai_api: bool = True):
+    def __init__(self, base_url: str = "http://localhost:8081", timeout: int = 300, use_openai_api: bool = True):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.use_openai_api = use_openai_api
@@ -209,14 +209,16 @@ class QwenTTSAdapter(VoiceAdapterInterface):
             payload = {
                 "input": text,
                 "model": model_id,
-                "voice": voice_id if voice_id != "default" else None
+                "voice": voice_id if voice_id != "default" else None,
+                "language": "auto",
+                "response_format": "wav"
             }
             # Remove None values
             payload = {k: v for k, v in payload.items() if v is not None}
 
             endpoint = f"{self.base_url}/v1/audio/speech"
-            # OpenAI API returns MP3 format
-            actual_output_path = output_path.with_suffix('.mp3')
+            # qwen-tts (C++ server) returns WAV format; ignore OpenAI MP3 assumption
+            actual_output_path = output_path.with_suffix('.wav')
         else:
             # Use custom API endpoint
             payload = {
