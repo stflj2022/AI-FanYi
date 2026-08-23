@@ -1,216 +1,135 @@
-# Ticket 02: 用户认证系统 - 实施总结
+# 02: 用户认证系统 - 实施总结
 
 ## 完成日期
 2026-03-23
 
-## 实施内容
+## 实现内容
 
 ### 后端实现 ✅
 
-#### 1. User 模型
-- 文件：`src/filmdub/apps/web/backend/models/__init__.py`
-- 字段：id, username, email, password_hash, is_admin, is_active, created_at, updated_at
-- 使用 SQLAlchemy ORM，UUID 作为主键
+1. **User 模型** (`src/filmdub/apps/web/backend/models/__init__.py`)
+   - 用户名、邮箱、密码哈希、管理员标识、活跃状态
+   - 自动时间戳（created_at, updated_at）
 
-#### 2. 密码哈希和验证
-- 文件：`src/filmdub/apps/web/backend/services/auth_service.py`
-- 使用 passlib + bcrypt 进行密码哈希
-- 方法：`hash_password()`, `verify_password()`
+2. **认证服务** (`src/filmdub/apps/web/backend/services/auth_service.py`)
+   - 密码哈希和验证（bcrypt）
+   - JWT Token 生成和验证（Access Token + Refresh Token）
+   - 用户 CRUD 操作
+   - 用户认证
 
-#### 3. JWT Token 生成和验证
-- 访问 Token：有效期 24 小时
-- 刷新 Token：有效期 30 天
-- 方法：`create_access_token()`, `create_refresh_token()`, `decode_token()`
+3. **API 端点** (`src/filmdub/apps/web/backend/api/auth.py`)
+   - `POST /api/v1/auth/register` - 用户注册
+   - `POST /api/v1/auth/login` - 用户登录
+   - `POST /api/v1/auth/refresh` - 刷新 Token
+   - `POST /api/v1/auth/logout` - 用户登出
+   - `GET /api/v1/auth/me` - 获取当前用户信息
+   - `GET /api/v1/auth/users` - 列出所有用户（仅管理员）
 
-#### 4. API 端点
-- `POST /api/v1/auth/register` - 用户注册
-- `POST /api/v1/auth/login` - 用户登录
-- `POST /api/v1/auth/refresh` - 刷新 Token
-- `POST /api/v1/auth/logout` - 用户登出
-- `GET /api/v1/auth/me` - 获取当前用户信息
-- `GET /api/v1/auth/users` - 列出所有用户（管理员）
+4. **权限控制** (`src/filmdub/apps/web/backend/api/dependencies.py`)
+   - `get_current_user` - 获取当前用户
+   - `get_current_active_user` - 获取当前活跃用户
+   - `get_current_admin_user` - 获取当前管理员用户
+   - `get_optional_current_user` - 可选认证
 
-#### 5. JWT 依赖注入
-- 文件：`src/filmdub/apps/web/backend/api/dependencies.py`
-- 依赖：`get_current_user()`, `get_current_active_user()`, `get_current_admin_user()`, `get_optional_current_user()`
-
-#### 6. Pydantic Schemas
-- 文件：`src/filmdub/apps/web/backend/api/schemas/auth_schemas.py`
-- Schemas：UserRegister, UserLogin, TokenResponse, UserResponse, RefreshTokenRequest, ChangePasswordRequest
+5. **数据模型** (`src/filmdub/apps/web/backend/api/schemas/auth_schemas.py`)
+   - `UserRegister` - 注册请求
+   - `UserLogin` - 登录请求
+   - `UserResponse` - 用户响应（Pydantic v2 兼容）
+   - `TokenResponse` - Token 响应
+   - `RefreshTokenRequest` - 刷新 Token 请求
 
 ### 前端实现 ✅
 
-#### 1. 认证 API 服务
-- 文件：`src/filmdub/apps/web/frontend/src/services/authAPI.ts`
-- 方法：register, login, refreshToken, logout, getCurrentUser, listUsers
-- 工具方法：isAuthenticated, getStoredUser, getRefreshToken, saveTokens, clearTokens
+1. **API 服务** (`src/filmdub/apps/web/frontend/src/services/authAPI.ts`)
+   - `login()` - 用户登录
+   - `register()` - 用户注册
+   - `refreshToken()` - 刷新 Token
+   - `logout()` - 用户登出
+   - `getCurrentUser()` - 获取当前用户信息
+   - Token 存储和自动添加
 
-#### 2. 认证状态管理 (Zustand)
-- 文件：`src/filmdub/apps/web/frontend/src/store/authStore.ts`
-- 状态：user, isAuthenticated, isLoading, error
-- 操作：login, register, logout, refreshUser, clearError
-- 支持持久化（localStorage）
+2. **状态管理** (`src/filmdub/apps/web/frontend/src/store/authStore.ts`)
+   - Zustand store + persist middleware
+   - 用户状态、登录状态、加载状态、错误状态
+   - 自动 Token 刷新逻辑
 
-#### 3. 登录页面
-- 文件：`src/filmdub/apps/web/frontend/src/pages/Login.tsx`
-- 功能：用户名/密码登录、错误提示、自动跳转
+3. **页面组件**
+   - `Login.tsx` - 登录页面
+   - `Register.tsx` - 注册页面
+   - `ProtectedRoute.tsx` - 路由保护组件
 
-#### 4. 注册页面
-- 文件：`src/filmdub/apps/web/frontend/src/pages/Register.tsx`
-- 功能：用户名/邮箱/密码注册、表单验证、自动跳转
-
-#### 5. 路由保护
-- 文件：`src/filmdub/apps/web/frontend/src/components/auth/ProtectedRoute.tsx`
-- 功能：未登录用户重定向到登录页、保留原始路径、管理员权限检查
-
-#### 6. API 客户端更新
-- 文件：`src/filmdub/apps/web/frontend/src/services/api.ts`
-- 请求拦截器：自动添加 JWT Token
-- 响应拦截器：处理 401 错误，自动跳转登录
-- 新增方法：getRaw, postRaw（直接返回响应数据）
+4. **UI 更新**
+   - Layout 组件显示当前用户信息
+   - 登出按钮集成到 sidebar
+   - 路由配置更新（App.tsx）
 
 ### 测试 ✅
 
-#### 后端测试
-- 文件：`src/filmdub/apps/web/backend/tests/test_auth.py`
-- 测试用例：
-  - 用户注册成功
-  - 注册重复用户名/邮箱
-  - 登录成功/失败
-  - 获取当前用户
-  - 刷新 Token
-  - 未授权请求
-  - 登出
-- 注意：密码哈希测试因 bcrypt 版本问题暂时跳过
+1. **后端测试** (`src/filmdub/apps/web/backend/tests/test_auth.py`)
+   - 测试配置 (`tests/conftest.py`)
+   - 11 个测试用例全部通过
+   - 覆盖注册、登录、刷新 Token、权限验证等场景
 
-#### 前端测试
-- 文件：`src/filmdub/apps/web/frontend/tests/auth.test.ts`
-- 测试用例：
-  - Token 保存和获取
-  - Token 清除
-  - 登录状态检查
-  - 用户信息保存和获取
-  - 无效数据处理
-- 结果：7/7 测试通过 ✅
+2. **前端测试** (`src/filmdub/apps/web/frontend/tests/auth.test.ts`)
+   - 7 个测试用例全部通过
+   - 覆盖登录、注册、登出、状态管理等功能
 
-## 技术栈
+### 依赖更新 ✅
 
-### 后端
-- FastAPI - Web 框架
-- SQLAlchemy - ORM
-- Pydantic - 数据验证
-- passlib + bcrypt - 密码哈希
-- python-jose - JWT 处理
+1. **前端** (`package.json`)
+   - react-router-dom: ^6.22.0
+   - zustand: ^4.5.0
+   - axios: ^1.6.0
+   - @tanstack/react-query: ^5.0.0
+   - lucide-react: ^0.468.0
+   - 测试依赖：@testing-library/react, vitest 等
 
-### 前端
-- React 18 - UI 框架
-- React Router v6 - 路由
-- Zustand - 状态管理
-- Axios - HTTP 客户端
-- Vitest + jsdom - 测试
+2. **后端**
+   - bcrypt: 4.3.0（降级以兼容 passlib）
+   - python-jose[cryptography]: >=3.3.0
+   - passlib[bcrypt]: >=1.7.4
 
-## 已知问题
+## 解决的问题
 
-1. **bcrypt 版本兼容性**
-   - 问题：bcrypt 5.0.0 与 passlib 存在兼容性问题
-   - 影响：密码哈希测试失败
-   - 状态：不影响实际功能，测试已跳过
-   - 解决方案：待修复 bcrypt 或 passlib 版本
+1. **bcrypt 版本兼容性** - 降级到 4.3.0 解决与 passlib 1.7.4 的兼容性问题
+2. **Pydantic v2 迁移** - 使用 `@field_validator` 替代 `@validator`，使用 `ConfigDict` 替代 `Config`
+3. **UUID 类型转换** - UserResponse schema 正确处理 UUID 到字符串的转换
+4. **异步数据库会话** - 创建测试专用的 fixture 和依赖覆盖机制
+5. **AsyncClient 配置** - 使用 ASGITransport 正确配置 httpx AsyncClient
 
-## 依赖更新
-
-### 新增后端依赖
-- python-jose[cryptography] - JWT 处理
-- passlib[bcrypt] - 密码哈希
-- bcrypt - 密码加密
-
-### 新增前端依赖
-- zustand - 状态管理
-
-## API 文档
-
-### 注册
-```
-POST /api/v1/auth/register
-Content-Type: application/json
-
-{
-  "username": "testuser",
-  "email": "test@example.com",
-  "password": "password123",
-  "confirm_password": "password123"
-}
-
-Response: 201 Created
-{
-  "id": "uuid",
-  "username": "testuser",
-  "email": "test@example.com",
-  "is_admin": false,
-  "is_active": true,
-  "created_at": "2024-01-01T00:00:00Z",
-  "updated_at": "2024-01-01T00:00:00Z"
-}
-```
-
-### 登录
-```
-POST /api/v1/auth/login
-Content-Type: application/json
-
-{
-  "username": "testuser",
-  "password": "password123"
-}
-
-Response: 200 OK
-{
-  "access_token": "jwt_token",
-  "refresh_token": "jwt_token",
-  "token_type": "bearer",
-  "expires_in": 86400,
-  "user": { ... }
-}
-```
-
-### 刷新 Token
-```
-POST /api/v1/auth/refresh
-Content-Type: application/json
-
-{
-  "refresh_token": "jwt_token"
-}
-
-Response: 200 OK
-{
-  "access_token": "new_jwt_token",
-  "refresh_token": "new_jwt_token",
-  "token_type": "bearer",
-  "expires_in": 86400,
-  "user": { ... }
-}
-```
-
-## 下一步
-
-Ticket 02 已完成，可以开始：
-- **Ticket 03**: 项目管理 UI
-- **Ticket 11**: 用户设置页面
-- **Ticket 12**: 系统状态页面
-
-这三个 tickets 可以并行开发。
-
-## 代码提交
+## 测试结果
 
 ```
-feat(web): 完成 Ticket 02 - 用户认证系统
-
-- 实现用户注册、登录、登出功能
-- 实现 JWT Token 生成和验证
-- 实现 Refresh Token 机制
-- 实现前端认证状态管理（Zustand）
-- 创建登录和注册页面
-- 实现路由保护
-- 编写认证相关测试
+后端测试：11 passed, 26 warnings in 2.80s
+前端测试：7 passed in 1.27s
 ```
+
+## 技术要点
+
+1. **JWT 双 Token 机制**
+   - Access Token: 24 小时有效，用于 API 访问
+   - Refresh Token: 30 天有效，用于获取新的 Access Token
+
+2. **密码安全**
+   - 使用 bcrypt 哈希（自动加盐）
+   - 哈希算法强度可通过配置调整
+
+3. **前端持久化**
+   - 使用 Zustand persist 中间件
+   - Token 和用户信息存储在 localStorage
+
+4. **自动 Token 刷新**
+   - Token 过期时自动尝试刷新
+   - 刷新失败则清除认证状态
+
+## 后续建议
+
+1. 考虑实现 Token 黑名单机制（使用 Redis）
+2. 添加邮箱验证功能
+3. 实现密码重置功能
+4. 添加 OAuth2 第三方登录（可选）
+5. 考虑实现 Token 轮换策略
+
+## 状态
+
+✅ 已完成并经过测试

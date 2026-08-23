@@ -24,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from filmdub.core.orchestrator_db import Base
+from filmdub.core.database import Base
 
 
 # ==================== 枚举类型 ====================

@@ -10,7 +10,7 @@ from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from filmdub.core.orchestrator_db import Base
+from filmdub.core.database import Base
 from filmdub.apps.web.backend.models import User
 from filmdub.core.config import settings
 

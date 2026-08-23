@@ -5,8 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from typing import AsyncGenerator
 
 from filmdub.apps.web.backend.main import app
-from filmdub.apps.web.backend.models import User, Base
+from filmdub.apps.web.backend.models import User, Base, Project, Character, Job
 from filmdub.core.orchestrator_db import get_db_context
+from filmdub.apps.web.backend.services.auth_service import AuthService
 
 
 # 测试数据库配置
@@ -25,6 +26,8 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """创建测试数据库会话"""
     # 创建表
     async with test_engine.begin() as conn:
+        # 导入所有模型以确保表被创建
+        from filmdub.apps.web.backend.models import User, Project, Character, Job
         await conn.run_sync(Base.metadata.create_all)
 
     async with TestSessionLocal() as session:
@@ -52,3 +55,16 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
 
     # 清理依赖覆盖
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="function")
+async def test_user(db_session: AsyncSession) -> User:
+    """创建测试用户"""
+    user = await AuthService.create_user(
+        db=db_session,
+        username="testuser",
+        email="test@example.com",
+        password="password123",
+        is_admin=False,
+    )
+    return user
