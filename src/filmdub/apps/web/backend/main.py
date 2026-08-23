@@ -13,6 +13,7 @@ from filmdub.core.config import settings
 from filmdub.core.orchestrator_db import Base
 from filmdub.apps.web.backend.api import health, auth, projects, jobs, uploads, characters, system
 from filmdub.apps.web.backend.websocket import events
+from filmdub.apps.web.backend.models import User  # 确保 User 模型被导入
 
 
 @asynccontextmanager

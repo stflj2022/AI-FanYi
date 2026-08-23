@@ -144,7 +144,7 @@
 
 ## 进度跟踪
 
-- [ ] 01-web-ui-foundation
+✓ 01-web-ui-foundation
 - [ ] 02-user-authentication
 - [ ] 03-project-management-ui
 - [ ] 04-video-upload
