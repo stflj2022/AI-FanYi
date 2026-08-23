@@ -68,6 +68,24 @@ class AuthService:
             return None
 
     @staticmethod
+    async def verify_token(token: str) -> Optional[str]:
+        """验证 Token 并返回 user_id（用于 WebSocket 认证）"""
+        payload = AuthService.decode_token(token)
+        if not payload:
+            raise ValueError("Invalid token")
+
+        # 检查 token 类型
+        if payload.get("type") != "access":
+            raise ValueError("Invalid token type")
+
+        # 返回 user_id
+        user_id = payload.get("sub")
+        if not user_id:
+            raise ValueError("Invalid token payload")
+
+        return user_id
+
+    @staticmethod
     async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
         """根据邮箱获取用户"""
         result = await db.execute(select(User).where(User.email == email))

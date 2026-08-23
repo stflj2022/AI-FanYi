@@ -21,9 +21,13 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
     print("🚀 Web Backend starting up...")
+    # 启动 WebSocket 管理器
+    await events.start_websocket_manager()
     yield
     # 关闭时
     print("👋 Web Backend shutting down...")
+    # 停止 WebSocket 管理器
+    await events.stop_websocket_manager()
 
 
 # 创建 FastAPI 应用
