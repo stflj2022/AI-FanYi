@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from filmdub.core.config import settings
-from filmdub.core.database import engine, Base
+from filmdub.core.orchestrator_db import Base
 from filmdub.apps.web.backend.api import health, auth, projects, jobs, uploads, characters, system
 from filmdub.apps.web.backend.websocket import events
 

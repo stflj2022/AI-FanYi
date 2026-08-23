@@ -35,6 +35,10 @@ class Settings(BaseSettings):
         default="sqlite+aiosqlite:///$PROJECTS_BASE_DIR/{project_id}/database.sqlite",
         description="Database URL template with {project_id} placeholder",
     )
+    database_url: str = Field(
+        default="postgresql+asyncpg://filmdub:filmdub@localhost:5432/filmdub",
+        description="Main orchestrator database URL",
+    )
 
     # API
     api_host: str = Field(default="0.0.0.0", description="API host")
@@ -42,6 +46,7 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = Field(default="INFO", description="Log level")
+    debug: bool = Field(default=False, description="Debug mode")
 
     # Job System
     job_timeout_seconds: int = Field(
@@ -59,6 +64,18 @@ class Settings(BaseSettings):
     # FFmpeg
     ffprobe_path: str = Field(default="ffprobe", description="Path to ffprobe executable")
     ffmpeg_path: str = Field(default="ffmpeg", description="Path to ffmpeg executable")
+
+    # Web UI
+    cors_origins: list[str] = Field(
+        default=["http://localhost:5173", "http://localhost:3000"],
+        description="CORS allowed origins",
+    )
+    jwt_secret_key: str = Field(
+        default="your-secret-key-change-in-production",
+        description="JWT secret key for authentication",
+    )
+    jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
+    jwt_expiration_hours: int = Field(default=24, description="JWT token expiration in hours")
 
     @field_validator("projects_base_dir", "upload_temp_dir", mode="before")
     @classmethod

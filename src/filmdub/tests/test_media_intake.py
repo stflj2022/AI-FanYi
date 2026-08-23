@@ -10,7 +10,7 @@ from httpx import AsyncClient, ASGITransport
 
 try:
     from filmdub.core.config import settings
-    from filmdub.core.database import get_database_manager
+    from filmdub.core.orchestrator_db import get_database_manager
     from filmdub.core.models import Base, Job, MediaAsset, Project
     from filmdub.workers.media_intake.filename_parser import parse_filename
     from filmdub.workers.media_intake.hashing import compute_sha256
@@ -18,7 +18,7 @@ try:
     from filmdub.workers.media_intake.validator import MediaValidator, MediaValidationError
 except ImportError:
     from filmdub.core.config import settings
-    from filmdub.core.database import get_database_manager
+    from filmdub.core.orchestrator_db import get_database_manager
     from filmdub.core.models import Base, Job, MediaAsset, Project
     from filmdub.workers.media_intake.filename_parser import parse_filename
     from filmdub.workers.media_intake.hashing import compute_sha256

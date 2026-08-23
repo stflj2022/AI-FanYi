@@ -398,6 +398,98 @@ services:
     profiles:
       - nginx  # 需要显式启用
 
+  # ============================================
+  # Web Backend (FastAPI)
+  # ============================================
+  web-backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    image: film-dubbing-web-backend:${VERSION:-latest}
+    container_name: film-dubbing-web-backend
+    restart: unless-stopped
+    ports:
+      - "${WEB_BACKEND_PORT:-8001}:8000"
+    environment:
+      # 数据库
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-filmdubbing}:${POSTGRES_PASSWORD:-filmdubbing_password}@postgres:5432/${POSTGRES_DB:-filmdubbing}
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      # MinIO
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin123}
+      - MINIO_USE_HTTPS=0
+      # 应用配置
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DEBUG=${DEBUG:-0}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+    volumes:
+      - ./src:/app/src:ro
+      - artifact_data:/app/artifacts
+      - upload_data:/app/uploads
+      - model_data:/app/models
+      - log_data:/app/logs
+    networks:
+      - film-dubbing-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # ============================================
+  # Frontend (React + Vite)
+  # ============================================
+  web-frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:${WEB_BACKEND_PORT:-8001}
+    image: film-dubbing-web-frontend:${VERSION:-latest}
+    container_name: film-dubbing-web-frontend
+    restart: unless-stopped
+    ports:
+      - "${WEB_FRONTEND_PORT:-3000}:80"
+    networks:
+      - film-dubbing-network
+    depends_on:
+      - web-backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
 volumes:
   celerybeat_schedule:
-    name: film-dubbing-celerybeat-schedule
+    name: film-dubbing-celbyat-schedule

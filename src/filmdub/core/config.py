@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     jaeger_endpoint: Optional[str] = None
 
     # CORS
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: list = ["http://localhost:5173", "http://localhost:3000"]
 
     # API
     api_v1_prefix: str = "/api/v1"
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
-        extra = "forbid"  # 禁止额外字段，确保配置严格
+        # extra = "forbid"  # 暂时禁用以支持更多配置
 
 
 # 全局配置实例

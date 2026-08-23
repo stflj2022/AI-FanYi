@@ -7,8 +7,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "How are you?",
-      "usage_count": 45,
-      "last_used": "2026-08-23T08:13:46.886007",
+      "usage_count": 51,
+      "last_used": "2026-08-23T08:52:35.389413",
       "created_at": "2026-08-22T22:43:21.646796"
     },
     {
@@ -18,8 +18,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Hello",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:46.586889",
+      "usage_count": 17,
+      "last_used": "2026-08-23T08:52:35.132469",
       "created_at": "2026-08-22T22:43:21.647057"
     },
     {
@@ -29,8 +29,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Hello",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:46.887117",
+      "usage_count": 17,
+      "last_used": "2026-08-23T08:52:35.389855",
       "created_at": "2026-08-22T22:43:21.663457"
     },
     {
@@ -40,8 +40,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Text 1 | Text 2",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:47.026917",
+      "usage_count": 16,
+      "last_used": "2026-08-23T08:40:08.100449",
       "created_at": "2026-08-22T22:43:21.686875"
     },
     {
@@ -51,8 +51,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Text 0 | Text 2 | Text 3",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:47.028112",
+      "usage_count": 16,
+      "last_used": "2026-08-23T08:40:08.101517",
       "created_at": "2026-08-22T22:43:21.687357"
     },
     {
@@ -62,8 +62,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Text 0 | Text 1 | Text 3 | Text 4",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:47.028849",
+      "usage_count": 16,
+      "last_used": "2026-08-23T08:40:08.102202",
       "created_at": "2026-08-22T22:43:21.687533"
     },
     {
@@ -73,8 +73,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Text 1 | Text 2 | Text 4 | Text 5",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:47.029415",
+      "usage_count": 16,
+      "last_used": "2026-08-23T08:40:08.102872",
       "created_at": "2026-08-22T22:43:21.687687"
     },
     {
@@ -84,8 +84,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Text 2 | Text 3 | Text 5 | Text 6",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:47.029936",
+      "usage_count": 16,
+      "last_used": "2026-08-23T08:40:08.103625",
       "created_at": "2026-08-22T22:43:21.687847"
     },
     {
@@ -95,8 +95,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Text 3 | Text 4 | Text 6 | Text 7",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:47.030409",
+      "usage_count": 16,
+      "last_used": "2026-08-23T08:40:08.104539",
       "created_at": "2026-08-22T22:43:21.688024"
     },
     {
@@ -106,8 +106,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Text 4 | Text 5 | Text 7 | Text 8",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:47.030859",
+      "usage_count": 16,
+      "last_used": "2026-08-23T08:40:08.105460",
       "created_at": "2026-08-22T22:43:21.688199"
     },
     {
@@ -117,8 +117,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Text 5 | Text 6 | Text 8 | Text 9",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:47.031271",
+      "usage_count": 16,
+      "last_used": "2026-08-23T08:40:08.106392",
       "created_at": "2026-08-22T22:43:21.688393"
     },
     {
@@ -128,8 +128,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Text 6 | Text 7 | Text 9",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:47.031729",
+      "usage_count": 16,
+      "last_used": "2026-08-23T08:40:08.107314",
       "created_at": "2026-08-22T22:43:21.688591"
     },
     {
@@ -139,8 +139,8 @@
       "source_lang": "en",
       "target_lang": "zh",
       "context": "Text 7 | Text 8",
-      "usage_count": 15,
-      "last_used": "2026-08-23T08:13:47.032174",
+      "usage_count": 16,
+      "last_used": "2026-08-23T08:40:08.108333",
       "created_at": "2026-08-22T22:43:21.688819"
     }
   ],
