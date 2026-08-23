@@ -236,8 +236,10 @@ spawn_stall_watchdog() {
                 idle=$((idle + 1))
                 if [ "$idle" -ge "$idle_max" ]; then
                     log_error "⏳ Stall fuse tripped: no log growth & no CPU for ${silent}s (pid $pid)"
-                    pkill -TERM -P "$pid" 2>/dev/null
-                    kill -TERM "$pid" 2>/dev/null
+                    # 挂起进程可能无子进程，pkill 会返回非零；子 shell 继承 set -e，
+                    # 必须 || true 兜底，否则 errexit 提前退出、kill 永不执行 → 假死进程仍存活
+                    pkill -TERM -P "$pid" 2>/dev/null || true
+                    kill -TERM "$pid" 2>/dev/null || true
                     break
                 fi
             else

@@ -9,7 +9,11 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.0.0",
@@ -23,6 +27,7 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^14.2.0",
     "@testing-library/user-event": "^14.5.0",

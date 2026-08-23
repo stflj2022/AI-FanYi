@@ -153,7 +153,7 @@
 ✓ 07-dashboard-ui
 ✓ 08-character-database-ui (前端组件)
 ✓ 09-output-video-playback
-- [ ] 10-error-handling-and-user-feedback
+~ 10-error-handling-and-user-feedback (核心功能完成)
 ✓ 11-settings-page
 ✓ 12-system-status-page-admin
 - [ ] 13-e2e-testing-playwright
