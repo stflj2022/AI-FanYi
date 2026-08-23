@@ -1,7 +1,7 @@
 ---
 name: auto-engineering-workflow
-description: "自动化工程开发工作流：从设想到实现的完整自动化流程，集成 Matt Skills 和无人值守系统"
-disable-model-invocation: true
+description: "自动化工程开发工作流：当用户提交工程计划书或设想后，必须自动触发并一路推进到无人值守自动实现，无需用户逐阶段提醒。自动完成：设计质询/跳过→to-spec 规范→to-tickets 任务拆解→启动无人值守系统自动实现→双遍 code-review→提交推送→完工自停。当用户给出工程计划书、计划、设想、需求，或要求「自动开发」「自动化完成这个项目」「帮我实现这个想法」「从这个计划书开始」时使用。"
+disable-model-invocation: false
 ---
 
 # 自动化工程开发工作流 Skill
@@ -27,8 +27,8 @@ disable-model-invocation: true
     └─ /to-tickets
         └─ 拆解为带依赖关系的任务清单
     ↓
-[Phase 4] 自动实现
-    └─ /implement
+[Phase 4] 自动实现（由无人值守系统驱动）
+    └─ 无人值守系统 driver 逐张实现 ticket
         ├─ 使用 /tdd 测试驱动开发
         ├─ 按依赖顺序处理 tickets
         └─ 每个实现后触发 Phase 5
@@ -46,8 +46,18 @@ disable-model-invocation: true
 [Phase 7] 循环继续
     └─ 回到 Phase 4 处理下一个 ticket
     ↓
-完成 → 生成完成报告 → 通知用户
+全部完工 → 无人值守系统自动自停（completion-check.sh + shutdown-unattended.sh）
+    → 生成完成报告 → 通知用户
 ```
+
+### 自动接续铁律（必须遵守）
+
+用户提交设想或工程计划书后，**必须自动启动并走完整个流程，禁止停在某一步等待用户提醒**：
+
+1. **全程自动推进**：接到输入后直接进入 Step 1→4（质询/跳过→to-spec→to-tickets），各阶段之间不需要用户确认。
+2. **to-tickets 完成后必须立即启动无人值守系统**（见 Step 5），把实现工作交接给 driver，**不要停下来问「是否开始自动实现？」**。
+3. **正常流程不提示用户**；只有「需要人工干预、需要外部资源、关键决策」才提示（见下方确认策略）。
+4. 若无人值守系统已在运行，直接确认其存活即可，不要重复安装。
 
 ## 用户确认策略
 
@@ -199,41 +209,28 @@ def analyze_input(user_input: str) -> dict:
 - 确定优先级
 - 发布到 issue tracker
 
-### Step 5: 自动实现循环
+### Step 5: 交接无人值守系统（自动实现引擎）
 
-```python
-for ticket in sorted_tickets:
-    # 5.1 检查依赖
-    if not dependencies_met(ticket):
-        continue
+**完成 Step 4 (to-tickets) 后，必须立即把实现工作交给无人值守系统，不要停下来等用户提醒。**
 
-    # 5.2 实现功能
-    /implement ${ticket}
+```bash
+# 5.1 若尚未部署无人值守系统：安装并启动（会自动启用 driver/watchdog/progress-report）
+cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
+bash scripts/install-unattended.sh
 
-    # 5.3 代码审查（必须通过）
-    review_count = 0
-    while True:
-        /code-review HEAD~1
+# 5.2 若已部署（systemd 已存在）：确保服务在运行
+systemctl --user start aifanyi-driver.service
+systemctl --user start aifanyi-watchdog.timer
+systemctl --user start aifanyi-progress-report.timer
 
-        if has_findings():
-            if review_count >= max_review_attempts:
-                notify_user("代码审查多次失败，需要人工介入")
-                break
-            fix_issues()
-            review_count += 1
-        else:
-            break
-
-    # 5.4 提交推送
-    git commit -m "feat(${ticket.id}): ${ticket.title}"
-    git push origin main
-
-    # 5.5 更新 ticket 状态
-    ticket.status = "done"
-
-    # 5.6 进度报告
-    send_progress_report()
+# 5.3 验证无人值守系统已接管
+systemctl --user status aifanyi-driver.service --no-pager | head -5
+systemctl --user list-timers aifanyi* | grep -E "NEXT|LEFT"
 ```
+
+无人值守系统的 driver 会读取 `docs/tickets/` 逐张自动实现（/implement → 双遍 code-review → 测试 → git commit+push → 进度汇报），直到全部工单完工自动自停。
+
+> **禁止行为**：不要在 to-tickets 后询问「是否开始自动实现？」；正常流程直接启动无人值守，无需用户确认。
 
 ### Step 6: 用户确认处理
 
@@ -281,11 +278,14 @@ def handle_user_confirmation(task: dict) -> bool:
 
 ### Step 7: 进度报告
 
-集成无人值守系统的进度汇报：
+进度汇报由无人值守系统自动完成（`aifanyi-progress-report.timer` 每 30 分钟触发一次，见 `scripts/progress-report.sh`），无需当前会话手动发送：
 
 ```bash
-# 每 30 分钟
-/send-progress-report
+# 查看最近汇报
+bash scripts/view-reports.sh
+
+# 手动触发一次汇报（如需）
+bash scripts/progress-report.sh
 ```
 
 报告内容：
@@ -455,27 +455,34 @@ AI: [调用 /auto-engineering-workflow]
 ```
 用户: 这是我的工程计划书...
 
-AI: [调用 /auto-engineering-workflow]
+AI: [自动触发 auto-engineering-workflow]
     [跳过 Phase 1] 直接进入 /to-spec
     [Phase 2] /to-spec
     [Phase 3] /to-tickets
-    [Phase 4-7] 自动实现...
+    [Phase 4] 立即启动无人值守系统（install-unattended.sh），由 driver 自动实现
+    [Phase 5-7] 无人值守循环：implement → 双遍 code-review → push → 进度汇报
+    [完工自停] 生成完成报告，无需用户逐阶段提醒
 ```
 
 ## 触发方式
 
-### 在 Claude Code 中
+### 自动触发（本 skill 已允许模型自主调用）
+
+当用户提交工程计划书、设想或需求时，模型**会自动加载本 skill 并全程执行**，无需用户手动输入命令。这是默认行为（`disable-model-invocation: false`）。
+
+### 手动触发
 
 ```
-/auto-engineering-workflow
+/skill:auto-engineering-workflow
 ```
 
-或使用自然语言触发：
+自然语言也会触发：
 
 ```
 "帮我实现这个想法：..."
 "自动化开发这个项目：..."
 "从计划开始构建这个系统：..."
+"这是我的工程计划书：..."
 ```
 
 ### 在无人值守系统中
@@ -515,6 +522,7 @@ docs/adr/                        # 生成的架构决策
 4. **建议先在小项目上测试**
 5. **非必要不提示用户**，保持真正的无人值守
 6. **所有代码提交必须经过 code-review**，遵守 pi 规则
+7. **提交计划书后必须一路自动推进到启动无人值守**：不要停在 to-spec/to-tickets 等用户提醒；如无人值守已运行，先确认其存活，不要重复安装
 
 ## 故障排查
 

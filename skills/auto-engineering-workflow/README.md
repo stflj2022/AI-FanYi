@@ -5,6 +5,8 @@
 ## 功能特性
 
 ✅ **自动调用 Matt Skills**：集成 grill-with-docs、to-spec、to-tickets、implement、code-review
+✅ **自动触发**：提交工程计划书/设想后自动启动并全程推进，无需用户逐阶段提醒
+✅ **无人值守交接**：to-tickets 后自动启动无人值守系统，由 driver 自动实现直到完工自停
 ✅ **遵守 pi 规则**：提交前 code-review 审查两遍，无问题才提交
 ✅ **智能用户确认**：20分钟无响应暂停，1小时后重试，循环3次
 ✅ **无人值守集成**：与进度汇报系统无缝集成
@@ -29,23 +31,23 @@ nano ~/.auto-engineering-config.yaml
 
 ### 3. 首次使用
 
-在 Claude Code 中：
+提供计划书或设想即可，**系统会自动触发本工作流并一路推进到无人值守自动实现**（无需用户逐阶段提醒）：
 
 ```
-/auto-engineering-workflow 我想做一个影视 AI 配音平台
+这是我的工程计划书：...
 ```
 
-或提供计划书：
+或手动指定：
 
 ```
-/auto-engineering-workflow < plan.md
+/skill:auto-engineering-workflow 我想做一个影视 AI 配音平台
 ```
 
 ## 工作流程
 
 ```
 [1] 设计质询
-    /grill-with-docs → 构建领域模型
+    /grill-with-docs → 构建领域模型（设想需要；计划书跳过）
 
 [2] 规范生成
     /to-spec → 生成规范文档
@@ -53,16 +55,19 @@ nano ~/.auto-engineering-config.yaml
 [3] 任务拆解
     /to-tickets → 拆解为 tickets
 
-[4] 自动实现
-    /implement → 实现 ticket
+[4] 交接无人值守（自动接续，不等待确认）
+    bash scripts/install-unattended.sh → 启动 driver/watchdog/汇报
 
-[5] 代码审查（两遍）
+[5] 无人值守自动实现
+    /implement → 实现 ticket（由 driver 逐张驱动）
+
+[6] 代码审查（两遍）
     /code-review → 审查代码
 
-[6] 提交推送
+[7] 提交推送
     git push → 推送到用户配置的目标仓库（origin/main 或其他）
 
-[循环 4-6 直到完成]
+[循环 4-6 直到完成] → 完工自停 + 完成报告
 ```
 
 ## 用户确认策略
