@@ -10,6 +10,9 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 from pathlib import Path
 import logging
+import subprocess
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +102,37 @@ class HTDemucsAdapter(AudioSeparationAdapterInterface):
                     "demucs not installed. Install with: pip install demucs"
                 )
 
+    def _extract_audio_from_video(self, video_path: Path) -> Path:
+        """
+        Extract audio from video file using ffmpeg if needed
+
+        Args:
+            video_path: Path to video file
+
+        Returns:
+            Path to extracted audio file (wav format)
+        """
+        # Check if already an audio file
+        if video_path.suffix.lower() not in ['.mp4', '.mkv', '.avi', '.mov', '.webm']:
+            return video_path
+
+        # Extract audio using ffmpeg
+        temp_dir = Path(tempfile.mkdtemp())
+        audio_output = temp_dir / f"{video_path.stem}.wav"
+
+        try:
+            subprocess.run([
+                'ffmpeg', '-i', str(video_path),
+                '-vn', '-acodec', 'pcm_s16le',
+                '-ar', '44100', '-ac', '2',
+                str(audio_output)
+            ], check=True, capture_output=True)
+            logger.info(f"Extracted audio from video: {video_path} -> {audio_output}")
+            return audio_output
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to extract audio from video: {e}")
+            raise RuntimeError(f"Failed to extract audio from video: {e}")
+
     async def separate(
         self,
         audio_path: Path,
@@ -118,12 +152,30 @@ class HTDemucsAdapter(AudioSeparationAdapterInterface):
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Extract audio from video if needed
+        input_audio = self._extract_audio_from_video(audio_path)
+        is_temp_extracted = input_audio != audio_path
+
         try:
             import torch
             import torchaudio
 
-            # Load audio
-            waveform, sample_rate = torchaudio.load(str(audio_path))
+            # Load audio - use soundfile backend if torchcodec is not available
+            try:
+                waveform, sample_rate = torchaudio.load(str(input_audio))
+            except (ImportError, RuntimeError):
+                # Fallback to soundfile backend
+                import torchaudio.transforms as T
+                import soundfile as sf
+                audio_data, sf_sample_rate = sf.read(str(input_audio))
+                sample_rate = sf_sample_rate
+                # Convert to tensor and add channel dimension if needed
+                waveform = torch.from_numpy(audio_data).float().t()
+                if waveform.dim() == 1:
+                    waveform = waveform.unsqueeze(0)
+                # Ensure stereo
+                if waveform.shape[0] == 1:
+                    waveform = waveform.repeat(2, 1)
 
             # Ensure stereo
             if waveform.shape[0] == 1:
@@ -136,9 +188,9 @@ class HTDemucsAdapter(AudioSeparationAdapterInterface):
             if self.device == "cuda" and torch.cuda.is_available():
                 waveform = waveform.cuda()
 
-            # Apply separation
+            # Apply separation using apply_model
             with torch.no_grad():
-                sources = self._separator(waveform)
+                sources = self._apply_model(self._separator, waveform)
 
             # Get available stems
             available_stems = self._separator.sources
@@ -154,7 +206,17 @@ class HTDemucsAdapter(AudioSeparationAdapterInterface):
 
                     # Save
                     output_path = output_dir / f"{audio_path.stem}_{stem}.wav"
-                    torchaudio.save(str(output_path), stem_audio, sample_rate)
+
+                    # Try torchaudio.save, fallback to soundfile
+                    try:
+                        torchaudio.save(str(output_path), stem_audio, sample_rate)
+                    except (ImportError, RuntimeError):
+                        # Fallback to soundfile
+                        import soundfile as sf
+                        # Convert to numpy and transpose (channels, samples) -> (samples, channels)
+                        stem_numpy = stem_audio.numpy().T
+                        sf.write(str(output_path), stem_numpy, sample_rate)
+
                     result[stem] = output_path
                     logger.info(f"Saved {stem} to {output_path}")
 
@@ -163,6 +225,15 @@ class HTDemucsAdapter(AudioSeparationAdapterInterface):
         except Exception as e:
             logger.error(f"Failed to separate {audio_path}: {e}")
             raise
+        finally:
+            # Clean up temporary extracted audio
+            if is_temp_extracted and input_audio.exists():
+                try:
+                    os.remove(input_audio)
+                    # Remove temp directory if empty
+                    input_audio.parent.rmdir()
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temp audio file: {e}")
 
     async def separate_vocals_only(
         self,

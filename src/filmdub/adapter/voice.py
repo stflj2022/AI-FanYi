@@ -56,12 +56,17 @@ class VoiceAdapterInterface(ABC):
 
 
 class QwenTTSAdapter(VoiceAdapterInterface):
-    """qwen-tts service adapter implementation"""
+    """qwen-tts service adapter implementation
 
-    def __init__(self, base_url: str = "http://localhost:8080", timeout: int = 300):
+    Supports both custom API and OpenAI-compatible API endpoints.
+    """
+
+    def __init__(self, base_url: str = "http://localhost:8080", timeout: int = 300, use_openai_api: bool = True):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.use_openai_api = use_openai_api
         self.client = httpx.AsyncClient(timeout=timeout)
+        self._model_id = None  # Will be fetched from /v1/models
 
     async def close(self):
         """Close HTTP client"""
@@ -155,6 +160,23 @@ class QwenTTSAdapter(VoiceAdapterInterface):
             logger.error(f"Failed to delete voice {voice_id}: {e}")
             raise
 
+    async def _get_model_id(self) -> str:
+        """Get available model ID from the service"""
+        if self._model_id is None:
+            try:
+                response = await self.client.get(f"{self.base_url}/v1/models", timeout=5)
+                response.raise_for_status()
+                models_data = response.json()
+                if "data" in models_data and len(models_data["data"]) > 0:
+                    self._model_id = models_data["data"][0]["id"]
+                    logger.info(f"Using model: {self._model_id}")
+                else:
+                    self._model_id = "default"
+            except Exception as e:
+                logger.warning(f"Failed to get model ID, using default: {e}")
+                self._model_id = "default"
+        return self._model_id
+
     async def synthesize(
         self,
         text: str,
@@ -168,7 +190,7 @@ class QwenTTSAdapter(VoiceAdapterInterface):
 
         Args:
             text: Text to synthesize
-            voice_id: Voice ID to use
+            voice_id: Voice ID to use (may be ignored if using OpenAI API)
             output_path: Path to save output audio
             speed: Speed factor (default 1.0)
             pitch: Pitch factor (default 1.0)
@@ -181,18 +203,30 @@ class QwenTTSAdapter(VoiceAdapterInterface):
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        payload = {
-            "text": text,
-            "voice_id": voice_id,
-            "speed": speed,
-            "pitch": pitch
-        }
+        if self.use_openai_api:
+            # Use OpenAI-compatible API endpoint
+            model_id = await self._get_model_id()
+            payload = {
+                "input": text,
+                "model": model_id,
+                "voice": voice_id if voice_id != "default" else None
+            }
+            # Remove None values
+            payload = {k: v for k, v in payload.items() if v is not None}
+
+            endpoint = f"{self.base_url}/v1/audio/speech"
+        else:
+            # Use custom API endpoint
+            payload = {
+                "text": text,
+                "voice_id": voice_id,
+                "speed": speed,
+                "pitch": pitch
+            }
+            endpoint = f"{self.base_url}/api/synthesize"
 
         try:
-            response = await self.client.post(
-                f"{self.base_url}/api/synthesize",
-                json=payload
-            )
+            response = await self.client.post(endpoint, json=payload)
             response.raise_for_status()
 
             # Save audio file

@@ -98,8 +98,8 @@ echo "" | tee -a "$REPORT_FILE"
 if [ -d "$PROJECT_DIR/docs/tickets" ]; then
     echo -e "${BLUE}🎫 工单状态${NC}" | tee -a "$REPORT_FILE"
     cd "$PROJECT_DIR"
-    # 统计工单状态
-    TICKETS_TOTAL=$(find docs/tickets -name "*.md" -type f | wc -l)
+    # 统计工单状态（只统计 ticket-*.md，不包括 README.md）
+    TICKETS_TOTAL=$(find docs/tickets -name "ticket-*.md" -type f | wc -l)
     echo "  总工单数: $TICKETS_TOTAL" | tee -a "$REPORT_FILE"
 
     # 检查是否有 blocked 工单
