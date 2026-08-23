@@ -147,7 +147,7 @@
 ✓ 01-web-ui-foundation
 ✓ 02-user-authentication
 ✓ 03-project-management-ui
-- [ ] 04-video-upload
+✓ 04-video-upload
 - [ ] 05-job-creation-and-management
 - [ ] 06-websocket-realtime-events
 - [ ] 07-dashboard-ui
