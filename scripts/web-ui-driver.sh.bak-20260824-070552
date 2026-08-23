@@ -192,31 +192,18 @@ EOF
   pi --provider zai-coding-cn --model glm-4.7 < /tmp/pi-web-ui-prompt.txt >> "$LOG" 2>&1 &
   pi_pid=$!
 
-  # 零输出熔断：后台循环监控 pi 进程（输出+CPU 双静默 12 分钟则杀掉并重试）
-  # 注意：不能用单次 sleep 900 后检查一次——pi 若先有输出、后卡死（如网络挂起），
-  # 单次检查不会命中，wait 将永久阻塞，整条流水线停滞且 token 不再消耗。
+  # 零输出熔断：后台监控 pi 进程（输出+CPU 双静默 900s 则杀掉并重试）
   (
     last_output=$(wc -l < "$LOG")
     last_cpu=$(cat /proc/$pi_pid/stat 2>/dev/null | awk '{print $14+$15}' || echo "0")
-    idle=0
-    while kill -0 "$pi_pid" 2>/dev/null; do
-      sleep 120
-      new_output=$(wc -l < "$LOG")
-      new_cpu=$(cat /proc/$pi_pid/stat 2>/dev/null | awk '{print $14+$15}' || echo "0")
-      if [ "$new_output" = "$last_output" ] && [ "$new_cpu" = "$last_cpu" ]; then
-        idle=$((idle + 1))
-        if [ "$idle" -ge 6 ]; then
-          log "⏳ 零输出熔断（连续 12 分钟无输出且无 CPU 变化，疑似卡死）"
-          pkill -TERM -P "$pi_pid" 2>/dev/null
-          kill "$pi_pid" 2>/dev/null
-          break
-        fi
-      else
-        idle=0
-      fi
-      last_output=$new_output
-      last_cpu=$new_cpu
-    done
+    sleep 900
+    new_output=$(wc -l < "$LOG")
+    new_cpu=$(cat /proc/$pi_pid/stat 2>/dev/null | awk '{print $14+$15}' || echo "0")
+    if [ "$new_output" = "$last_output" ] && [ "$new_cpu" = "$last_cpu" ]; then
+      log "⏳ 零输出熔断（900s 输出与 CPU 双静默）"
+      pkill -TERM -P "$pi_pid" 2>/dev/null
+      kill "$pi_pid" 2>/dev/null
+    fi
   ) &
   monitor_pid=$!
 
