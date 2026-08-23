@@ -1,5 +1,7 @@
 #!/bin/bash
-# 自动化工程开发工作流 - 主驱动脚本
+# 自动化工程开发工作流 - 主驱动脚本（v1.2.0 — 交接 systemd 版无人值守系统）
+# 职责：Phase 1-3（质询/规范/任务拆解）→ Phase 4 交接无人值守系统（install-unattended.sh）
+#       实现/代码审查/提交推送/进度汇报/完工自停均由无人值守系统自动完成。
 
 set -e
 
@@ -257,139 +259,78 @@ phase3_to_tickets() {
     save_checkpoint "phase3" "任务拆解完成" "phase4" "共 $total_tickets 个 tickets"
 }
 
-# Phase 4-7: 自动实现循环
-phase4_implement_loop() {
-    log "INFO" "=== Phase 4: 自动实现循环 ==="
+# Phase 4: 交接无人值守系统（v1.2.0 — systemd 版）
+phase4_handoff_unattended() {
+    log "INFO" "=== Phase 4: 交接无人值守系统 ==="
 
-    local tickets=$(get_sorted_tickets)
+    local project_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "$PROJECT_ROOT")"
 
-    for ticket in $tickets; do
-        log "INFO" "处理 ticket: $ticket"
+    # 4.1 若无人值守系统已部署且 driver 在运行：确认存活即可，不重复安装
+    if systemctl --user is-active aifanyi-driver.service >/dev/null 2>&1; then
+        log "INFO" "无人值守系统已在运行，确认存活（不重复安装）"
+        systemctl --user status aifanyi-driver.service --no-pager | head -5
+        systemctl --user list-timers aifanyi* | grep -E "NEXT|LEFT"
+        save_checkpoint "phase4" "无人值守系统确认存活，实现已交接" "phase4" "由 driver/web-ui-driver 自动实现"
+        return 0
+    fi
 
-        # 检查依赖
-        if ! dependencies_met "$ticket"; then
-            log "INFO" "依赖未满足，跳过: $ticket"
-            continue
-        fi
+    # 4.2 未部署：安装并启动（v1.2.0：driver + web-ui 驱动 + watchdog + 进度汇报）
+    if [ -f "$project_root/scripts/install-unattended.sh" ]; then
+        log "INFO" "启动无人值守系统: scripts/install-unattended.sh"
+        (cd "$project_root" && bash scripts/install-unattended.sh)
+    else
+        log "ERROR" "未找到 scripts/install-unattended.sh —— 请先将无人值守系统（scripts/ + systemd/）放入项目根目录"
+        send_notification "⚠️ 无人值守系统未部署" "项目缺少 scripts/install-unattended.sh，请先部署 v1.2.0 无人值守系统" "critical"
+        return 1
+    fi
 
-        # 实现功能
-        log "INFO" "实现 ticket: $ticket"
-        /implement "$ticket"
+    # 4.3 验证接管
+    systemctl --user status aifanyi-driver.service --no-pager | head -5
+    systemctl --user status web-ui-driver.service --no-pager | head -5
+    systemctl --user list-timers aifanyi* | grep -E "NEXT|LEFT"
 
-        # 代码审查（必须通过）
-        code_review_loop
-
-        # 提交推送
-        git_commit_and_push "$ticket"
-
-        # 更新 ticket 状态
-        update_ticket_status "$ticket" "done"
-
-        # 更新完成计数
-        yq -i ".completed_tickets += 1" "$STATUS_FILE"
-
-        # 进度报告
-        send_progress_report
-
-        log "INFO" "Ticket 完成: $ticket"
-    done
+    save_checkpoint "phase4" "无人值守系统已启动，实现已交接" "phase4" "由 driver/web-ui-driver 自动实现"
+    send_notification "🤖 无人值守系统已接管" "tickets 已交接，driver/web-ui-driver 自动实现，完工自停" "normal"
+    log "INFO" "无人值守系统已接管实现工作"
 }
 
-# 代码审查循环
-code_review_loop() {
-    local max_attempts=$(yq '.code_review.max_review_attempts' "$CONFIG_FILE")
-    local review_count=0
-
-    while true; do
-        log "INFO" "代码审查第 $((review_count + 1)) 轮"
-
-        # 调用 Matt Skill
-        /code-review HEAD~1
-
-        if has_review_findings; then
-            if [ $review_count -ge $max_attempts ]; then
-                log "ERROR" "代码审查多次失败，需要人工介入"
-                send_notification "❌ 代码审查失败" "ticket ${CURRENT_TICKET} 代码审查 $max_attempts 次失败" "critical"
-                break
-            fi
-
-            log "INFO" "发现审查问题，自动修复..."
-            fix_review_issues
-            review_count=$((review_count + 1))
-        else
-            log "INFO" "代码审查通过"
-            break
-        fi
-    done
-}
-
-# Git 提交和推送
-git_commit_and_push() {
-    local ticket="$1"
-    local ticket_title=$(get_ticket_title "$ticket")
-
-    log "INFO" "提交 ticket: $ticket"
-
-    # 提交
-    git add -A
-    git commit -m "feat($ticket): $ticket_title"
-
-    # 推送到配置的目标仓库（origin/main 或其他配置的仓库）
-    git push "$GIT_TARGET_REMOTE" "$GIT_TARGET_BRANCH"
-
-    log "INFO" "已推送到: $GIT_TARGET_REMOTE/$GIT_TARGET_BRANCH"
-}
-
-# 进度报告
-send_progress_report() {
-    local total=$(yq '.total_tickets' "$STATUS_FILE")
-    local completed=$(yq '.completed_tickets' "$STATUS_FILE")
-    local phase=$(yq '.current_phase' "$STATUS_FILE")
-
-    local message="当前阶段: $phase\n完成: $completed/$total\n仓库: $GIT_TARGET_REMOTE/$GIT_TARGET_BRANCH"
-
-    send_notification "🚀 自动化工程进度" "$message"
-}
-
-# 生成完成报告
+# 生成交接完成报告
+# （最终完工报告由无人值守系统在 completion-check.sh 判定完工后生成）
 generate_completion_report() {
-    log "INFO" "生成完成报告..."
+    log "INFO" "生成交接完成报告..."
 
     local report_file="$PROJECT_ROOT/.auto-engineering-report.md"
     local total=$(yq '.total_tickets' "$STATUS_FILE")
-    local completed=$(yq '.completed_tickets' "$STATUS_FILE")
     local start_time=$(yq '.start_time' "$STATUS_FILE")
     local end_time=$(date +"%Y-%m-%dT%H:%M:%S%z")  # POSIX 兼容
 
     cat > "$report_file" << EOF
-# 工程完成报告
+# 工程交接完成报告
 
 ## 项目信息
 - 项目名称: $(yq '.project_name' "$STATUS_FILE")
-- 完成时间: $end_time
-- 总耗时: 计算中...
+- 交接时间: $end_time
 
 ## 统计
 - 总 Tickets: $total
-- 已完成: $completed
-- 完成率: $(awk "BEGIN {printf \"%.1f%%\", ($completed/$total)*100}")
-- Git 提交数: $(git rev-list --count HEAD)
-- 代码审查次数: 计算中...
+- 无人值守系统: systemd 版 v1.2.0
+- 完工判据: scripts/completion-check.sh（主线 docs/tickets + Web UI .scratch/web-ui-tickets）
+- 完工自停: scripts/shutdown-unattended.sh（停/禁全部服务 + 一次终报）
 
-## 生成的文件
-- 规范文档: 查看 issue tracker
-- Tickets: 查看 issue tracker
-- 代码提交: $GITHUB_OWNER/$GITHUB_REPO
+## 生成的文档
+- 规范文档: docs/specs/
+- Tickets: docs/tickets/ + .scratch/web-ui-tickets/
+- 驱动日志: .claude/pi-driver.log
 
-## 执行日志
-详见: .auto-engineering-log.md
+## 后续
+- 实现/代码审查/提交推送/进度汇报/完工自停由无人值守系统自动完成
 
 ---
 
-**自动化工程工作流完成**
+**自动化工程已交接无人值守系统**
 EOF
 
-    log "INFO" "完成报告已生成: $report_file"
+    log "INFO" "交接报告已生成: $report_file"
 }
 
 # 主函数
@@ -421,15 +362,15 @@ main() {
         phase3_to_tickets
     fi
 
-    # Phase 4-7: 自动实现
+    # Phase 4-7: 交接无人值守系统（实现循环由无人值守系统完成）
     yq -i ".current_phase = \"phase4\"" "$STATUS_FILE"
-    phase4_implement_loop
+    phase4_handoff_unattended
 
-    # 完成
+    # 完成（交接完成报告）
     generate_completion_report
-    send_notification "🎉 自动化工程完成" "所有任务已完成，查看报告: .auto-engineering-report.md"
+    send_notification "🤖 自动化工程已交接" "已启动无人值守系统（driver/web-ui-driver 自动实现，完工自停）"
 
-    log "INFO" "自动化工程工作流完成"
+    log "INFO" "自动化工程工作流完成（实现已交接无人值守系统）"
 }
 
 # 执行

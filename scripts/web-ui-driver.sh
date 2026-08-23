@@ -14,7 +14,6 @@ mkdir -p "$REPO/.claude"
 cd "$REPO" || exit 1
 
 ZAI_KEY=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.pi/agent/auth.json")))["zai-coding-cn"]["key"])' 2>/dev/null || true)
-DS_KEY=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.pi/agent/auth.json")))["deepseek"]["key"])' 2>/dev/null || true)
 
 log() { echo "[$(date '+%F %T')] $*" >> "$LOG"; }
 
@@ -25,7 +24,9 @@ if ! flock -n 9; then
   exit 1
 fi
 
-MARK_FILE="$REPO/.claude/.web_ui_round_mark"
+# Web UI 完工标记（由 all_tickets_done 分支在测试通过后写入；done_check 依据它退出）
+WEBUI_DONE_MARK="$REPO/.claude/.webui_all_done"
+rm -f "$WEBUI_DONE_MARK"   # 启动时清理旧标记，避免历史 ALL_DONE 导致一启动就误判完工
 
 # Web UI 测试
 web_ui_tests_pass() {
@@ -41,16 +42,13 @@ web_ui_tests_pass() {
 }
 
 done_check() {
-  [ "$(tail -1 "$LOG" | tr -d '[:space:]')" = "ALL_DONE" ] || return 1
+  [ -f "$WEBUI_DONE_MARK" ] || return 1
   if web_ui_tests_pass; then return 0; fi
   log "❌ 声称完工但测试未通过 → 打回重做"
+  rm -f "$WEBUI_DONE_MARK"
   touch "$REPO/.claude/WEB_UI_FRESH_NEXT"
   return 1
 }
-
-round_out() { local m; m=$(cat "$MARK_FILE" 2>/dev/null || echo 0); tail -c +$((m+1)) "$LOG" 2>/dev/null; }
-quota_hit() { round_out | grep -qiE "quota|额度|429|rate.?limit|insufficient|exceeded|余额不足|balance|insufficient_user_quota"; }
-ctx_hit() { round_out | grep -qiE "context.{0,20}(length|limit|window|overflow)|maximum context|too long|token limit|context_length_exceeded|prompt is too long"; }
 
 # ---- Zai 额度/探活（每5小时重置）----
 zai_alive() {
@@ -61,17 +59,6 @@ zai_alive() {
     -H "Authorization: Bearer $ZAI_KEY" \
     -H "Content-Type: application/json" \
     -d '{"model":"glm-4.7","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' 2>/dev/null)
-  [ "$code" = "200" ] || [ "$code" = "401" ]
-}
-
-ds_alive() {
-  [ -n "$DS_KEY" ] || return 1
-  local code
-  code=$(curl -sS -m 12 -o /dev/null -w "%{http_code}" \
-    "https://api.deepseek.com/chat/completions" \
-    -H "Authorization: Bearer $DS_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' 2>/dev/null)
   [ "$code" = "200" ] || [ "$code" = "401" ]
 }
 
@@ -103,8 +90,8 @@ update_tickets_progress() {
       ticket_num=$(basename "$ticket" | cut -d'-' -f1)
       summary_file="$tickets_dir/ticket-$ticket_num-summary.md"
       if [ -f "$summary_file" ]; then
-        # Ticket 已完成
-        sed -i "s/^- \[ \] $ticket_num/✓ $ticket_num/" "$readme" 2>/dev/null || true
+        # Ticket 已完成（锚定连字符，避免把 1 误匹配 10~19）
+        sed -i "s/^- \[ \] $ticket_num-/✓ $ticket_num-/" "$readme" 2>/dev/null || true
       fi
     fi
   done
@@ -113,9 +100,6 @@ update_tickets_progress() {
 # ---- 主循环 ----
 ROUND=0
 while true; do
-  ROUND=$((ROUND + 1))
-  log "=== ROUND $ROUND ==="
-
   # 完工自停：整个项目（docs/tickets）已完工 → 停止全部监控与通知
   if "$REPO/scripts/completion-check.sh" >/dev/null 2>&1; then
     log "🎉 项目已完工 → 自动停止无人值守系统"
@@ -123,11 +107,14 @@ while true; do
     exit 0
   fi
 
-  # 检查是否全部完成
+  # 检查是否全部完成（必须在本轮写入 ROUND 标记之前判断，否则 tail -1 恒为 ROUND 行，永远不命中）
   if done_check; then
     log "🎉 全部完成，退出驱动"
     break
   fi
+
+  ROUND=$((ROUND + 1))
+  log "=== ROUND $ROUND ==="
 
   # 更新 tickets 进度
   update_tickets_progress
@@ -135,7 +122,6 @@ while true; do
   # 检查所有 tickets 是否完成
   if all_tickets_done; then
     log "🎉 所有 tickets 已完成"
-    echo "ALL_DONE" >> "$LOG"
 
     # 最终验证
     if web_ui_tests_pass; then
@@ -144,8 +130,13 @@ while true; do
       git add -A
       git commit -m "chore(web-ui): 完成 Web UI 全部 tickets" || true
       git push origin main || true
+      # 写入完工标记，下轮 done_check 命中后退出驱动（不再依赖会被日志行淹没的 tail -1 ALL_DONE）
+      touch "$WEBUI_DONE_MARK"
+      echo "ALL_DONE" >> "$LOG"
+      log "🎉 Web UI 全部完工，标记已写入，下轮退出驱动"
     else
       log "❌ 最终测试失败，继续修复"
+      touch "$REPO/.claude/WEB_UI_FRESH_NEXT"
     fi
 
     # 短暂等待后检查
@@ -162,22 +153,7 @@ while true; do
     continue
   fi
 
-  # 更新标记文件
-  wc -l "$LOG" > "$MARK_FILE" 2>/dev/null || echo "0" > "$MARK_FILE"
-
-  # CPU 和输出静默检测
-  (
-    last_output=$(wc -l < "$LOG")
-    last_cpu=$(cat /proc/$$/stat 2>/dev/null | awk '{print $14+$15}' || echo "0")
-    sleep 900
-    new_output=$(wc -l < "$LOG")
-    new_cpu=$(cat /proc/$$/stat 2>/dev/null | awk '{print $14+$15}' || echo "0")
-    if [ "$new_output" = "$last_output" ] && [ "$new_cpu" = "$last_cpu" ]; then
-      log "⏳ 零输出熔断（900s 输出与 CPU 双静默）"
-      exit 1
-    fi
-  ) &
-  monitor_pid=$!
+  # CPU 和输出静默检测（监控逻辑已移到 pi 启动之后，见下）
 
   # 执行 pi 命令（Web UI 任务）
   log "▶ pi 启动 (zai-coding-cn/glm-4.7)"
@@ -212,11 +188,28 @@ while true; do
 开始工作吧！
 EOF
 
-  # 启动 pi
-  pi --provider zai-coding-cn --model glm-4.7 < /tmp/pi-web-ui-prompt.txt >> "$LOG" 2>&1
+  # 启动 pi（后台运行，支持零输出熔断监控）
+  pi --provider zai-coding-cn --model glm-4.7 < /tmp/pi-web-ui-prompt.txt >> "$LOG" 2>&1 &
+  pi_pid=$!
 
-  # 等待监控进程
-  wait $monitor_pid 2>/dev/null
+  # 零输出熔断：后台监控 pi 进程（输出+CPU 双静默 900s 则杀掉并重试）
+  (
+    last_output=$(wc -l < "$LOG")
+    last_cpu=$(cat /proc/$pi_pid/stat 2>/dev/null | awk '{print $14+$15}' || echo "0")
+    sleep 900
+    new_output=$(wc -l < "$LOG")
+    new_cpu=$(cat /proc/$pi_pid/stat 2>/dev/null | awk '{print $14+$15}' || echo "0")
+    if [ "$new_output" = "$last_output" ] && [ "$new_cpu" = "$last_cpu" ]; then
+      log "⏳ 零输出熔断（900s 输出与 CPU 双静默）"
+      pkill -TERM -P "$pi_pid" 2>/dev/null
+      kill "$pi_pid" 2>/dev/null
+    fi
+  ) &
+  monitor_pid=$!
+
+  # 等待 pi 进程结束（不再 wait 监控子 shell，避免每轮被 900s 静默检测拖住）
+  wait "$pi_pid" 2>/dev/null
+  kill "$monitor_pid" 2>/dev/null
 
   # 检查是否需要切换会话
   if [ $((ROUND % 8)) -eq 0 ] && [ $ROUND -gt 0 ]; then

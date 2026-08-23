@@ -7,10 +7,11 @@
 ✅ **自动调用 Matt Skills**：集成 grill-with-docs、to-spec、to-tickets、implement、code-review
 ✅ **自动触发**：提交工程计划书/设想后自动启动并全程推进，无需用户逐阶段提醒
 ✅ **无人值守交接**：to-tickets 后自动启动无人值守系统，由 driver 自动实现直到完工自停
+✅ **完工自停**：主线 + Web UI 工单全部完成后自动停止服务并发送一次终报
 ✅ **遵守 pi 规则**：提交前 code-review 审查两遍，无问题才提交
 ✅ **智能用户确认**：20分钟无响应暂停，1小时后重试，循环3次
 ✅ **无人值守集成**：与进度汇报系统无缝集成
-✅ **自动恢复**：Checkpoint 机制，崩溃后可恢复
+✅ **自动恢复**：无人值守系统自动重启/恢复，崩溃可恢复
 ✅ **进度跟踪**：实时进度报告和状态文件
 
 ## 快速开始
@@ -21,12 +22,12 @@
 claude plugins install mattpocock-skills
 ```
 
-### 2. 配置项目
+### 2. 配置项目（skill 脚本自身 Phase 1-3 配置；无人值守系统无需此文件）
 
 ```bash
-cp config.template.yaml ~/.auto-engineering-config.yaml
+cp config.template.yaml .auto-engineering-config.yaml
 # 编辑配置文件
-nano ~/.auto-engineering-config.yaml
+nano .auto-engineering-config.yaml
 ```
 
 ### 3. 首次使用
@@ -56,10 +57,10 @@ nano ~/.auto-engineering-config.yaml
     /to-tickets → 拆解为 tickets
 
 [4] 交接无人值守（自动接续，不等待确认）
-    bash scripts/install-unattended.sh → 启动 driver/watchdog/汇报
+    bash scripts/install-unattended.sh → 启动 driver + web-ui 驱动 + watchdog + 进度汇报
 
 [5] 无人值守自动实现
-    /implement → 实现 ticket（由 driver 逐张驱动）
+    /implement → 实现 ticket（由 driver / web-ui-driver 逐张驱动）
 
 [6] 代码审查（两遍）
     /code-review → 审查代码
@@ -67,7 +68,7 @@ nano ~/.auto-engineering-config.yaml
 [7] 提交推送
     git push → 推送到用户配置的目标仓库（origin/main 或其他）
 
-[循环 4-6 直到完成] → 完工自停 + 完成报告
+[循环 4-6 直到完成] → 完工自停（completion-check → shutdown-unattended）+ 完成报告
 ```
 
 ## 用户确认策略
@@ -125,55 +126,33 @@ user_confirmation:
 
 ## 状态文件
 
-### `.auto-engineering-status.yaml`
+无人值守系统的状态由以下来源共同决定：
 
-```yaml
-project_name: ""
-current_phase: "phase1"
-total_tickets: 23
-completed_tickets: 0
-failed_tickets: []
-last_checkpoint: "phase1"
-start_time: "2026-08-23T10:00:00+08:00"
-estimated_completion: ""
-```
-
-### Checkpoint 目录
-
-```
-.auto-engineering-checkpoints/
-├── phase1.yaml
-├── phase2.yaml
-├── phase3.yaml
-└── ...
-```
+- **`docs/tickets/ticket-*.md`**：主线工单，状态行 `## 状态: done` 即完成
+- **`.scratch/web-ui-tickets/`**：Web UI 工单，存在对应 `*-summary.md` 即完成
+- **`scripts/completion-check.sh`**：唯一完工判据（`bash scripts/completion-check.sh && echo 已完工`）
+- **日志**：`.claude/pi-driver.log`、`.claude/progress-report.log`、`.claude/web-ui-driver.log`
 
 ## 监控和调试
 
 ### 查看状态
 
 ```bash
-cat .auto-engineering-status.yaml
+systemctl --user list-timers aifanyi*
+systemctl --user status aifanyi-driver.service --no-pager
 ```
 
 ### 查看日志
 
 ```bash
-tail -f .auto-engineering-log.md
+tail -f .claude/pi-driver.log
 ```
 
 ### 查看进度
 
 ```bash
-# 发送进度报告
-~/.claude/skills/auto-engineering-workflow/send-progress.sh
-```
-
-### 从 checkpoint 恢复
-
-```bash
-# 恢复到 phase3
-auto-engineering.sh --resume phase3
+bash scripts/view-reports.sh          # 查看最近汇报
+bash scripts/progress-report.sh       # 手动触发一次汇报
 ```
 
 ## 故障排查
@@ -181,11 +160,12 @@ auto-engineering.sh --resume phase3
 ### 卡在某个阶段
 
 ```bash
-# 查看状态
-cat .auto-engineering-status.yaml
+# 查看无人值守系统状态
+systemctl --user list-timers aifanyi*
+systemctl --user status aifanyi-driver.service --no-pager
 
-# 查看日志
-cat .auto-engineering-log.md | tail -100
+# 查看驱动日志
+cat .claude/pi-driver.log | tail -100
 ```
 
 ### 用户确认超时
@@ -211,34 +191,37 @@ git commit --amend
 
 ## 输出文件
 
-| 文件 | 说明 |
+| 文件/目录 | 说明 |
 |------|------|
-| `.auto-engineering-config.yaml` | 配置文件 |
-| `.auto-engineering-status.yaml` | 状态文件 |
-| `.auto-engineering-log.md` | 执行日志 |
-| `.auto-engineering-report.md` | 完成报告 |
-| `.auto-engineering-checkpoints/` | Checkpoint 目录 |
+| `docs/specs/` | 规范文档 |
+| `docs/adr/` | 架构决策 |
+| `docs/tickets/` | 主线工单（无人值守系统读取） |
+| `.scratch/web-ui-tickets/` | Web UI 工单集 |
+| `.claude/pi-driver.log` | 驱动日志 |
+| `.claude/progress-report.log` | 进度汇报日志 |
+| `.claude/web-ui-driver.log` | Web UI 驱动日志 |
+| `.claude/UNATTENDED_STOPPED` | 完工停止标记 |
 
-## 与无人值守系统集成
+> skill 脚本自身（Phase 1-3）还会生成 `.auto-engineering-status.yaml` / `.auto-engineering-log.md` / `.auto-engineering-checkpoints/` / `.auto-engineering-report.md` 作为自身跟踪（与无人值守系统状态无关）。
 
-### 作为后台任务运行
+## 与无人值守系统集成 (v1.2.0 — systemd 版)
 
-```bash
-tmux new-session -d -s auto-engineering 'bash auto-engineering.sh'
-```
-
-### 集成到主循环
-
-在 `driver.sh` 中：
+本 skill 负责设计/规范/任务拆解，**实现由无人值守系统自动完成**：
 
 ```bash
-while [ $ALL_DONE = false ]; do
-    if has_pending_engineering_tasks; then
-        bash auto-engineering.sh
-    fi
-    sleep 300
-done
+# 一键安装并启动无人值守系统（driver + web-ui 驱动 + watchdog + 进度汇报）
+bash scripts/install-unattended.sh
+
+# 查看状态
+systemctl --user list-timers aifanyi*
+systemctl --user status aifanyi-driver.service --no-pager
+
+# 查看日志/汇报
+tail -f .claude/pi-driver.log
+bash scripts/view-reports.sh
 ```
+
+**完工自停**：`docs/tickets` 与 `.scratch/web-ui-tickets` 全部完成时，`completion-check.sh` → `shutdown-unattended.sh` 自动停止全部服务并发送一次终报。
 
 ## 示例
 
@@ -296,7 +279,7 @@ MIT License
 
 ---
 
-**版本**: 1.0.0
+**版本**: 1.2.0（与无人值守系统 v1.2.0 对齐）
 **作者**: 基于 Matt Pocock Skills
 
 **重要说明**：此 skill 会将生成的代码推送到用户在配置文件中指定的目标仓库，不是硬编码的特定仓库。每个项目可以配置不同的目标仓库。

@@ -168,13 +168,21 @@ while true; do
 
   log "=== ROUND $N ($CUR) ==="
   run_pi "$CUR" "$CONT_PROMPT"
-  safe_push
+  # 完工检测必须放在 safe_push 之前：safe_push 会向 LOG 追加日志行，会淹没 ALL_DONE 导致 tail -1 永远不命中
   if done_check; then
-    log "🎉 全部工单完成（pytest 验收通过）→ 自动停止无人值守系统"
+    log "🎉 全部工单完成（pytest 验收通过）"
     safe_push
-    "$REPO/scripts/shutdown-unattended.sh" "项目完工（驱动 done_check 触发）" >> "$LOG" 2>&1 || true
+    # 只有 completion-check 全绿（主线 + Web UI 都完工）才整体停机；
+    # 否则仅退出主驱动，让 web-ui-driver 继续完成 Web UI 工单，避免误杀导致完工判据永不满足
+    if "$REPO/scripts/completion-check.sh" >/dev/null 2>&1; then
+      log "🎉 主线 + Web UI 全部完工 → 自动停止无人值守系统"
+      "$REPO/scripts/shutdown-unattended.sh" "项目完工（驱动 done_check + completion-check 触发）" >> "$LOG" 2>&1 || true
+    else
+      log "✅ 主线已完工，Web UI 尚未完工 → 主驱动退出，web-ui-driver 继续"
+    fi
     exit 0
   fi
+  safe_push
 
   if ctx_hit; then
     log "⚠️ 会话上下文满 → 开新会话恢复"

@@ -33,10 +33,22 @@ user_confirmation:
   retry_interval_hours: 1
   max_retry_cycles: 3
 
-# 无人值守集成
+# 无人值守系统集成 (v1.2.0 — systemd 版)
 unattended:
-  driver_log: ".unattended/logs/driver.log"
+  install_script: "scripts/install-unattended.sh"     # 一键安装并启动全部服务
+  driver_service: "aifanyi-driver.service"            # 主驱动（docs/tickets 主线工单）
+  web_ui_driver_service: "web-ui-driver.service"      # Web UI 工单驱动（.scratch/web-ui-tickets）
+  watchdog_timer: "aifanyi-watchdog.timer"            # 每10分钟检查/恢复异常
+  progress_report_timer: "aifanyi-progress-report.timer"  # 每30分钟进度汇报
+  completion_check: "scripts/completion-check.sh"     # 唯一完工判据
+  shutdown_script: "scripts/shutdown-unattended.sh"   # 完工自停（停/禁全部服务+终报）
+  main_tickets_dir: "docs/tickets"                    # 主线工单目录
+  web_ui_tickets_dir: ".scratch/web-ui-tickets"       # Web UI 工单目录
+  driver_log: ".claude/pi-driver.log"
+  web_ui_driver_log: ".claude/web-ui-driver.log"
+  progress_report_log: ".claude/progress-report.log"
   progress_report_interval_minutes: 30
+  watchdog_interval_minutes: 10
   notification_enabled: true
 
 # Git 配置

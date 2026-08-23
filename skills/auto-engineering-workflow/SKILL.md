@@ -101,7 +101,7 @@ disable-model-invocation: false
 
 ### 项目配置
 
-在项目根目录的 `.auto-engineering-config.yaml` 中配置：
+在项目根目录的 `.auto-engineering-config.yaml` 中配置（**skill 脚本自身（Phase 1-3）的选项配置**；无人值守系统的安装/服务配置由 `scripts/install-unattended.sh` 提供，二者相互独立）：
 
 ```yaml
 # GitHub 仓库（目标仓库，根据项目配置）
@@ -143,8 +143,20 @@ user_confirmation:
 
 # 无人值守集成
 unattended:
-  driver_log: ".unattended/logs/driver.log"
+  install_script: "scripts/install-unattended.sh"     # 一键安装并启动全部服务
+  driver_service: "aifanyi-driver.service"            # 主驱动（docs/tickets 主线工单）
+  web_ui_driver_service: "web-ui-driver.service"      # Web UI 工单驱动（.scratch/web-ui-tickets）
+  watchdog_timer: "aifanyi-watchdog.timer"            # 每10分钟检查/恢复异常
+  progress_report_timer: "aifanyi-progress-report.timer"  # 每30分钟进度汇报
+  completion_check: "scripts/completion-check.sh"     # 唯一完工判据
+  shutdown_script: "scripts/shutdown-unattended.sh"   # 完工自停（停/禁全部服务+终报）
+  main_tickets_dir: "docs/tickets"                    # 主线工单目录
+  web_ui_tickets_dir: ".scratch/web-ui-tickets"       # Web UI 工单目录
+  driver_log: ".claude/pi-driver.log"
+  web_ui_driver_log: ".claude/web-ui-driver.log"
+  progress_report_log: ".claude/progress-report.log"
   progress_report_interval_minutes: 30
+  watchdog_interval_minutes: 10
   notification_enabled: true
 ```
 
@@ -214,21 +226,23 @@ def analyze_input(user_input: str) -> dict:
 **完成 Step 4 (to-tickets) 后，必须立即把实现工作交给无人值守系统，不要停下来等用户提醒。**
 
 ```bash
-# 5.1 若尚未部署无人值守系统：安装并启动（会自动启用 driver/watchdog/progress-report）
+# 5.1 若尚未部署无人值守系统：安装并启动（v1.2.0：driver + web-ui 驱动 + watchdog + 进度汇报）
 cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
 bash scripts/install-unattended.sh
 
-# 5.2 若已部署（systemd 已存在）：确保服务在运行
+# 5.2 若已部署（systemd 已存在）：确保全部服务在运行（含 web-ui-driver）
 systemctl --user start aifanyi-driver.service
+systemctl --user start web-ui-driver.service
 systemctl --user start aifanyi-watchdog.timer
 systemctl --user start aifanyi-progress-report.timer
 
 # 5.3 验证无人值守系统已接管
 systemctl --user status aifanyi-driver.service --no-pager | head -5
+systemctl --user status web-ui-driver.service --no-pager | head -5
 systemctl --user list-timers aifanyi* | grep -E "NEXT|LEFT"
 ```
 
-无人值守系统的 driver 会读取 `docs/tickets/` 逐张自动实现（/implement → 双遍 code-review → 测试 → git commit+push → 进度汇报），直到全部工单完工自动自停。
+无人值守系统的 `aifanyi-driver.service` 会读取 `docs/tickets/` 逐张自动实现（/implement → 双遍 code-review → 测试 → git commit+push → 进度汇报），`web-ui-driver.service` 会处理 `.scratch/web-ui-tickets/` 的 Web UI 工单；当两套工单全部完成时，`completion-check.sh` 判定完工，`shutdown-unattended.sh` 自动停止全部服务并发送一次终报。
 
 > **禁止行为**：不要在 to-tickets 后询问「是否开始自动实现？」；正常流程直接启动无人值守，无需用户确认。
 
@@ -386,46 +400,46 @@ notify-send \
 
 ### 状态文件
 
-`.auto-engineering-status.yaml`:
-```yaml
-project_name: ""
-current_phase: ""
-total_tickets: 0
-completed_tickets: 0
-failed_tickets: []
-last_checkpoint: ""
-start_time: ""
-estimated_completion: ""
-```
+无人值守系统的状态由以下来源共同决定：
 
-## 与无人值守系统集成
+- **`docs/tickets/ticket-*.md`**：主线工单，状态行 `## 状态: done` 即完成
+- **`.scratch/web-ui-tickets/`**：Web UI 工单，存在对应 `*-summary.md` 即完成
+- **`completion-check.sh`**：唯一完工判据（`bash scripts/completion-check.sh && echo 已完工`）
+- **日志**：`.claude/pi-driver.log`、`.claude/progress-report.log`
 
-### 作为 Driver 的一部分
+## 与无人值守系统集成 (v1.2.0 — systemd 版)
 
-将此 skill 集成到无人值守系统的主循环中：
+本 skill 与无人值守系统的关系：**skill 负责设计/规范/任务拆解（Phase 1-3），无人值守系统负责自动实现（Phase 4-7）**。二者通过 `scripts/install-unattended.sh` 交接。
 
-```bash
-# driver.sh 主循环
-while [ $ALL_DONE = false ]; do
-    # 检查是否有待处理的工程任务
-    if has_pending_engineering_tasks; then
-        /auto-engineering-workflow
-    fi
+### 系统组件
 
-    # 其他任务...
-    sleep 300
-done
-```
+| 组件 | 说明 |
+|------|------|
+| `aifanyi-driver.service` | 主驱动，读取 `docs/tickets/` 逐张实现（/implement → 双遍 code-review → 测试 → push） |
+| `web-ui-driver.service` | Web UI 工单驱动，读取 `.scratch/web-ui-tickets/` 自动实现 |
+| `aifanyi-watchdog.timer` | 每 10 分钟检查/恢复异常 |
+| `aifanyi-progress-report.timer` | 每 30 分钟进度汇报 |
+| `scripts/completion-check.sh` | 唯一完工判据（主线 + Web UI 两套工单全部 done） |
+| `scripts/shutdown-unattended.sh` | 完工自停：停/禁全部服务 + 一次性终报 |
 
-### 使用 Orchestrator 管理
+### 安装与启动
 
 ```bash
-python orchestrator.py \
-    --save "engineering" \
-    --message "自动工程工作流" \
-    --next "下一个任务" \
-    --context "当前上下文"
+bash scripts/install-unattended.sh   # 一键安装并启动全部服务
 ```
+
+### 查看状态
+
+```bash
+systemctl --user list-timers aifanyi*
+systemctl --user status aifanyi-driver.service --no-pager
+tail -f .claude/pi-driver.log
+bash scripts/view-reports.sh   # 最近进度汇报
+```
+
+### 完工自停
+
+当 `docs/tickets` 与 `.scratch/web-ui-tickets` 全部完成时，`completion-check.sh` 判定完工，由 `shutdown-unattended.sh` 停止并禁用全部服务并发送一次终报，无需人工干预。
 
 ## 使用示例
 
@@ -487,10 +501,11 @@ AI: [自动触发 auto-engineering-workflow]
 
 ### 在无人值守系统中
 
-作为后台任务运行：
+无人值守系统以 systemd 服务方式运行（由 `scripts/install-unattended.sh` 安装），无需手动后台运行本 skill：
 
 ```bash
-tmux new-session -d -s auto-engineering '/auto-engineering-workflow'
+bash scripts/install-unattended.sh   # 安装并启动 driver + web-ui 驱动 + watchdog + 汇报
+systemctl --user list-timers aifanyi*   # 查看定时器
 ```
 
 ## 依赖的 Matt Skills
@@ -506,13 +521,18 @@ tmux new-session -d -s auto-engineering '/auto-engineering-workflow'
 ## 输出文件
 
 ```
-.auto-engineering-config.yaml    # 配置文件
-.auto-engineering-status.yaml    # 状态文件
-.auto-engineering-log.md         # 执行日志
-.auto-engineering-report.md      # 完成报告
-docs/specs/                      # 生成的规范文档
-docs/adr/                        # 生成的架构决策
+docs/specs/                       # 生成的规范文档
+docs/adr/                         # 生成的架构决策
+docs/tickets/                     # 主线任务 tickets（无人值守系统读取）
+.scratch/web-ui-tickets/          # Web UI 工单集（web-ui-driver 读取）
+.claude/pi-driver.log             # 驱动日志
+.claude/progress-report.log       # 进度汇报日志
+.claude/web-ui-driver.log         # Web UI 驱动日志
+.claude/UNATTENDED_STOPPED        # 完工停止标记
 ```
+
+> skill 脚本自身（Phase 1-3）还会生成以下跟踪文件，与无人值守系统状态无关：
+> `.auto-engineering-status.yaml`（状态）、`.auto-engineering-log.md`（日志）、`.auto-engineering-checkpoints/`（断点）、`.auto-engineering-report.md`（交接报告）
 
 ## 注意事项
 
@@ -528,10 +548,11 @@ docs/adr/                        # 生成的架构决策
 
 ### 卡在某个阶段
 
-检查 checkpoint 和日志：
+检查无人值守系统状态和日志：
 ```bash
-cat .auto-engineering-status.yaml
-cat .auto-engineering-log.md | tail -50
+systemctl --user list-timers aifanyi*
+systemctl --user status aifanyi-driver.service --no-pager
+tail -50 .claude/pi-driver.log
 ```
 
 ### 用户确认超时
@@ -552,7 +573,14 @@ notify-send "紧急" "自动工程需要您的确认"
 
 ---
 
-**版本**: 1.0.0
+**版本**: 1.2.0（与无人值守系统 v1.2.0 对齐）
 **作者**: 基于 Matt Pocock Skills 和 Unattended Dev System
 
 **注意**：此 skill 会将生成的代码推送到用户在配置文件中指定的目标仓库，不是硬编码的特定仓库。
+
+## v1.2.0 变更记录
+
+- 无人值守系统升级为 **systemd 版 v1.2.0**：`scripts/install-unattended.sh` + `aifanyi-driver.service` + `aifanyi-watchdog.timer` + `aifanyi-progress-report.timer` + `web-ui-driver.service`
+- 新增 **完工自停**：`scripts/completion-check.sh` 判定完工 → `scripts/shutdown-unattended.sh` 停止全部服务并发送一次终报
+- 新增 **Web UI 工单驱动**：`web-ui-driver.service` 自动实现 `.scratch/web-ui-tickets/` 下的 Web UI 工单
+- 移除旧版 `driver.sh` / `orchestrator.py` / `.unattended/` 集成描述，统一为 systemd 版集成

@@ -26,9 +26,26 @@ if [ ! -f .env ]; then
     echo -e "${GREEN}已创建 .env 文件，请根据需要修改配置${NC}"
 fi
 
-# 运行数据库迁移
+# 启动基础设施（含 postgres）
+echo -e "${YELLOW}启动基础设施（postgres/redis/minio）...${NC}"
+docker-compose up -d postgres redis minio minio-init
+
+# 等待 postgres 就绪（冷启动时容器未启动，必须先就绪再迁移）
+echo -e "${YELLOW}等待 postgres 就绪...${NC}"
+for i in $(seq 1 30); do
+    if docker-compose exec -T postgres pg_isready -U ${POSTGRES_USER:-filmdubbing} >/dev/null 2>&1; then
+        break
+    fi
+    sleep 2
+done
+if ! docker-compose exec -T postgres pg_isready -U ${POSTGRES_USER:-filmdubbing} >/dev/null 2>&1; then
+    echo -e "${RED}错误: postgres 未在 60s 内就绪，请检查 docker-compose logs postgres${NC}"
+    exit 1
+fi
+
+# 运行数据库迁移（postgres 已就绪；不再用 || true 静默吞错）
 echo -e "${YELLOW}运行数据库迁移...${NC}"
-docker-compose exec -T postgres psql -U ${POSTGRES_USER:-filmdubbing} -d ${POSTGRES_DB:-filmdubbing} <<'EOF' || true
+if ! docker-compose exec -T postgres psql -U ${POSTGRES_USER:-filmdubbing} -d ${POSTGRES_DB:-filmdubbing} <<'EOF'
 -- 检查 users 表是否存在
 DO $$
 BEGIN
@@ -99,12 +116,15 @@ BEGIN
     END IF;
 END $$;
 EOF
+then
+    echo -e "${RED}数据库迁移失败${NC}"
+    exit 1
+fi
 
 echo -e "${GREEN}数据库迁移完成${NC}"
 
 # 启动 Web UI 服务
 echo -e "${YELLOW}启动 Web UI 服务...${NC}"
-docker-compose up -d postgres redis minio minio-init
 docker-compose up -d web-backend web-frontend
 
 # 等待服务启动
