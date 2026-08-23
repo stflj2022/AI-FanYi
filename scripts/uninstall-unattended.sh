@@ -28,6 +28,7 @@ echo "🛑 停止服务..."
 systemctl --user stop aifanyi-progress-report.timer 2>/dev/null || true
 systemctl --user stop aifanyi-watchdog.timer 2>/dev/null || true
 systemctl --user stop aifanyi-driver.service 2>/dev/null || true
+systemctl --user stop web-ui-driver.service 2>/dev/null || true
 echo "✅ 服务已停止"
 
 # 禁用服务
@@ -35,6 +36,7 @@ echo "🔄 禁用服务..."
 systemctl --user disable aifanyi-progress-report.timer 2>/dev/null || true
 systemctl --user disable aifanyi-watchdog.timer 2>/dev/null || true
 systemctl --user disable aifanyi-driver.service 2>/dev/null || true
+systemctl --user disable web-ui-driver.service 2>/dev/null || true
 echo "✅ 服务已禁用"
 
 # 删除服务文件
@@ -44,6 +46,7 @@ rm -f "$HOME/.config/systemd/user/aifanyi-watchdog.service"
 rm -f "$HOME/.config/systemd/user/aifanyi-watchdog.timer"
 rm -f "$HOME/.config/systemd/user/aifanyi-progress-report.service"
 rm -f "$HOME/.config/systemd/user/aifanyi-progress-report.timer"
+rm -f "$HOME/.config/systemd/user/web-ui-driver.service"
 echo "✅ 服务文件已删除"
 
 # 重新加载 systemd

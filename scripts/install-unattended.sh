@@ -4,7 +4,7 @@
 set -e
 
 # 服务名称列表（与卸载脚本保持一致）
-SERVICES="aifanyi-driver.service aifanyi-watchdog.service aifanyi-watchdog.timer aifanyi-progress-report.service aifanyi-progress-report.timer"
+SERVICES="aifanyi-driver.service aifanyi-watchdog.service aifanyi-watchdog.timer aifanyi-progress-report.service aifanyi-progress-report.timer web-ui-driver.service"
 
 # POSIX 兼容的路径获取方式
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -47,6 +47,7 @@ cp "$SYSTEMD_DIR/aifanyi-watchdog.service" "$USER_SYSTEMD_DIR/"
 cp "$SYSTEMD_DIR/aifanyi-watchdog.timer" "$USER_SYSTEMD_DIR/"
 cp "$SYSTEMD_DIR/aifanyi-progress-report.service" "$USER_SYSTEMD_DIR/"
 cp "$SYSTEMD_DIR/aifanyi-progress-report.timer" "$USER_SYSTEMD_DIR/"
+cp "$SYSTEMD_DIR/web-ui-driver.service" "$USER_SYSTEMD_DIR/"
 
 echo "✅ 服务文件已复制到 $USER_SYSTEMD_DIR"
 echo ""
@@ -74,8 +75,14 @@ echo "✅ aifanyi-watchdog.timer 已启动（每10分钟检查）"
 systemctl --user enable aifanyi-progress-report.timer
 systemctl --user start aifanyi-progress-report.timer
 echo "✅ aifanyi-progress-report.timer 已启动（每30分钟汇报）"
+
+# 启用并启动 web-ui 驱动（Web UI 工单集监控；无该工单集时驱动会由完成判据自动处理）
+echo "🚀 启用 web-ui 驱动..."
+systemctl --user enable web-ui-driver.service
+systemctl --user start web-ui-driver.service
+echo "✅ web-ui-driver.service 已启动"
 echo ""
-echo "ℹ️  完工自停：当 docs/tickets 全部 done 时，驱动/看门狗/汇报会自动停止并禁用，"
+echo "ℹ️  完工自停：当 docs/tickets 与 .scratch/web-ui-tickets 全部完成时，驱动/看门狗/汇报会自动停止并禁用，"
 echo "   只发送一次终报通知（见 scripts/shutdown-unattended.sh）"
 
 # 等待服务启动
