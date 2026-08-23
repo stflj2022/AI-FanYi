@@ -112,6 +112,7 @@ scripts/configure_scnet_pi.py
 # 陈旧备份文件（历史遗留，曾被驱动的自动检查点顺带入库；解除跟踪、磁盘保留）
 *.backup
 *.bak
+*.bak-*
 
 # 模型/下载文件（大文件不入库）
 # models/  # 改为更具体的规则，避免忽略 src/filmdub/core/models
