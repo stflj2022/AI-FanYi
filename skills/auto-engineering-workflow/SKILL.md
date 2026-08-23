@@ -41,7 +41,7 @@ disable-model-invocation: true
 [Phase 6] 提交推送
     ├─ 遵守 pi 规则
     ├─ git commit
-    └─ git push to skill-j
+    └─ git push to 用户配置的目标仓库（origin/main 或其他）
     ↓
 [Phase 7] 循环继续
     └─ 回到 Phase 4 处理下一个 ticket
@@ -94,11 +94,17 @@ disable-model-invocation: true
 在项目根目录的 `.auto-engineering-config.yaml` 中配置：
 
 ```yaml
-# GitHub 仓库
+# GitHub 仓库（目标仓库，根据项目配置）
 repository:
-  owner: "stflj2022"
-  repo: "skill-j"
-  branch: "main"
+  owner: "your-username"  # GitHub 用户名
+  repo: "your-repo"     # GitHub 仓库名
+  branch: "main"         # 默认分支
+
+# Git 配置（自动推送的目标）
+git:
+  target:
+    remote: "origin"  # Git 远程仓库名称
+    branch: "main"     # Git 分支名称
 
 # Matt Skills 配置
 matt_skills:
@@ -440,7 +446,7 @@ AI: [调用 /auto-engineering-workflow]
     [Phase 4-7] 自动实现循环
         - 实现 ticket 001-023
         - 每个经过 code-review
-        - 推送到 skill-j
+        - 推送到用户配置的目标仓库（如 origin/main）
     [完成] 生成完成报告
 ```
 
@@ -540,4 +546,5 @@ notify-send "紧急" "自动工程需要您的确认"
 
 **版本**: 1.0.0
 **作者**: 基于 Matt Pocock Skills 和 Unattended Dev System
-**仓库**: https://github.com/stflj2022/skill-j
+
+**注意**：此 skill 会将生成的代码推送到用户在配置文件中指定的目标仓库，不是硬编码的特定仓库。

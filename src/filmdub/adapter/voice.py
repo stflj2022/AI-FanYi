@@ -215,6 +215,8 @@ class QwenTTSAdapter(VoiceAdapterInterface):
             payload = {k: v for k, v in payload.items() if v is not None}
 
             endpoint = f"{self.base_url}/v1/audio/speech"
+            # OpenAI API returns MP3 format
+            actual_output_path = output_path.with_suffix('.mp3')
         else:
             # Use custom API endpoint
             payload = {
@@ -224,17 +226,18 @@ class QwenTTSAdapter(VoiceAdapterInterface):
                 "pitch": pitch
             }
             endpoint = f"{self.base_url}/api/synthesize"
+            actual_output_path = output_path
 
         try:
             response = await self.client.post(endpoint, json=payload)
             response.raise_for_status()
 
             # Save audio file
-            with output_path.open("wb") as f:
+            with actual_output_path.open("wb") as f:
                 f.write(response.content)
 
-            logger.info(f"Synthesized {len(text)} chars with voice {voice_id} -> {output_path}")
-            return output_path
+            logger.info(f"Synthesized {len(text)} chars with voice {voice_id} -> {actual_output_path}")
+            return actual_output_path
         except httpx.HTTPError as e:
             logger.error(f"Failed to synthesize with voice {voice_id}: {e}")
             raise

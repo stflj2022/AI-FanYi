@@ -44,6 +44,10 @@ git:
   auto_push: true
   commit_message_format: "feat({ticket_id}): {title}"
   create_branch: false
+  # 目标仓库配置（用户通过配置文件指定）
+  target:
+    remote: "origin"  # 默认远程仓库名称
+    branch: "main"     # 默认分支名称
 
 # 测试配置
 testing:

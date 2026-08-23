@@ -60,7 +60,7 @@ nano ~/.auto-engineering-config.yaml
     /code-review → 审查代码
 
 [6] 提交推送
-    git push → 推送到 skill-j
+    git push → 推送到用户配置的目标仓库（origin/main 或其他）
 
 [循环 4-6 直到完成]
 ```
@@ -94,9 +94,14 @@ nano ~/.auto-engineering-config.yaml
 
 ```yaml
 repository:
-  owner: "stflj2022"
-  repo: "skill-j"
-  branch: "main"
+  owner: "your-username"  # 你的 GitHub 用户名
+  repo: "your-repo"     # 你的 GitHub 仓库名
+  branch: "main"         # 默认分支
+
+git:
+  target:
+    remote: "origin"  # Git 远程仓库名称
+    branch: "main"     # Git 分支名称
 
 matt_skills:
   issue_tracker: "github"
@@ -249,7 +254,7 @@ AI: [启动自动化工程工作流]
     [Phase 4-7] 自动实现
         - 实现 ticket 001-023
         - 每个经过 code-review
-        - 推送到 skill-j
+        - 推送到用户配置的目标仓库（如 origin/main）
     [完成] 生成完成报告
 ```
 
@@ -288,4 +293,5 @@ MIT License
 
 **版本**: 1.0.0
 **作者**: 基于 Matt Pocock Skills
-**仓库**: https://github.com/stflj2022/skill-j
+
+**重要说明**：此 skill 会将生成的代码推送到用户在配置文件中指定的目标仓库，不是硬编码的特定仓库。每个项目可以配置不同的目标仓库。

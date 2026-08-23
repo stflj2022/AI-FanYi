@@ -354,10 +354,7 @@ class TestEndToEndLaobai:
             "info": synthesized_validation["info"]
         }
 
-        # 安全打印时长（可能为 None）
-        duration = synthesized_validation['info'].get('duration')
-        duration_str = f"{duration:.2f}s" if duration is not None else "N/A (unsupported format)"
-        print(f"  ✓ 合成音频时长: {duration_str}")
+        print(f"  ✓ 合成音频时长: {synthesized_validation['info'].get('duration', 'N/A'):.2f}s")
         print(f"  ✓ 合成音频采样率: {synthesized_validation['info'].get('sample_rate', 'N/A')} Hz")
         print(f"  ✓ 合成音频声道数: {synthesized_validation['info'].get('num_channels', 'N/A')}")
         print(f"  ✓ 合成音频文件大小: {synthesized_validation['info']['file_size']} bytes")
@@ -606,10 +603,7 @@ class TestEndToEndPingi:
             "info": synthesized_validation["info"]
         }
 
-        # 安全打印时长（可能为 None）
-        duration = synthesized_validation['info'].get('duration')
-        duration_str = f"{duration:.2f}s" if duration is not None else "N/A (unsupported format)"
-        print(f"  ✓ 合成音频时长: {duration_str}")
+        print(f"  ✓ 合成音频时长: {synthesized_validation['info'].get('duration', 'N/A'):.2f}s")
         print(f"  ✓ 合成音频采样率: {synthesized_validation['info'].get('sample_rate', 'N/A')} Hz")
         print(f"  ✓ 合成音频声道数: {synthesized_validation['info'].get('num_channels', 'N/A')}")
         print(f"  ✓ 合成音频文件大小: {synthesized_validation['info']['file_size']} bytes")
@@ -750,9 +744,7 @@ class TestEndToEndPerformance:
             "validation": vocals_validation,
             "info": vocals_validation["info"]
         }
-        vocals_duration = vocals_validation['info'].get('duration')
-        vocals_duration_str = f"{vocals_duration:.2f}s" if vocals_duration is not None else "N/A"
-        print(f"  ✓ 人声时长: {vocals_duration_str}")
+        print(f"  ✓ 人声时长: {vocals_validation['info'].get('duration', 'N/A'):.2f}s")
         print(f"  ✓ 人声采样率: {vocals_validation['info'].get('sample_rate', 'N/A')} Hz")
 
         # M05 - 转写
@@ -774,36 +766,22 @@ class TestEndToEndPerformance:
         }
         print(f"  ✓ 转写段数: {len(segments)}")
 
-        # M04 - 克隆音色（或使用默认音色）
+        # M04 - 克隆音色
         print("\n[Performance] M04: 克隆音色...")
+        start = time.time()
         m04.voices_dir = temp_voices_dir
 
-        voice_id = None
-        clone_success = False
-        start = time.time()
-
-        try:
-            clone_result = await m04.clone_character_voice(
-                character_id="perf_test",
-                character_name="Test Character",
-                reference_audio_path=vocals_path
-            )
-            voice_id = clone_result["voice_id"]
-            clone_success = True
-            print(f"  ✓ 音色已克隆: {voice_id}")
-        except Exception as e:
-            # 如果克隆失败，使用默认音色
-            print(f"  ⚠ 音色克隆失败: {e}")
-            print(f"  ℹ 使用默认音色进行测试")
-            voice_id = "default"  # qwen-tts 默认音色
-            clone_success = False
-
+        clone_result = await m04.clone_character_voice(
+            character_id="perf_test",
+            character_name="Test Character",
+            reference_audio_path=vocals_path
+        )
         performance["m04_cloning_time"] = time.time() - start
-        print(f"  ⏱ 耗时: {performance['m04_cloning_time']:.2f}s")
+        print(f"  ✓ 克隆耗时: {performance['m04_cloning_time']:.2f}s")
 
+        voice_id = clone_result["voice_id"]
         quality["voice_cloning"] = {
-            "voice_id": voice_id,
-            "clone_success": clone_success
+            "voice_id": voice_id
         }
 
         # M09 - 合成
@@ -873,8 +851,6 @@ class TestEndToEndPerformance:
 
         # 断言测试通过
         assert performance["total_time"] > 0, "总耗时应大于0"
-        # 只检查包含 validation 字典的项
-        validation_items = [v for v in quality.values() if isinstance(v, dict) and "validation" in v]
-        assert all(item["validation"]["all_valid"] for item in validation_items), "所有音频质量验证应通过"
+        assert all(v["all_valid"] for v in quality.values() if isinstance(v, dict) and "validation" in v), "所有音频质量验证应通过"
 
         return result

@@ -10,10 +10,9 @@ STATUS_FILE="$PROJECT_ROOT/.auto-engineering-status.yaml"
 LOG_FILE="$PROJECT_ROOT/.auto-engineering-log.md"
 CHECKPOINT_DIR="$PROJECT_ROOT/.auto-engineering-checkpoints"
 
-# GitHub 仓库
-GITHUB_OWNER="${GITHUB_OWNER:-stflj2022}"
-GITHUB_REPO="${GITHUB_REPO:-skill-j}"
-GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
+# Git 目标仓库（从配置文件读取，默认为 origin/main）
+GIT_TARGET_REMOTE="origin"
+GIT_TARGET_BRANCH="main"
 
 # 颜色
 RED='\033[0;31m'
@@ -36,9 +35,13 @@ init() {
         create_status_file
     fi
 
+    # 从配置文件读取 Git 目标仓库设置
+    GIT_TARGET_REMOTE=$(yq '.git.target.remote' "$CONFIG_FILE" 2>/dev/null || echo "origin")
+    GIT_TARGET_BRANCH=$(yq '.git.target.branch' "$CONFIG_FILE" 2>/dev/null || echo "main")
+
     log "INFO" "自动化工程工作流启动"
     log "INFO" "项目根目录: $PROJECT_ROOT"
-    log "INFO" "目标仓库: $GITHUB_OWNER/$GITHUB_REPO"
+    log "INFO" "目标仓库: $GIT_TARGET_REMOTE/$GIT_TARGET_BRANCH"
 }
 
 # 创建状态文件
@@ -331,13 +334,10 @@ git_commit_and_push() {
     git add -A
     git commit -m "feat($ticket): $ticket_title"
 
-    # 推送到 skill-j
-    git remote get-url skill-j >/dev/null 2>&1 || \
-        git remote add skill-j "git@github.com:$GITHUB_OWNER/$GITHUB_REPO.git"
+    # 推送到配置的目标仓库（origin/main 或其他配置的仓库）
+    git push "$GIT_TARGET_REMOTE" "$GIT_TARGET_BRANCH"
 
-    git push skill-j "$GITHUB_BRANCH"
-
-    log "INFO" "已推送到: $GITHUB_OWNER/$GITHUB_REPO"
+    log "INFO" "已推送到: $GIT_TARGET_REMOTE/$GIT_TARGET_BRANCH"
 }
 
 # 进度报告
@@ -346,7 +346,7 @@ send_progress_report() {
     local completed=$(yq '.completed_tickets' "$STATUS_FILE")
     local phase=$(yq '.current_phase' "$STATUS_FILE")
 
-    local message="当前阶段: $phase\n完成: $completed/$total\nGitHub: $GITHUB_OWNER/$GITHUB_REPO"
+    local message="当前阶段: $phase\n完成: $completed/$total\n仓库: $GIT_TARGET_REMOTE/$GIT_TARGET_BRANCH"
 
     send_notification "🚀 自动化工程进度" "$message"
 }
