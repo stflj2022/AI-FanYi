@@ -75,7 +75,7 @@ htmlcov/
 .tox/
 
 # 模型文件 (大)
-models/
+# models/  # 改为更具体的规则
 *.pt
 *.pth
 *.onnx
@@ -106,7 +106,14 @@ projects/
 .claude/WEB_UI_FRESH_NEXT
 
 # 模型/下载文件（大文件不入库）
-models/
+# models/  # 改为更具体的规则，避免忽略 src/filmdub/core/models
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.safetensors
+models/*.bin
+models/checkpoints/
+models/weights/
 .unattended/
 test-output/
 

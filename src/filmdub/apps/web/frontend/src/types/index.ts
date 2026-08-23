@@ -13,8 +13,19 @@ export interface User {
   email: string
   is_admin: boolean
   is_active: boolean
+  settings?: UserSettings
   created_at: string
   updated_at: string
+}
+
+/** 用户设置类型 */
+export interface UserSettings {
+  default_target_language?: string
+  default_video_quality?: string
+  default_subtitle_format?: string
+  auto_start_jobs?: boolean
+  notification_enabled?: boolean
+  theme?: string
 }
 
 /** 项目类型 */
