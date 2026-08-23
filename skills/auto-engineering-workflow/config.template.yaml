@@ -1,0 +1,74 @@
+# 自动化工程工作流配置文件
+
+# GitHub 仓库配置
+repository:
+  owner: "stflj2022"
+  repo: "skill-j"
+  branch: "main"
+
+# Matt Skills 配置
+matt_skills:
+  issue_tracker: "github"  # github | linear | local
+  triage_labels:
+    - "feature"
+    - "bug"
+    - "refactor"
+    - "docs"
+  docs_path: "docs"
+  adr_path: "docs/adr"
+
+# 代码审查规则
+code_review:
+  pre_commit_required: true
+  max_review_attempts: 3
+  fail_on_any_finding: false
+  auto_fix_minor_issues: true
+  standards_check: true
+  spec_check: true
+
+# 用户确认配置
+user_confirmation:
+  download_retry_count: 10
+  first_response_timeout_minutes: 20
+  retry_interval_hours: 1
+  max_retry_cycles: 3
+
+# 无人值守集成
+unattended:
+  driver_log: ".unattended/logs/driver.log"
+  progress_report_interval_minutes: 30
+  notification_enabled: true
+
+# Git 配置
+git:
+  auto_push: true
+  commit_message_format: "feat({ticket_id}): {title}"
+  create_branch: false
+
+# 测试配置
+testing:
+  auto_test: true
+  test_command: "pytest tests/ -q"
+  test_timeout_seconds: 300
+
+# 依赖管理
+dependencies:
+  auto_install: true
+  require_approval: false
+  package_managers:
+    - npm
+    - pip
+    - cargo
+    - go
+
+# 进度通知
+notifications:
+  desktop: true
+  webhook: null
+  email: null
+
+# 日志配置
+logging:
+  level: "INFO"  # DEBUG | INFO | WARN | ERROR
+  max_log_size_mb: 100
+  keep_logs: 10
