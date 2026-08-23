@@ -105,6 +105,14 @@ projects/
 .claude/.web_ui_round_mark
 .claude/WEB_UI_FRESH_NEXT
 
+# 本机工具（不属于项目，严禁被驱动的 git add -A 顺手提交入库）
+# 示例：configure_scnet_pi.py 已移至 ~/.local/bin/
+scripts/configure_scnet_pi.py
+
+# 陈旧备份文件（历史遗留，曾被驱动的自动检查点顺带入库；解除跟踪、磁盘保留）
+*.backup
+*.bak
+
 # 模型/下载文件（大文件不入库）
 # models/  # 改为更具体的规则，避免忽略 src/filmdub/core/models
 models/*.pt
