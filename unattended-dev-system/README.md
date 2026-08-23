@@ -341,9 +341,17 @@ Configure webhooks in `config.json`:
 
 ---
 
-**Version**: 1.1.1
+**Version**: 1.2.0
 **Last Updated**: 2026-08-23
 **Based on**: AI-FanYi v7 (commit ed81d91)
+
+## v1.2.0 changelog (completion auto-stop)
+
+- **Auto-stop on completion (NEW)**: new `shutdown.sh.template` — one-stop, idempotent shutdown that removes watchdog/report cron entries, writes the `.unattended/STOPPED` marker, kills the driver and sends exactly ONE final notification.
+- **driver.sh**: on ALL TASKS COMPLETED + tests pass it now calls `shutdown.sh` and exits (was: `break`, after which cron/watchdog would restart it forever); each round also exits silently when the STOPPED marker exists.
+- **watchdog.sh**: honors the STOPPED marker (never restarts after completion) and triggers `shutdown.sh` when it detects completion in the driver log (was: silent `exit 0` while reports kept firing).
+- **install.sh**: generates/chmods/syntax-checks `shutdown.sh`; fixed pre-existing bugs — bare quoted strings executed as commands in `setup_complete` (would abort under `set -e`), wrong `templates/docs/` paths for README/QUICKSTART, missing `> QUICKSTART.md` redirect.
+- **test-skill.sh**: 4 new regression checks (R7–R10) covering the auto-stop wiring.
 
 ## v1.1.1 changelog (post code-review fixes)
 

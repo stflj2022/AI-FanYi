@@ -116,6 +116,13 @@ while true; do
   ROUND=$((ROUND + 1))
   log "=== ROUND $ROUND ==="
 
+  # 完工自停：整个项目（docs/tickets）已完工 → 停止全部监控与通知
+  if "$REPO/scripts/completion-check.sh" >/dev/null 2>&1; then
+    log "🎉 项目已完工 → 自动停止无人值守系统"
+    "$REPO/scripts/shutdown-unattended.sh" "项目完工（web-ui 驱动触发）" >> "$LOG" 2>&1 || true
+    exit 0
+  fi
+
   # 检查是否全部完成
   if done_check; then
     log "🎉 全部完成，退出驱动"

@@ -132,6 +132,13 @@ N=0
 while true; do
   N=$((N+1))
 
+  # 完工自停：全部工单已完成 → 停止驱动/看门狗/汇报，不再空转烧额度
+  if "$REPO/scripts/completion-check.sh" >/dev/null 2>&1; then
+    log "🎉 项目已完工 → 自动停止无人值守系统"
+    "$REPO/scripts/shutdown-unattended.sh" "项目完工（驱动触发）" >> "$LOG" 2>&1 || true
+    exit 0
+  fi
+
   # 临时 deepseek 模式下：若 zai 已恢复(非高峰+额度可用)则自动切回
   if [ -f "$REPO/.claude/TEMP_DEEPSEEK" ] && ! is_peak_hour && zai_alive; then
     log "✅ zai 已恢复可用，自动切回（移除临时 deepseek 标志）"
@@ -162,7 +169,12 @@ while true; do
   log "=== ROUND $N ($CUR) ==="
   run_pi "$CUR" "$CONT_PROMPT"
   safe_push
-  if done_check; then log "🎉 全部工单完成（pytest 验收通过）"; safe_push; break; fi
+  if done_check; then
+    log "🎉 全部工单完成（pytest 验收通过）→ 自动停止无人值守系统"
+    safe_push
+    "$REPO/scripts/shutdown-unattended.sh" "项目完工（驱动 done_check 触发）" >> "$LOG" 2>&1 || true
+    exit 0
+  fi
 
   if ctx_hit; then
     log "⚠️ 会话上下文满 → 开新会话恢复"

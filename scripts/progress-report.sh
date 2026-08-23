@@ -7,6 +7,17 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_FILE="$PROJECT_DIR/.claude/pi-driver.log"
 REPORT_FILE="$PROJECT_DIR/.claude/progress-report.log"
 
+# 完工自停守卫：
+# 1) 系统已停止过 → 静默退出，不再发任何通知（防止完工后每30分钟继续轰炸）
+if [ -f "$PROJECT_DIR/.claude/UNATTENDED_STOPPED" ]; then
+    exit 0
+fi
+# 2) 项目已完工 → 触发一站式停止（含唯一一次终报通知），不再发常规汇报
+if "$SCRIPT_DIR/completion-check.sh" >/dev/null 2>&1; then
+    "$SCRIPT_DIR/shutdown-unattended.sh" "项目完工（进度汇报触发）" || true
+    exit 0
+fi
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'

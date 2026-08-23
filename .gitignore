@@ -96,6 +96,14 @@ projects/
 .claude/pi-driver.log
 .claude/driver-stdout.log
 .claude/driver-stderr.log
+.claude/UNATTENDED_STOPPED
+.claude/.shutdown.lock
+.claude/shutdown.log
+.claude/watchdog.log
+.claude/progress-report.log
+.claude/web-ui-driver.log
+.claude/.web_ui_round_mark
+.claude/WEB_UI_FRESH_NEXT
 
 # 模型/下载文件（大文件不入库）
 models/

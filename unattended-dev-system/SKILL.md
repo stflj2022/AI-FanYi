@@ -17,6 +17,7 @@ This skill deploys a complete autonomous development infrastructure consisting o
 4. **Task Management** - Tracks work items and progress
 5. **Auto Testing** - Validates each change automatically
 6. **Git Integration** - Auto-commits and pushes progress
+7. **Auto-Stop on Completion** - When all tasks are done, the system shuts itself down (driver + watchdog + scheduled reports) and sends ONE final notification instead of looping forever
 
 ## When to Use
 
@@ -75,6 +76,18 @@ This skill deploys a complete autonomous development infrastructure consisting o
 | **Auto Recovery** | Watchdog restarts on failure |
 | **Git Integration** | Auto-commit and push progress |
 | **Task Management** | Track work items with dependencies |
+| **Auto-Stop on Completion** | Driver/watchdog detect completion → run `shutdown.sh` → stop everything, send one final notification |
+
+### Auto-Stop on Completion
+
+A finished project must not keep burning quota or spamming notifications. When the driver detects ALL tasks completed AND tests passing (or the watchdog sees the completion marker in the driver log), it runs `shutdown.sh`, which:
+
+1. Removes the watchdog/report entries from crontab (scheduled notifications stop)
+2. Writes the `.unattended/STOPPED` marker (every component exits silently when it sees it)
+3. Kills the tmux session and any leftover driver processes
+4. Sends **exactly one** final "project complete" notification
+
+`shutdown.sh` is idempotent and can also be run manually: `./shutdown.sh 'manual stop'`. To re-enable the system afterwards, delete the STOPPED marker (or re-run install.sh, which clears it).
 
 ## Installation
 

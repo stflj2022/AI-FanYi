@@ -3,8 +3,11 @@
 
 set -e
 
-# 服务名称列表（与安装脚本保持一致）
-SERVICES="aifanyi-driver.service aifanyi-watchdog.service aifanyi-watchdog.timer aifanyi-progress-report.service aifanyi-progress-report.timer"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# 服务名称列表（与安装脚本保持一致；含 web-ui-driver）
+SERVICES="aifanyi-driver.service aifanyi-watchdog.service aifanyi-watchdog.timer aifanyi-progress-report.service aifanyi-progress-report.timer web-ui-driver.service"
 
 echo "========================================"
 echo "AI-FanYi 无人值守开发系统 - 卸载"
@@ -48,10 +51,12 @@ echo "🔄 重新加载 systemd 配置..."
 systemctl --user daemon-reload
 echo "✅ systemd 配置已重新加载"
 
-# 清理锁文件
-echo "🧹 清理锁文件..."
+# 清理锁文件与完工停止标记（重装即重新启用，旧标记会让看门狗/汇报永久静默）
+echo "🧹 清理锁文件与停止标记..."
 rm -f /tmp/aifanyi-driver.lock
-echo "✅ 锁文件已清理"
+rm -f "$PROJECT_DIR/.claude/UNATTENDED_STOPPED"
+rm -f "$PROJECT_DIR/.claude/.shutdown.lock"
+echo "✅ 锁文件与停止标记已清理"
 
 echo ""
 echo "========================================"

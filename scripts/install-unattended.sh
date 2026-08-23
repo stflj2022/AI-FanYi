@@ -29,6 +29,14 @@ done
 echo "✅ 必要工具检查通过"
 echo ""
 
+# 若存在旧的「完工停止」标记，重装即视为重新启用，清除之；
+# 若项目实际尚未完工而标记仍在，看门狗/汇报会永久静默。
+if [ -f "$PROJECT_DIR/.claude/UNATTENDED_STOPPED" ]; then
+    echo "⚠️  检测到旧的完工停止标记，已清除（重装视为重新启用）"
+    rm -f "$PROJECT_DIR/.claude/UNATTENDED_STOPPED"
+fi
+rm -f "$PROJECT_DIR/.claude/.shutdown.lock"
+
 # 创建用户 systemd 目录
 mkdir -p "$USER_SYSTEMD_DIR"
 
@@ -67,6 +75,8 @@ systemctl --user enable aifanyi-progress-report.timer
 systemctl --user start aifanyi-progress-report.timer
 echo "✅ aifanyi-progress-report.timer 已启动（每30分钟汇报）"
 echo ""
+echo "ℹ️  完工自停：当 docs/tickets 全部 done 时，驱动/看门狗/汇报会自动停止并禁用，"
+echo "   只发送一次终报通知（见 scripts/shutdown-unattended.sh）"
 
 # 等待服务启动
 sleep 2
