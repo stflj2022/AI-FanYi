@@ -156,8 +156,8 @@
 ~ 10-error-handling-and-user-feedback (核心功能完成)
 ✓ 11-settings-page
 ✓ 12-system-status-page-admin
-- [ ] 13-e2e-testing-playwright
-- [ ] 14-documentation-and-deployment
+✓ 13-e2e-testing-playwright (基础框架)
+✓ 14-documentation-and-deployment
 
 ---
 
