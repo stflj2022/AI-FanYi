@@ -101,3 +101,9 @@ projects/
 models/
 .unattended/
 test-output/
+
+# Reasonix 临时任务文件
+.reasonix/
+
+# 运行时数据
+data/translation_memory.json
