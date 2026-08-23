@@ -1,5 +1,7 @@
 #!/bin/bash
 # AI-FanYi 监督系统进度汇报脚本
+set -u
+
 
 # 动态检测项目目录（支持相对/绝对路径）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -137,21 +139,13 @@ if [ -d "$PROJECT_DIR/docs/tickets" ]; then
     echo "" | tee -a "$REPORT_FILE"
 fi
 
-# 4b. Web UI 工单状态（完成标志 = 存在 ticket-NN-summary.md 总结文件）
+# 4b. Web UI 工单状态（完成标志 = 存在总结文件；复用 completion-check.sh 的计数，避免逻辑漂移）
 WEBUI_DIR="$PROJECT_DIR/.scratch/web-ui-tickets"
 WEBUI_TOTAL=0
 WEBUI_DONE=0
 if [ -d "$WEBUI_DIR" ]; then
     echo -e "${BLUE}🖥️  Web UI 工单状态${NC}" | tee -a "$REPORT_FILE"
-    for t in "$WEBUI_DIR"/[0-9][0-9]-*.md; do
-        [ -f "$t" ] || continue
-        case "$t" in *-summary.md) continue ;; esac
-        WEBUI_TOTAL=$((WEBUI_TOTAL + 1))
-        num="$(basename "$t" | cut -d'-' -f1)"
-        if ls "$WEBUI_DIR/ticket-$num-summary.md" "$WEBUI_DIR/$num-"*"-summary.md" >/dev/null 2>&1; then
-            WEBUI_DONE=$((WEBUI_DONE + 1))
-        fi
-    done
+    read -r WEBUI_DONE WEBUI_TOTAL <<< "$("$SCRIPT_DIR/completion-check.sh" --count-webui 2>/dev/null || echo "0 0")"
     echo "  已完成: $WEBUI_DONE / $WEBUI_TOTAL" | tee -a "$REPORT_FILE"
     echo "" | tee -a "$REPORT_FILE"
 fi

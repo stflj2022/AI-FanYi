@@ -3,8 +3,13 @@
 # 判定标准（两套工单体系全部完成才算完工）：
 #   1) docs/tickets/ 下所有 ticket-*.md 的状态行均为 done（正式主线工单）
 #   2) .scratch/web-ui-tickets/ 下所有 NN-*.md 工单均有对应总结文件
-#      （ticket-NN-summary.md，与 web-ui-driver.sh 的进度跟踪约定一致）
-# 用法：退出码 0 = 已完工；1 = 未完工（或无法判定）
+#      （完成标志 = 存在总结文件，与 web-ui-driver.sh 的进度跟踪约定一致；
+#        兼容 ticket-NN-summary.md 与 NN-xxx-summary.md 两种命名）
+#
+# 用法：
+#   completion-check.sh               退出码 0 = 已完工；1 = 未完工（或无法判定）
+#   completion-check.sh --count-webui 输出 "完成数 总数"（供进度汇报复用，避免逻辑漂移）
+#
 # 该脚本是驱动/看门狗/进度汇报三方共享的唯一完工判据，避免各自为政。
 
 set -u
@@ -28,24 +33,37 @@ main_tickets_done() {
 }
 
 # ---- 2) Web UI 工单（.scratch/web-ui-tickets）----
-# 完成标志 = 存在总结文件（驱动约定：完成一张工单产出 ticket-NN-summary.md）。
-# 目录不存在视为该项无需完成（返回真）。
-webui_tickets_done() {
+# 输出 "完成数 总数"；目录不存在时输出 "0 0"（视为该项无需完成）。
+# glob 与 web-ui-driver.sh 的 update_tickets_progress 保持一致（[0-9]*-*.md）。
+webui_count() {
     local dir="$PROJECT_DIR/.scratch/web-ui-tickets" f num total=0 done_count=0
-    [ -d "$dir" ] || return 0
-    for f in "$dir"/[0-9][0-9]-*.md; do
-        [ -f "$f" ] || continue
-        case "$f" in *-summary.md) continue ;; esac   # 排除总结文件自身
-        case "$(basename "$f")" in README.md) continue ;; esac
-        total=$((total + 1))
-        num="$(basename "$f" | cut -d'-' -f1)"
-        # 兼容两种命名：ticket-02-summary.md / 02-user-authentication-summary.md
-        if ls "$dir/ticket-$num-summary.md" "$dir/$num-"*"-summary.md" >/dev/null 2>&1; then
-            done_count=$((done_count + 1))
-        fi
-    done
+    if [ -d "$dir" ]; then
+        for f in "$dir"/[0-9]*-*.md; do
+            [ -f "$f" ] || continue
+            case "$f" in *-summary.md) continue ;; esac   # 排除总结文件自身
+            total=$((total + 1))
+            num="$(basename "$f" | cut -d'-' -f1)"
+            # OR 语义：任一命名的总结文件存在即算完成。
+            # 注意：ls 传多个操作数时任一缺失即整体返回非零，不能用于"任一存在"判断。
+            if [ -e "$dir/ticket-$num-summary.md" ] || ls "$dir/$num-"*"-summary.md" >/dev/null 2>&1; then
+                done_count=$((done_count + 1))
+            fi
+        done
+    fi
+    echo "$done_count $total"
+}
+
+webui_tickets_done() {
+    local done_count total
+    read -r done_count total <<< "$(webui_count)"
     [ "$total" -eq 0 ] || [ "$done_count" -eq "$total" ]
 }
+
+# ---- 入口 ----
+if [ "${1:-}" = "--count-webui" ]; then
+    webui_count
+    exit 0
+fi
 
 if main_tickets_done && webui_tickets_done; then
     exit 0
