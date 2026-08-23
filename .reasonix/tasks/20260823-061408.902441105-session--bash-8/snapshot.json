@@ -1,1 +1,0 @@
-{"schema_version":1,"task_id":"20260823-061408.902441105-session--bash-8","job_id":"bash-8","session_id":"20260823-061408.902441105-session","state":"cancelled","runtime_state":"exited","runtime_lease_until":"0001-01-01T00:00:00Z","version":34,"created_at":"2026-08-23T14:57:54.36098428+08:00","updated_at":"2026-08-23T15:00:36.385174086+08:00","error_code":"job_failed"}

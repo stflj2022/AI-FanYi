@@ -1,2 +1,0 @@
-{"sequence":1,"timestamp":"2026-08-23T14:21:37.200842047+08:00","event_type":"state_change","task_id":"20260823-061408.902441105-session--bash-2","session_id":"20260823-061408.902441105-session","state":"running","runtime_state":"alive"}
-{"sequence":2,"timestamp":"2026-08-23T14:24:06.62291103+08:00","event_type":"state_change","task_id":"20260823-061408.902441105-session--bash-2","session_id":"20260823-061408.902441105-session","state":"succeeded","runtime_state":"exited"}
