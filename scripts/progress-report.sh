@@ -103,13 +103,13 @@ if [ -d "$PROJECT_DIR/docs/tickets" ]; then
     echo "  总工单数: $TICKETS_TOTAL" | tee -a "$REPORT_FILE"
 
     # 检查是否有 blocked 工单
-    TICKETS_BLOCKED=$(grep -l "status: blocked" docs/tickets/*.md 2>/dev/null | wc -l)
+    TICKETS_BLOCKED=$(grep -l "^## 状态:.*blocked" docs/tickets/*.md 2>/dev/null | wc -l)
     if [ "$TICKETS_BLOCKED" -gt 0 ]; then
         echo -e "  ${YELLOW}⚠️  $TICKETS_BLOCKED 个工单被阻塞${NC}" | tee -a "$REPORT_FILE"
     fi
 
     # 检查已完成工单
-    TICKETS_DONE=$(grep -l "status: done" docs/tickets/*.md 2>/dev/null | wc -l)
+    TICKETS_DONE=$(grep -l "^## 状态:.*done" docs/tickets/*.md 2>/dev/null | wc -l)
     echo "  已完成: $TICKETS_DONE" | tee -a "$REPORT_FILE"
     echo "" | tee -a "$REPORT_FILE"
 fi
