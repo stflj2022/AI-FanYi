@@ -41,10 +41,19 @@ class SpeakerEmbeddingExtractor:
     def _resolve_device(self) -> str:
         """解析运行设备，torch 不可用时回退到 CPU。"""
         try:
-            import torch
-            if torch.cuda.is_available() and self.config.device == "cuda":
-                return "cuda"
-        except ImportError:
+            # 使用 subprocess 隔离导入 torch，避免与 aiosqlite 冲突
+            import subprocess
+            import sys
+            result = subprocess.run(
+                [sys.executable, "-c", "import torch; print(torch.cuda.is_available())"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip() == "True":
+                if self.config.device == "cuda":
+                    return "cuda"
+        except Exception:
             pass
         return "cpu"
 
