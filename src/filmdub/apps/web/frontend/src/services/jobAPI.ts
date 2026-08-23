@@ -73,6 +73,24 @@ export interface JobActionResponse {
   message: string;
 }
 
+export interface JobStatsResponse {
+  total: number;
+  pending: number;
+  scheduled: number;
+  running: number;
+  waiting: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  retrying: number;
+  active: number;
+  finished: number;
+}
+
+export interface RecentJobsResponse {
+  items: JobResponse[];
+}
+
 export interface JobQueryParams {
   project_id?: string;
   status?: JobStatus;
@@ -166,6 +184,24 @@ class JobAPI {
       `/jobs/${jobId}/retry`,
       reason ? { reason } : undefined
     );
+    return response.data;
+  }
+
+  /**
+   * 获取任务统计信息
+   */
+  async getJobStats(): Promise<JobStatsResponse> {
+    const response = await api.get<JobStatsResponse>('/jobs/stats');
+    return response.data;
+  }
+
+  /**
+   * 获取最近的任务列表
+   */
+  async getRecentJobs(limit: number = 10): Promise<RecentJobsResponse> {
+    const response = await api.get<RecentJobsResponse>('/jobs/recent', {
+      params: { limit },
+    });
     return response.data;
   }
 }

@@ -395,3 +395,54 @@ class JobService:
         await db.refresh(job)
 
         return job
+
+    @staticmethod
+    async def get_recent_jobs(
+        db: AsyncSession,
+        owner_id: Optional[uuid.UUID] = None,
+        limit: int = 10,
+    ) -> List[Job]:
+        """获取最近的任务列表"""
+        query = select(Job).order_by(desc(Job.created_at)).limit(limit)
+
+        # 关联项目以验证所有权
+        if owner_id:
+            query = query.join(ProjectRecord).filter(ProjectRecord.created_by == owner_id)
+
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_job_stats(
+        db: AsyncSession,
+        owner_id: Optional[uuid.UUID] = None,
+    ) -> Dict[str, int]:
+        """获取任务统计信息"""
+        # 构建基础查询
+        query = select(Job.status)
+
+        # 关联项目以验证所有权
+        if owner_id:
+            query = query.join(ProjectRecord).filter(ProjectRecord.created_by == owner_id)
+
+        result = await db.execute(query)
+        statuses = [row[0] for row in result.all()]
+
+        # 统计各状态数量
+        stats = {
+            "total": len(statuses),
+            "pending": statuses.count("pending"),
+            "scheduled": statuses.count("scheduled"),
+            "running": statuses.count("running"),
+            "waiting": statuses.count("waiting"),
+            "completed": statuses.count("completed"),
+            "failed": statuses.count("failed"),
+            "cancelled": statuses.count("cancelled"),
+            "retrying": statuses.count("retrying"),
+        }
+
+        # 计算运行中（包括 retrying）的数量
+        stats["active"] = stats["running"] + stats["retrying"]
+        stats["finished"] = stats["completed"] + stats["failed"] + stats["cancelled"]
+
+        return stats

@@ -18,6 +18,8 @@ from filmdub.apps.web.backend.api.schemas.job_schemas import (
     JobActionRequest,
     JobStatus,
     JobQueryParams,
+    JobStatsResponse,
+    RecentJobsResponse,
 )
 
 router = APIRouter()
@@ -76,6 +78,37 @@ async def list_jobs(
         page=page,
         page_size=page_size,
         items=[JobResponse.model_validate(j) for j in jobs],
+    )
+
+
+# Dashboard 相关端点（必须在 /{job_id} 之前定义）
+@router.get("/stats", response_model=JobStatsResponse)
+async def get_job_stats(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取任务统计信息"""
+    stats = await JobService.get_job_stats(
+        db=db,
+        owner_id=current_user.id,
+    )
+    return JobStatsResponse(**stats)
+
+
+@router.get("/recent", response_model=RecentJobsResponse)
+async def get_recent_jobs(
+    limit: int = Query(10, ge=1, le=50, description="返回数量限制"),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取最近的任务列表"""
+    jobs = await JobService.get_recent_jobs(
+        db=db,
+        owner_id=current_user.id,
+        limit=limit,
+    )
+    return RecentJobsResponse(
+        items=[JobResponse.model_validate(j) for j in jobs]
     )
 
 

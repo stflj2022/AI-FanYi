@@ -198,6 +198,57 @@ zero_output() {
     [ "$current_size" -le "$mark" ]
 }
 
+# ============================================
+# LOOP-BASED STALL FUSE (best practice)
+# ============================================
+# spawn_stall_watchdog <ai_pid> <log_file> [silent_seconds] [check_interval]
+#
+# Background loop that watches a spawned AI process and kills its tree if the
+# driver log shows NO growth AND the process shows NO CPU change for
+# `silent_seconds` (default 900). Never blocks the main loop.
+#
+# ⚠️  WHY LOOP, NOT CHECK-ONCE (real-world incident):
+# A single `sleep 900; if no-output ...` check misses the classic
+# "wrote output first, then hung" stall (e.g. a network/TTY hang after an
+# early success). The one-shot check runs, finds output, and never re-arms;
+# nothing else ever looks again, so `wait "$pid"` blocks FOREVER and the
+# whole pipeline freezes — symptom: token quota stops moving and progress
+# reports stay identical every cycle. Loop-based detection re-arms every
+# `check_interval` seconds and catches stalls that begin AFTER the first check.
+#
+# USE ONLY when the AI command must run in the BACKGROUND (e.g. `pi ... &`
+# + `wait`). The default foreground `timeout "$DRIVER_TIMEOUT" ...` path
+# (see Main Loop below) already covers stalls via the timeout, so it does
+# NOT need this.
+spawn_stall_watchdog() {
+    local pid=$1 log=$2
+    local silent=${3:-900} interval=${4:-120}
+    local idle_max=$((silent / interval)); [ "$idle_max" -lt 1 ] && idle_max=1
+    (
+        local last_size last_cpu new_size new_cpu idle=0
+        last_size=$(stat -c %s "$log" 2>/dev/null || echo 0)
+        last_cpu=$(awk '{print $14+$15}' "/proc/$pid/stat" 2>/dev/null || echo 0)
+        while kill -0 "$pid" 2>/dev/null; do
+            sleep "$interval"
+            new_size=$(stat -c %s "$log" 2>/dev/null || echo 0)
+            new_cpu=$(awk '{print $14+$15}' "/proc/$pid/stat" 2>/dev/null || echo 0)
+            if [ "$new_size" = "$last_size" ] && [ "$new_cpu" = "$last_cpu" ]; then
+                idle=$((idle + 1))
+                if [ "$idle" -ge "$idle_max" ]; then
+                    log_error "⏳ Stall fuse tripped: no log growth & no CPU for ${silent}s (pid $pid)"
+                    pkill -TERM -P "$pid" 2>/dev/null
+                    kill -TERM "$pid" 2>/dev/null
+                    break
+                fi
+            else
+                idle=0
+            fi
+            last_size=$new_size
+            last_cpu=$new_cpu
+        done
+    ) &
+}
+
 # Save status
 save_status() {
     cat > "$STATUS" << EOF
@@ -307,6 +358,11 @@ while true; do
     # Execute AI agent (skip if dry run)
     if [ "$DRY_RUN" != "true" ]; then
         log "Starting AI agent..."
+        # 前台 timeout 模式（默认，推荐）：AI 命令由 timeout 兜底，卡死会被
+        # timeout 强制结束，无需额外的零输出熔断，也不会永久阻塞主循环。
+        # ⚠️ 若改成后台执行（`... &` + `wait`），timeout 将失效、wait 可能
+        #    永久阻塞 —— 必须调用 spawn_stall_watchdog 做循环熔断；绝不能只
+        #    `sleep N` 后单次检查（会漏掉“先有输出后卡死”的假死，见函数注释）。
         # Use `|| EXIT_CODE=$?` so a non-zero exit from timeout does NOT trigger
         # `set -e`/ERR trap before we get to inspect the code.
         # Initialize to 0: on success the `||` branch never runs, so without

@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from typing import AsyncGenerator
 
 from filmdub.apps.web.backend.main import app
-from filmdub.apps.web.backend.models import User, Base, Project, Character, Job
+from filmdub.apps.web.backend.models import User, Base
+from filmdub.core.models import ProjectRecord as Project, Character, Job
 from filmdub.core.orchestrator_db import get_db_context
 from filmdub.apps.web.backend.services.auth_service import AuthService
 
@@ -27,7 +28,8 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     # 创建表
     async with test_engine.begin() as conn:
         # 导入所有模型以确保表被创建
-        from filmdub.apps.web.backend.models import User, Project, Character, Job
+        from filmdub.apps.web.backend.models import User
+        from filmdub.core.models import ProjectRecord, Character, Job
         await conn.run_sync(Base.metadata.create_all)
 
     async with TestSessionLocal() as session:
@@ -68,3 +70,26 @@ async def test_user(db_session: AsyncSession) -> User:
         is_admin=False,
     )
     return user
+
+
+@pytest.fixture(scope="function")
+async def auth_headers(test_user: User) -> dict:
+    """创建认证 headers"""
+    token = AuthService.create_access_token(data={"sub": str(test_user.id)})
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(scope="function")
+async def test_project(db_session: AsyncSession, test_user: User) -> Project:
+    """创建测试项目"""
+    project = Project(
+        title="测试项目",
+        description="这是一个测试项目",
+        source_language="en",
+        target_language="zh",
+        created_by=test_user.id,
+    )
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+    return project

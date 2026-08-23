@@ -4,7 +4,7 @@ from uuid import uuid4
 from datetime import datetime
 
 from filmdub.apps.web.backend.services.character_service import CharacterService
-from filmdub.apps.web.backend.models.character import Character, VoiceProfile
+from filmdub.core.models import Character, VoiceProfile
 
 
 @pytest.fixture

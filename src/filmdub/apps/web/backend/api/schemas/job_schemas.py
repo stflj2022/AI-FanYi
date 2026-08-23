@@ -105,3 +105,23 @@ class JobQueryParams(BaseModel):
     page_size: int = Field(default=20, ge=1, le=100)
     sort_by: str = Field(default="created_at")
     sort_order: str = Field(default="desc", pattern="^(asc|desc)$")
+
+
+class JobStatsResponse(BaseModel):
+    """任务统计响应"""
+    total: int = Field(..., description="总任务数")
+    pending: int = Field(..., description="等待中的任务")
+    scheduled: int = Field(..., description="已调度的任务")
+    running: int = Field(..., description="运行中的任务")
+    waiting: int = Field(..., description="等待中的任务（已暂停）")
+    completed: int = Field(..., description="已完成的任务")
+    failed: int = Field(..., description="失败的任务")
+    cancelled: int = Field(..., description="已取消的任务")
+    retrying: int = Field(..., description="重试中的任务")
+    active: int = Field(..., description="活跃任务数（运行中+重试中）")
+    finished: int = Field(..., description="已结束任务数（完成+失败+取消）")
+
+
+class RecentJobsResponse(BaseModel):
+    """最近任务响应"""
+    items: List[JobResponse] = Field(..., description="最近任务列表")

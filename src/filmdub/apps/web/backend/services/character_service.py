@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
 
-from filmdub.apps.web.backend.models.character import Character, VoiceProfile
+from filmdub.core.models import Character, VoiceProfile
 from filmdub.core.database import Base
 
 

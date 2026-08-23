@@ -145,7 +145,14 @@ if pgrep -f "driver.sh" >/dev/null; then
         if [ "$AGE" -gt "$STUCK_SECONDS" ]; then
             log_warning "Driver stuck (log not updated for $STUCK_THRESHOLD minutes, age=${AGE}s)"
 
+            # 优先匹配前台 timeout 模式启动的 AI 进程（如 `timeout 7200 pi ...`）
             PIPID=$(pgrep -f "^timeout.*pi" | head -1)
+            # 若 AI 命令改为后台 & 启动（非 timeout 前台），上面匹配不到 →
+            # 回退：杀 driver 的直接子进程（即假死的 AI 进程）
+            if [ -z "$PIPID" ]; then
+                DRIVER_PID=$(pgrep -f "$(basename "$DRIVER_SCRIPT")" | head -1)
+                [ -n "$DRIVER_PID" ] && PIPID=$(pgrep -P "$DRIVER_PID" | head -1)
+            fi
             if [ -n "$PIPID" ]; then
                 log "Killing stuck AI process (PID: $PIPID)"
                 pkill -P "$PIPID" 2>/dev/null

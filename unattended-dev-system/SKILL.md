@@ -248,6 +248,7 @@ The skill generates these files:
 5. **Use Version Control** - Every change is committed
 6. **Backup Critical Data** - Regular backups of `.unattended/`
 7. **Monitor Provider Quota** - Avoid unexpected stops
+8. **Zero-Output Fuse Must Loop, Never Check-Once** - Stall detection must be a *re-arming loop* that checks every few minutes, not a single `sleep N; check-once`. A one-shot check misses the classic "wrote output first, then hung" stall (e.g. a network/TTY hang after an early success): the check passes, never re-arms, and `wait` blocks forever → the whole pipeline freezes, token quota stops moving, and progress reports stay identical every cycle. The default foreground `timeout "$DRIVER_TIMEOUT" ...` path in `driver.sh.template` already covers stalls — keep it. If you must run the AI command in the background (`... &` + `wait`), attach the provided `spawn_stall_watchdog` loop instead of inventing a one-shot fuse.
 
 ## Troubleshooting
 
@@ -260,6 +261,33 @@ rm -f /tmp/dev-driver.lock
 
 # Check dependencies
 bash driver.sh --check-deps
+```
+
+### Driver Stalled / Progress Frozen / Quota Not Moving
+
+**Symptoms**: token quota does not move for a long time, progress reports are identical every cycle, driver log stops growing.
+
+**Root cause**: the AI subprocess hung *after* producing some output (network/TTY hang), and the driver is blocked forever on `wait` in the main loop. A single-shot 900s fuse will NOT catch this — it only checks once right after launch.
+
+**Diagnose**:
+
+```bash
+# Find the AI process and check whether it is really dead (low %CPU, TIME not growing)
+ps -o pid,etime,time,%cpu,stat -C pi
+
+# Check how stale the driver log is
+stat -c '%y' .unattended/driver.log
+```
+
+**Fix**:
+
+```bash
+# 1. Kill the hung AI process — `wait` returns and the driver proceeds to next round
+pkill -TERM -P <ai_pid> 2>/dev/null; kill -TERM <ai_pid> 2>/dev/null
+
+# 2. Confirm the driver uses loop-based stall detection (spawn_stall_watchdog),
+#    not a one-shot check; then restart the driver service to load the fix
+systemctl --user restart web-ui-driver.service   # or: tmux kill-session -t dev-driver && restart
 ```
 
 ### Tests Keep Failing
