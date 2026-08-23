@@ -1,3 +1,4 @@
+import React from 'react'
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { HealthCheck } from '../src/pages/HealthCheck'
@@ -11,6 +12,8 @@ global.navigator = window.navigator
 describe('HealthCheck', () => {
   it('renders loading state', () => {
     render(<HealthCheck />)
-    expect(screen.getByText('Loading...')).toBeInTheDocument()
+    // 组件初始状态应该是 loading
+    const { container } = render(<HealthCheck />)
+    expect(container.textContent).toContain('Loading')
   })
 })

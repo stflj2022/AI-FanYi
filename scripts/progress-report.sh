@@ -46,13 +46,25 @@ echo "" | tee -a "$REPORT_FILE"
 # 1. 服务状态
 echo -e "${BLUE}📊 服务状态${NC}" | tee -a "$REPORT_FILE"
 
-# 检查 driver 服务
+# 检查 driver 服务（主线驱动 与 web-ui 驱动，任一运行即视为驱动存活）
 if systemctl --user is-active --quiet aifanyi-driver.service; then
     echo -e "  ${GREEN}✅ aifanyi-driver.service 运行中${NC}" | tee -a "$REPORT_FILE"
     SERVICE_STATUS="✅ 运行中"
     systemctl --user show aifanyi-driver.service --property=ActiveState,MainPID,MemoryCurrent,CPUUsage | sed 's/^/  /' | tee -a "$REPORT_FILE"
 else
-    echo -e "  ${RED}❌ aifanyi-driver.service 未运行${NC}" | tee -a "$REPORT_FILE"
+    echo -e "  ${YELLOW}⚪ aifanyi-driver.service 未运行（主线工单已完结时为正常）${NC}" | tee -a "$REPORT_FILE"
+fi
+
+if systemctl --user is-active --quiet web-ui-driver.service; then
+    echo -e "  ${GREEN}✅ web-ui-driver.service 运行中${NC}" | tee -a "$REPORT_FILE"
+    [ "$SERVICE_STATUS" = "未知" ] && SERVICE_STATUS="✅ 运行中"
+    systemctl --user show web-ui-driver.service --property=ActiveState,MainPID,MemoryCurrent,CPUUsage | sed 's/^/  /' | tee -a "$REPORT_FILE"
+else
+    echo -e "  ${YELLOW}⚪ web-ui-driver.service 未运行${NC}" | tee -a "$REPORT_FILE"
+fi
+
+# 两个驱动都未运行才算异常（例如只监控其中一个时另一个本就禁用）
+if [ "$SERVICE_STATUS" = "未知" ]; then
     SERVICE_STATUS="❌ 未运行"
 fi
 
@@ -71,8 +83,8 @@ else
     fi
 fi
 
-# 综合判断 unattended-dev-system 状态
-if systemctl --user is-active --quiet aifanyi-driver.service; then
+# 综合判断 unattended-dev-system 状态（任一驱动运行即视为驱动存活）
+if systemctl --user is-active --quiet aifanyi-driver.service || systemctl --user is-active --quiet web-ui-driver.service; then
     if systemctl --user is-active --quiet aifanyi-watchdog.timer && ! systemctl --user is-failed --quiet aifanyi-watchdog.service; then
         UNATTENDED_STATUS="✅ 正常"
     else
@@ -107,7 +119,7 @@ echo "" | tee -a "$REPORT_FILE"
 
 # 4. 工单状态（如果存在）
 if [ -d "$PROJECT_DIR/docs/tickets" ]; then
-    echo -e "${BLUE}🎫 工单状态${NC}" | tee -a "$REPORT_FILE"
+    echo -e "${BLUE}🎫 主线工单状态${NC}" | tee -a "$REPORT_FILE"
     cd "$PROJECT_DIR"
     # 统计工单状态（只统计 ticket-*.md，不包括 README.md）
     TICKETS_TOTAL=$(find docs/tickets -name "ticket-*.md" -type f | wc -l)
@@ -122,6 +134,25 @@ if [ -d "$PROJECT_DIR/docs/tickets" ]; then
     # 检查已完成工单
     TICKETS_DONE=$(grep -l "^## 状态:.*done" docs/tickets/*.md 2>/dev/null | wc -l)
     echo "  已完成: $TICKETS_DONE" | tee -a "$REPORT_FILE"
+    echo "" | tee -a "$REPORT_FILE"
+fi
+
+# 4b. Web UI 工单状态（完成标志 = 存在 ticket-NN-summary.md 总结文件）
+WEBUI_DIR="$PROJECT_DIR/.scratch/web-ui-tickets"
+WEBUI_TOTAL=0
+WEBUI_DONE=0
+if [ -d "$WEBUI_DIR" ]; then
+    echo -e "${BLUE}🖥️  Web UI 工单状态${NC}" | tee -a "$REPORT_FILE"
+    for t in "$WEBUI_DIR"/[0-9][0-9]-*.md; do
+        [ -f "$t" ] || continue
+        case "$t" in *-summary.md) continue ;; esac
+        WEBUI_TOTAL=$((WEBUI_TOTAL + 1))
+        num="$(basename "$t" | cut -d'-' -f1)"
+        if ls "$WEBUI_DIR/ticket-$num-summary.md" "$WEBUI_DIR/$num-"*"-summary.md" >/dev/null 2>&1; then
+            WEBUI_DONE=$((WEBUI_DONE + 1))
+        fi
+    done
+    echo "  已完成: $WEBUI_DONE / $WEBUI_TOTAL" | tee -a "$REPORT_FILE"
     echo "" | tee -a "$REPORT_FILE"
 fi
 
@@ -146,15 +177,16 @@ if command -v notify-send >/dev/null 2>&1; then
     NOTIFICATION_BODY="📊 Driver: $SERVICE_STATUS | Watchdog: $WATCHDOG_STATUS\n"
     NOTIFICATION_BODY+="🤖 Unattended: $UNATTENDED_STATUS\n"
     NOTIFICATION_BODY+="🔀 最新: $LATEST_COMMIT\n"
-    NOTIFICATION_BODY+="🎫 工单: $TICKETS_DONE/$TICKETS_TOTAL 完成"
+    NOTIFICATION_BODY+="🎫 主线工单: $TICKETS_DONE/$TICKETS_TOTAL 完成"
     if [ "$TICKETS_BLOCKED" -gt 0 ]; then
         NOTIFICATION_BODY+=" ($TICKETS_BLOCKED 阻塞)"
     fi
     NOTIFICATION_BODY+="\n"
+    NOTIFICATION_BODY+="🖥️ Web UI 工单: $WEBUI_DONE/$WEBUI_TOTAL 完成\n"
     NOTIFICATION_BODY+="💻 CPU: $CPU_USAGE | 内存: $MEMORY_USAGE"
 
-    # 根据服务状态设置紧急程度和图标
-    if systemctl --user is-active --quiet aifanyi-driver.service; then
+    # 根据服务状态设置紧急程度和图标（任一驱动在跑即正常）
+    if systemctl --user is-active --quiet aifanyi-driver.service || systemctl --user is-active --quiet web-ui-driver.service; then
         URGENCY="normal"
         ICON="dialog-information"
     else

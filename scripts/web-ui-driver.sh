@@ -155,8 +155,9 @@ while true; do
 
   # 额度检查
   if ! zai_alive; then
-    local reset_time=$(date -d "5 hours" +"%F %T" 2>/dev/null || echo "5 小时后")
-    log "💤 zai 额度耗尽/不可用（约5小时重置），睡 900s 等待"
+    # 注意：此处位于主循环而非函数内，不能用 local（会报错）
+    reset_time=$(date -d "5 hours" +"%F %T" 2>/dev/null || echo "5 小时后")
+    log "💤 zai 额度耗尽/不可用（约5小时重置，预计 $reset_time），睡 900s 等待"
     sleep 900
     continue
   fi

@@ -10,6 +10,9 @@ WorkingDirectory=%h/桌面/AI-FanYi
 # on-failure：驱动正常退出（完工自停，exit 0）后不再被拉起；
 # 崩溃类故障仍自动重启。切勿改回 Restart=always——完工后驱动每轮秒退，
 # always 会导致无限复活空转。
+Environment=http_proxy=http://127.0.0.1:10808
+Environment=https_proxy=http://127.0.0.1:10808
+Environment=no_proxy=localhost,127.0.0.1,::1
 Restart=on-failure
 RestartSec=30
 # 防止日志无限增长

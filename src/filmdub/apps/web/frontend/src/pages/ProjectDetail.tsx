@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { projectAPI } from '../services/projectAPI'
 
@@ -266,6 +266,3 @@ export function ProjectDetail() {
     </div>
   )
 }
-
-// 添加 import useParams
-import { useParams } from 'react-router-dom'

@@ -730,4 +730,7 @@ class JobEvent(Base):
 
 # 为测试兼容性创建别名
 Episode = EpisodeM01
-Project = ProjectM01
+Project = ProjectM01  # 默认使用 M01（用于 workers）
+
+# Web UI 使用 ProjectRecord
+WebProject = ProjectRecord

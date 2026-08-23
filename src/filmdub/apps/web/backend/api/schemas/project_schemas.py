@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict
 from enum import Enum
 import uuid
 
-from filmdub.apps.web.backend.models.project import ProjectStatus
+from filmdub.core.models import WebProject, ProjectStatus
 
 
 class ProjectStatusEnum(str, Enum):
@@ -25,9 +25,13 @@ class ProjectCreate(BaseModel):
     title_en: Optional[str] = Field(None, max_length=255, description="英文标题")
     season: Optional[int] = Field(None, ge=1, description="季数")
     episode: Optional[int] = Field(None, ge=1, description="集数")
+    year: Optional[int] = Field(None, ge=1900, le=2100, description="年份")
     original_language: Optional[str] = Field(None, max_length=10, description="原始语言")
     target_language: str = Field("zh", max_length=10, description="目标语言")
-    cover_image_url: Optional[str] = Field(None, max_length=500, description="封面图 URL")
+    media_type: Optional[str] = Field(None, max_length=50, description="媒体类型")
+    tmdb_id: Optional[int] = Field(None, description="TMDB ID")
+    imdb_id: Optional[str] = Field(None, max_length=20, description="IMDB ID")
+    config: Optional[dict] = Field(None, description="项目配置")
 
 
 class ProjectUpdate(BaseModel):
@@ -38,9 +42,13 @@ class ProjectUpdate(BaseModel):
     title_en: Optional[str] = Field(None, max_length=255, description="英文标题")
     season: Optional[int] = Field(None, ge=1, description="季数")
     episode: Optional[int] = Field(None, ge=1, description="集数")
+    year: Optional[int] = Field(None, ge=1900, le=2100, description="年份")
     original_language: Optional[str] = Field(None, max_length=10, description="原始语言")
     target_language: Optional[str] = Field(None, max_length=10, description="目标语言")
-    cover_image_url: Optional[str] = Field(None, max_length=500, description="封面图 URL")
+    media_type: Optional[str] = Field(None, max_length=50, description="媒体类型")
+    tmdb_id: Optional[int] = Field(None, description="TMDB ID")
+    imdb_id: Optional[str] = Field(None, max_length=20, description="IMDB ID")
+    config: Optional[dict] = Field(None, description="项目配置")
     status: Optional[ProjectStatusEnum] = Field(None, description="项目状态")
 
 
@@ -53,11 +61,15 @@ class ProjectResponse(BaseModel):
     title_en: Optional[str]
     season: Optional[int]
     episode: Optional[int]
+    year: Optional[int]
     original_language: Optional[str]
     target_language: str
     status: str
-    owner_id: str
-    cover_image_url: Optional[str]
+    owner_id: str  # 映射到 created_by
+    media_type: Optional[str]
+    tmdb_id: Optional[int]
+    imdb_id: Optional[str]
+    config: Optional[dict]
     created_at: datetime
     updated_at: datetime
     started_at: Optional[datetime]
@@ -77,11 +89,15 @@ class ProjectResponse(BaseModel):
                 'title_en': obj.title_en,
                 'season': obj.season,
                 'episode': obj.episode,
+                'year': obj.year,
                 'original_language': obj.original_language,
                 'target_language': obj.target_language,
                 'status': obj.status.value if isinstance(obj.status, ProjectStatus) else obj.status,
-                'owner_id': str(obj.owner_id),
-                'cover_image_url': obj.cover_image_url,
+                'owner_id': str(obj.created_by) if obj.created_by else '',
+                'media_type': obj.media_type,
+                'tmdb_id': obj.tmdb_id,
+                'imdb_id': obj.imdb_id,
+                'config': obj.config,
                 'created_at': obj.created_at,
                 'updated_at': obj.updated_at,
                 'started_at': obj.started_at,

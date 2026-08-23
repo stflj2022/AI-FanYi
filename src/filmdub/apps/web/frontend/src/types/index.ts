@@ -27,10 +27,14 @@ export interface Project {
   title_en?: string
   season?: number
   episode?: number
+  year?: number
   original_language?: string
   target_language: string
   owner_id?: string
-  cover_image_url?: string
+  media_type?: string
+  tmdb_id?: number
+  imdb_id?: string
+  config?: Record<string, any>
   created_at: string
   updated_at: string
   started_at?: string

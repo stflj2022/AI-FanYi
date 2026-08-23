@@ -7,7 +7,7 @@ from sqlalchemy import select, func, desc, or_, and_
 from sqlalchemy.orm import selectinload
 import uuid
 
-from filmdub.core.models import ProjectRecord, ProjectStatus as CoreProjectStatus
+from filmdub.core.models import WebProject as ProjectRecord, ProjectStatus as CoreProjectStatus
 from filmdub.apps.web.backend.api.schemas.project_schemas import ProjectCreate, ProjectUpdate
 
 # 兼容性别名
@@ -21,7 +21,7 @@ class ProjectService:
     async def create_project(
         db: AsyncSession,
         project_data: ProjectCreate,
-        user_id: Optional[uuid.UUID] = None,
+        owner_id: Optional[uuid.UUID] = None,
     ) -> ProjectRecord:
         """
         创建项目
@@ -29,7 +29,7 @@ class ProjectService:
         Args:
             db: 数据库会话
             project_data: 项目数据
-            user_id: 创建用户 ID
+            owner_id: 创建用户 ID
 
         Returns:
             创建的项目对象
@@ -48,7 +48,7 @@ class ProjectService:
             target_language=project_data.target_language,
             tmdb_id=project_data.tmdb_id,
             imdb_id=project_data.imdb_id,
-            created_by=user_id,
+            created_by=owner_id,
             config=project_data.config or {},
         )
 
@@ -62,7 +62,7 @@ class ProjectService:
     async def get_project_by_id(
         db: AsyncSession,
         project_id: uuid.UUID,
-        user_id: Optional[uuid.UUID] = None,
+        owner_id: Optional[uuid.UUID] = None,
         load_relations: bool = True,
     ) -> Optional[ProjectRecord]:
         """
@@ -71,7 +71,7 @@ class ProjectService:
         Args:
             db: 数据库会话
             project_id: 项目 ID
-            user_id: 用户 ID（验证权限）
+            owner_id: 所有者 ID（验证权限）
             load_relations: 是否加载关联数据
 
         Returns:
@@ -79,8 +79,8 @@ class ProjectService:
         """
         query = select(ProjectRecord).where(ProjectRecord.id == project_id)
 
-        if user_id:
-            query = query.where(ProjectRecord.created_by == user_id)
+        if owner_id:
+            query = query.where(ProjectRecord.created_by == owner_id)
 
         if load_relations:
             query = query.options(
@@ -92,24 +92,24 @@ class ProjectService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def get_projects(
+    async def list_projects(
         db: AsyncSession,
-        user_id: Optional[uuid.UUID] = None,
+        owner_id: Optional[uuid.UUID] = None,
+        page: int = 1,
+        page_size: int = 20,
         status: Optional[ProjectStatus] = None,
         search: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 100,
     ) -> tuple[List[ProjectRecord], int]:
         """
-        获取项目列表
+        获取项目列表（支持分页、搜索和筛选）
 
         Args:
             db: 数据库会话
-            user_id: 用户 ID（过滤用户自己的项目）
+            owner_id: 所有者 ID（过滤用户自己的项目）
+            page: 页码（从 1 开始）
+            page_size: 每页数量
             status: 项目状态（过滤）
             search: 搜索关键词（搜索名称、标题、描述）
-            skip: 跳过数量（分页）
-            limit: 限制数量（分页）
 
         Returns:
             (项目列表, 总数)
@@ -122,8 +122,8 @@ class ProjectService:
         # 应用过滤条件
         conditions = []
 
-        if user_id:
-            conditions.append(ProjectRecord.created_by == user_id)
+        if owner_id:
+            conditions.append(ProjectRecord.created_by == owner_id)
 
         if status:
             conditions.append(ProjectRecord.status == status)
@@ -147,11 +147,12 @@ class ProjectService:
         total = total_result.scalar() or 0
 
         # 分页和排序
+        skip = (page - 1) * page_size
         query = (
             query
             .order_by(desc(ProjectRecord.created_at))
             .offset(skip)
-            .limit(limit)
+            .limit(page_size)
         )
 
         # 执行查询
@@ -164,8 +165,8 @@ class ProjectService:
     async def update_project(
         db: AsyncSession,
         project_id: uuid.UUID,
-        user_id: Optional[uuid.UUID] = None,
-        **kwargs,
+        project_data: ProjectUpdate,
+        owner_id: Optional[uuid.UUID] = None,
     ) -> Optional[ProjectRecord]:
         """
         更新项目
@@ -173,22 +174,23 @@ class ProjectService:
         Args:
             db: 数据库会话
             project_id: 项目 ID
-            user_id: 用户 ID（验证权限）
-            **kwargs: 要更新的字段
+            project_data: 更新数据
+            owner_id: 所有者 ID（验证权限）
 
         Returns:
             更新后的项目对象或 None
         """
         from datetime import datetime
 
-        project = await ProjectService.get_project_by_id(db, project_id, user_id, load_relations=False)
+        project = await ProjectService.get_project_by_id(db, project_id, owner_id, load_relations=False)
 
         if not project:
             return None
 
         # 更新字段
-        for key, value in kwargs.items():
-            if hasattr(project, key) and value is not None:
+        update_data = project_data.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            if hasattr(project, key):
                 setattr(project, key, value)
 
         # 更新时间戳
@@ -203,7 +205,7 @@ class ProjectService:
     async def delete_project(
         db: AsyncSession,
         project_id: uuid.UUID,
-        user_id: Optional[uuid.UUID] = None,
+        owner_id: Optional[uuid.UUID] = None,
     ) -> bool:
         """
         删除项目
@@ -211,12 +213,12 @@ class ProjectService:
         Args:
             db: 数据库会话
             project_id: 项目 ID
-            user_id: 用户 ID（验证权限）
+            owner_id: 所有者 ID（验证权限）
 
         Returns:
             是否删除成功
         """
-        project = await ProjectService.get_project_by_id(db, project_id, user_id, load_relations=False)
+        project = await ProjectService.get_project_by_id(db, project_id, owner_id, load_relations=False)
 
         if not project:
             return False

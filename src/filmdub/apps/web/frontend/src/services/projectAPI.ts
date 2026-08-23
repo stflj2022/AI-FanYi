@@ -9,9 +9,13 @@ export interface ProjectCreate {
   title_en?: string
   season?: number
   episode?: number
+  year?: number
   original_language?: string
   target_language: string
-  cover_image_url?: string
+  media_type?: string
+  tmdb_id?: number
+  imdb_id?: string
+  config?: Record<string, any>
 }
 
 export interface ProjectUpdate {
@@ -21,9 +25,13 @@ export interface ProjectUpdate {
   title_en?: string
   season?: number
   episode?: number
+  year?: number
   original_language?: string
   target_language?: string
-  cover_image_url?: string
+  media_type?: string
+  tmdb_id?: number
+  imdb_id?: string
+  config?: Record<string, any>
   status?: string
 }
 

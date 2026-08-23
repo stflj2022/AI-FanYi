@@ -5,9 +5,9 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from filmdub.apps.web.backend.models import User, Project
+from filmdub.apps.web.backend.models import User
+from filmdub.core.models import WebProject as ProjectRecord, ProjectStatus
 from filmdub.apps.web.backend.services.project_service import ProjectService
-from filmdub.apps.web.backend.models.project import ProjectStatus
 
 
 @pytest.mark.asyncio
@@ -37,12 +37,12 @@ async def test_list_projects(async_client: AsyncClient, db_session: AsyncSession
     """测试获取项目列表"""
     # 创建测试项目
     for i in range(3):
-        project = Project(
+        project = ProjectRecord(
             name=f"Project {i}",
             description=f"Description {i}",
             target_language="zh",
-            owner_id=test_user.id,
-            status=ProjectStatus.CREATED,
+            created_by=test_user.id,
+            status=ProjectStatus.PENDING,
         )
         db_session.add(project)
     await db_session.commit()
@@ -63,12 +63,12 @@ async def test_list_projects(async_client: AsyncClient, db_session: AsyncSession
 async def test_get_project(async_client: AsyncClient, db_session: AsyncSession, test_user: User):
     """测试获取项目详情"""
     # 创建测试项目
-    project = Project(
+    project = ProjectRecord(
         name="Test Project",
         description="Test Description",
         target_language="zh",
-        owner_id=test_user.id,
-        status=ProjectStatus.CREATED,
+        created_by=test_user.id,
+        status=ProjectStatus.PENDING,
     )
     db_session.add(project)
     await db_session.commit()
@@ -88,12 +88,12 @@ async def test_get_project(async_client: AsyncClient, db_session: AsyncSession, 
 async def test_update_project(async_client: AsyncClient, db_session: AsyncSession, test_user: User):
     """测试更新项目"""
     # 创建测试项目
-    project = Project(
+    project = ProjectRecord(
         name="Test Project",
         description="Test Description",
         target_language="zh",
-        owner_id=test_user.id,
-        status=ProjectStatus.CREATED,
+        created_by=test_user.id,
+        status=ProjectStatus.PENDING,
     )
     db_session.add(project)
     await db_session.commit()
@@ -114,12 +114,12 @@ async def test_update_project(async_client: AsyncClient, db_session: AsyncSessio
 async def test_delete_project(async_client: AsyncClient, db_session: AsyncSession, test_user: User):
     """测试删除项目"""
     # 创建测试项目
-    project = Project(
+    project = ProjectRecord(
         name="Test Project",
         description="Test Description",
         target_language="zh",
-        owner_id=test_user.id,
-        status=ProjectStatus.CREATED,
+        created_by=test_user.id,
+        status=ProjectStatus.PENDING,
     )
     db_session.add(project)
     await db_session.commit()
@@ -133,39 +133,38 @@ async def test_delete_project(async_client: AsyncClient, db_session: AsyncSessio
     assert response.status_code == 204
 
     # 验证项目已删除
-    result = await db_session.execute(select(Project).where(Project.id == project.id))
+    result = await db_session.execute(select(ProjectRecord).where(ProjectRecord.id == project.id))
     assert result.scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio
 async def test_project_permission(async_client: AsyncClient, db_session: AsyncSession):
     """测试项目权限"""
+    from filmdub.apps.web.backend.services.auth_service import AuthService
+
     # 创建两个用户
-    user1 = User(
+    user1 = await AuthService.create_user(
+        db=db_session,
         username="user1",
         email="user1@example.com",
-        password_hash="hashed_password",
+        password="password123",
         is_admin=False,
-        is_active=True,
     )
-    user2 = User(
+    user2 = await AuthService.create_user(
+        db=db_session,
         username="user2",
         email="user2@example.com",
-        password_hash="hashed_password",
+        password="password123",
         is_admin=False,
-        is_active=True,
     )
-    db_session.add(user1)
-    db_session.add(user2)
-    await db_session.commit()
 
     # 创建属于 user1 的项目
-    project = Project(
+    project = ProjectRecord(
         name="User1 Project",
         description="Project owned by user1",
         target_language="zh",
-        owner_id=user1.id,
-        status=ProjectStatus.CREATED,
+        created_by=user1.id,
+        status=ProjectStatus.PENDING,
     )
     db_session.add(project)
     await db_session.commit()

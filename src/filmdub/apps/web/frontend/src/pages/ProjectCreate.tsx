@@ -205,21 +205,23 @@ export function ProjectCreate() {
                   <option value="ko">韩语</option>
                 </select>
               </div>
-            </div>
 
-            <div>
-              <label htmlFor="cover_image_url" className="block text-sm font-medium text-gray-700 mb-2">
-                封面图 URL
-              </label>
-              <input
-                type="url"
-                id="cover_image_url"
-                name="cover_image_url"
-                value={formData.cover_image_url || ''}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="https://example.com/cover.jpg"
-              />
+              <div>
+                <label htmlFor="year" className="block text-sm font-medium text-gray-700 mb-2">
+                  年份
+                </label>
+                <input
+                  type="number"
+                  id="year"
+                  name="year"
+                  min={1900}
+                  max={2100}
+                  value={formData.year || ''}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="2024"
+                />
+              </div>
             </div>
           </div>
 
