@@ -8,7 +8,8 @@ from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from filmdub.core.config import settings
 from filmdub.core.database import close_all_databases, get_database_manager
@@ -33,6 +34,9 @@ from filmdub.orchestrator.config import orchestrator_settings
 
 logger = logging.getLogger(__name__)
 
+# Web UI 前端构建产物目录（apps/web/dist）
+WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,9 +46,21 @@ async def lifespan(app: FastAPI):
         None
     """
     logger.info("Starting FilmDub API")
+    # 初始化 Layer 0 Orchestrator 数据库（建表）
+    try:
+        from filmdub.orchestrator.database import init_db, close_db
+        await init_db()
+        logger.info("Orchestrator DB initialized")
+    except Exception as e:
+        logger.warning(f"Orchestrator DB init failed: {e}")
     yield
     logger.info("Shutting down FilmDub API")
     await close_all_databases()
+    try:
+        from filmdub.orchestrator.database import close_db
+        await close_db()
+    except Exception:
+        pass
 
 
 app = FastAPI(
@@ -268,6 +284,32 @@ async def upload_media(
 
 
 # ==================== Jobs ====================
+
+
+# ==================== Web UI (static SPA) ====================
+
+
+def _mount_web_ui(app_obj: FastAPI) -> None:
+    """挂载前端构建产物并提供 SPA fallback。
+
+    仅当 dist/index.html 存在时才启用，避免开发模式下报错。
+    """
+    index_html = WEB_DIST / "index.html"
+    if not index_html.exists():
+        logger.warning(f"Web UI 构建产物不存在（{WEB_DIST}），跳过挂载。请先运行 npm run build。")
+        return
+
+    app_obj.mount("/assets", StaticFiles(directory=str(WEB_DIST / "assets")), name="assets")
+
+    @app_obj.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        # 已挂载在 /assets，其余前端路由回退到 index.html
+        if full_path.startswith("api/") or full_path.startswith("ws") or full_path == "health":
+            raise HTTPException(status_code=404)
+        return FileResponse(str(index_html))
+
+
+_mount_web_ui(app)
 
 
 if __name__ == "__main__":

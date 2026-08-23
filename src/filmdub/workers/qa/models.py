@@ -91,8 +91,8 @@ class VoiceQuality(BaseModel):
 
 class QAResult(BaseModel):
     """QA 检查结果"""
-    success: bool = Field(..., description="总体是否通过")
-    overall_score: float = Field(..., ge=0.0, le=100.0, description="总体评分（0-100）")
+    success: bool = Field(False, description="总体是否通过")
+    overall_score: float = Field(0.0, ge=0.0, le=100.0, description="总体评分（0-100）")
 
     # 子检查结果
     technical_quality: TechnicalQuality = Field(..., description="技术质量检查结果")

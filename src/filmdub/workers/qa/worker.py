@@ -210,8 +210,14 @@ class QAChecker:
 
         # 检查音频质量
         if audio_stream:
-            sample_rate = audio_stream.get("sample_rate")
-            channels = audio_stream.get("channels")
+            try:
+                sample_rate = int(audio_stream.get("sample_rate"))
+            except (TypeError, ValueError):
+                sample_rate = None
+            try:
+                channels = int(audio_stream.get("channels"))
+            except (TypeError, ValueError):
+                channels = None
 
             if sample_rate and sample_rate < self.config.min_audio_sample_rate:
                 issues.append(QAIssue(
@@ -255,8 +261,8 @@ class QAChecker:
             video_bitrate=int(video_stream.get("bit_rate", 0)) if video_stream else None,
             fps=self._parse_fps(video_stream.get("r_frame_rate")) if video_stream else None,
             audio_codec=audio_stream.get("codec_name") if audio_stream else None,
-            audio_sample_rate=audio_stream.get("sample_rate") if audio_stream else None,
-            audio_channels=audio_stream.get("channels") if audio_stream else None,
+            audio_sample_rate=int(audio_stream.get("sample_rate")) if audio_stream and str(audio_stream.get("sample_rate", "")).isdigit() else None,
+            audio_channels=int(audio_stream.get("channels")) if audio_stream and str(audio_stream.get("channels", "")).isdigit() else None,
             audio_bitrate=int(audio_stream.get("bit_rate", 0)) if audio_stream else None,
             sync_offset=sync_offset,
             sync_issues=1 if abs(sync_offset) > self.config.sync_tolerance_seconds else 0,
