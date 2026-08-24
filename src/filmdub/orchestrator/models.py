@@ -112,11 +112,29 @@ class WorkerStatus(str, PyEnum):
 
 
 class WorkerType(str, PyEnum):
-    """Worker 类型"""
+    """Worker 硬件类型"""
     CPU = "cpu"
     GPU = "gpu"
     IO = "io"
     HYBRID = "hybrid"
+
+
+class WorkerFunctionType(str, PyEnum):
+    """Worker 功能类型"""
+    MEDIA_INTAKE = "media_intake"
+    RESEARCH = "research"
+    SUBTITLE = "subtitle"
+    CHARACTER_DB = "character_db"
+    AUDIO_ANALYSIS = "audio_analysis"
+    SPEAKER_MAPPING = "speaker_mapping"
+    DIALOGUE_INTELLIGENCE = "dialogue_intelligence"
+    PROSODY_PLANNING = "prosody_planning"
+    VOICE_SYNTHESIS = "voice_synthesis"
+    AUDIO_MIXING = "audio_mixing"
+    VIDEO_ASSEMBLY = "video_assembly"
+    VIDEO_ENCAPSULATION = "video_encapsulation"
+    QA = "qa"
+    ARCHIVE = "archive"
 
 
 class Gender(str, PyEnum):
@@ -385,6 +403,10 @@ class Worker(Base):
         Enum(WorkerType),
         default=WorkerType.CPU,
         nullable=False,
+    )
+    worker_type: Mapped[WorkerFunctionType] = mapped_column(
+        Enum(WorkerFunctionType),
+        nullable=True,
     )
 
     # 能力

@@ -18,8 +18,9 @@ class TestStoryBibleService:
 
     @pytest.fixture
     def project_id(self):
-        """项目 ID"""
-        return "test_project"
+        """项目 ID（使用唯一 ID 避免测试间数据污染）"""
+        import uuid
+        return f"test_project_{uuid.uuid4().hex[:8]}"
 
     @pytest.mark.asyncio
     async def test_create_character_entry(self, service, project_id):

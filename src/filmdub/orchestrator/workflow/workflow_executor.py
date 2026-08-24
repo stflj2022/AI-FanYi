@@ -16,7 +16,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, and_
 
-from ..models import Job, JobStatus, Worker, WorkerStatus
+from ..models import Job, JobStatus, Worker, WorkerStatus, WorkerFunctionType
 from ..artifact_registry import ArtifactRegistry
 from .workflow_planner import ExecutionPlan, ExecutionStep, ExecutionMode
 from .task_context import TaskContext
@@ -299,7 +299,7 @@ class WorkflowExecutor:
         result = await self.db.execute(
             select(Worker).where(
                 and_(
-                    Worker.worker_type == worker_type,
+                    Worker.worker_type == WorkerFunctionType(worker_type),
                     Worker.status == WorkerStatus.IDLE,
                 )
             )
