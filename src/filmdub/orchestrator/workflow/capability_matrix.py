@@ -47,17 +47,31 @@ class CapabilityMatrix(BaseModel):
     记录所有资源的能力状态。
     """
     # 视频/音频
-    video: CapabilityEntry
-    audio: CapabilityEntry
+    video: CapabilityEntry = Field(
+        default_factory=lambda: CapabilityEntry(state=CapabilityState.NONE)
+    )
+    audio: CapabilityEntry = Field(
+        default_factory=lambda: CapabilityEntry(state=CapabilityState.NONE)
+    )
 
     # 字幕
-    subtitle: CapabilityEntry
+    subtitle: CapabilityEntry = Field(
+        default_factory=lambda: CapabilityEntry(state=CapabilityState.NONE)
+    )
 
     # 数据库
-    character_db: CapabilityEntry
-    voice_db: CapabilityEntry
-    story_db: CapabilityEntry
-    translation_memory: CapabilityEntry
+    character_db: CapabilityEntry = Field(
+        default_factory=lambda: CapabilityEntry(state=CapabilityState.NONE)
+    )
+    voice_db: CapabilityEntry = Field(
+        default_factory=lambda: CapabilityEntry(state=CapabilityState.NONE)
+    )
+    story_db: CapabilityEntry = Field(
+        default_factory=lambda: CapabilityEntry(state=CapabilityState.NONE)
+    )
+    translation_memory: CapabilityEntry = Field(
+        default_factory=lambda: CapabilityEntry(state=CapabilityState.NONE)
+    )
 
     # Artifact
     artifacts: Dict[str, CapabilityEntry] = Field(default_factory=dict)

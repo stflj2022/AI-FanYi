@@ -157,6 +157,92 @@ async def get_job(
     return JobResponse.model_validate(job)
 
 
+async def _get_job_or_404(job_id: str, current_user: User, db: AsyncSession):
+    """解析并获取任务，不存在则 404"""
+    try:
+        job_uuid = uuid.UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="无效的任务 ID")
+    job = await JobService.get_job_by_id(db=db, job_id=job_uuid, owner_id=current_user.id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在或无权访问")
+    return job
+
+
+@router.get("/{job_id}/output/video")
+async def get_job_output_video(
+    job_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取任务最终配音视频（在线播放/下载）"""
+    job = await _get_job_or_404(job_id, current_user, db)
+
+    object_name = None
+    for art in (job.output_artifacts or []):
+        if art.startswith("final_video:"):
+            object_name = art.split(":", 1)[1]
+            break
+    if not object_name:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务暂无成品视频")
+
+    from minio import Minio
+    import os, tempfile
+
+    minio_client = Minio(
+        os.environ.get("MINIO_ENDPOINT", "localhost:9000"),
+        access_key=os.environ.get("MINIO_ACCESS_KEY", "minioadmin"),
+        secret_key=os.environ.get("MINIO_SECRET_KEY", "minioadmin123"),
+        secure=False,
+    )
+    tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+    try:
+        minio_client.fget_object("filmdub-uploads", object_name, tmp.name)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"成品视频读取失败: {e}")
+
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+
+    def _cleanup(path: str):
+        import os
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+    return FileResponse(
+        tmp.name,
+        media_type="video/mp4",
+        filename=f"{job.name}.mp4",
+        background=BackgroundTask(_cleanup, tmp.name),
+    )
+
+
+@router.get("/{job_id}/output/qa-report")
+async def get_job_qa_report(
+    job_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取任务 QA 报告"""
+    job = await _get_job_or_404(job_id, current_user, db)
+    qa_score = (job.config or {}).get("qa_score") if job.config else None
+    return {
+        "job_id": str(job.id),
+        "name": job.name,
+        "status": job.status.value if hasattr(job.status, "value") else str(job.status),
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "overall_score": qa_score,
+        "issues": [],
+        "details": {
+            "status": job.status.value if hasattr(job.status, "value") else str(job.status),
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+            "output_artifacts": job.output_artifacts or [],
+        },
+    }
+
+
 @router.put("/{job_id}", response_model=JobResponse)
 async def update_job(
     job_id: str,

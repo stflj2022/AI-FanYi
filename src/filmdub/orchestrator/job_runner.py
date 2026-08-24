@@ -40,7 +40,7 @@ from filmdub.workers.common import save_json_artifact
 from .full_pipeline_executor import FullPipelineExecutor
 from .workflow.task_context import TaskContext, TaskType, QualityRequirement
 from .workflow.asset_discovery import AssetDiscovery
-from .workflow.capability_matrix import CapabilityMatrix
+from .workflow.capability_matrix import CapabilityMatrix, CapabilityBuilder
 from .workflow.workflow_selector import WorkflowSelector
 from .workflow.workflow_planner import WorkflowPlanner, ExecutionMode
 from .workflow.dependency_resolver import DependencyResolver
@@ -175,6 +175,15 @@ class JobRunner:
             job.completed_at = datetime.utcnow()
             # 记录输出 artifacts
             output_arts = self._collect_output_artifacts(job, result)
+            # 保存 QA 评分到 job.config（供 qa-report 接口展示）
+            if result.get("qa_score") is not None:
+                if not job.config:
+                    job.config = {}
+                job.config["qa_score"] = result["qa_score"]
+            # 上传最终视频到 MinIO（供 Web UI 在线播放/下载）
+            final_obj = self._upload_final_video(job, result)
+            if final_obj:
+                output_arts.append(f"final_video:{final_obj}")
             job.output_artifacts = (job.output_artifacts or []) + output_arts
             logger.info(f"Job {job.id} completed: {len(output_arts)} artifacts")
         except Exception as e:
@@ -182,6 +191,30 @@ class JobRunner:
             job.error_message = str(e)[:2000]
             logger.error(f"Job {job.id} failed: {e}", exc_info=True)
         await db.commit()
+
+    def _upload_final_video(self, job: Job, result: dict) -> Optional[str]:
+        """
+        将最终配音视频上传到 MinIO（供 Web UI 展示/下载）
+
+        Args:
+            job: 任务对象
+            result: 执行结果（含 work_dir）
+
+        Returns:
+            MinIO object 名；无成品视频时返回 None
+        """
+        work_dir = result.get("work_dir")
+        if not work_dir:
+            return None
+        out_dir = Path(work_dir) / "output"
+        for name in ("final_encapsulated.mp4", "final_dubbed.mp4"):
+            video_path = out_dir / name
+            if video_path.exists():
+                object_name = f"output/{job.id}/{name}"
+                self.minio.fput_object(MINIO_BUCKET, object_name, str(video_path))
+                logger.info(f"Final video uploaded: {object_name}")
+                return object_name
+        return None
 
     # ------------------------------------------------------------------
     # M01 媒体分析
@@ -286,8 +319,8 @@ class JobRunner:
         )
         logger.info(f"Asset discovery: subtitle={asset_status.subtitle_state}, character_db={asset_status.character_db_state}")
 
-        # 3. 构建能力矩阵
-        capability_matrix_builder = CapabilityMatrix()
+        # 3. 构建能力矩阵（from_asset_status 是 CapabilityBuilder 的实例方法）
+        capability_matrix_builder = CapabilityBuilder()
         capability_matrix = capability_matrix_builder.from_asset_status(asset_status)
         logger.info(f"Capability matrix: production_ready={capability_matrix.is_ready_for_production()}")
 
@@ -449,10 +482,19 @@ class JobRunner:
         # 发送完成进度
         await self._broadcast_progress(job, 100, "DONE", "处理完成")
 
+        # 从执行器上下文读取 M13 QA 评分
+        qa_score = None
+        m13 = getattr(executor, "ctx", {}).get("M13")
+        if m13:
+            m13_result = m13.get("result")
+            if isinstance(m13_result, dict):
+                qa_score = m13_result.get("overall_score")
+
         return {
             "completed_modules": len(completed_modules),
             "total_steps": total_steps,
-            "work_dir": str(work_dir)
+            "work_dir": str(work_dir),
+            "qa_score": qa_score,
         }
 
     # ------------------------------------------------------------------

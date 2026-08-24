@@ -20,9 +20,9 @@ export function OutputVideo({ jobId, projectId, token }: OutputVideoProps) {
         setLoading(true)
         setError(null)
 
-        // 获取视频 URL
+        // 获取视频 URL（同源，经 nginx 反代）
         const videoResponse = await fetch(
-          `http://localhost:8000/api/v1/jobs/${jobId}/output/video`,
+          `/api/v1/jobs/${jobId}/output/video`,
           {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
           }
@@ -37,9 +37,9 @@ export function OutputVideo({ jobId, projectId, token }: OutputVideoProps) {
         const videoObjectUrl = URL.createObjectURL(videoBlob)
         setVideoUrl(videoObjectUrl)
 
-        // 获取 QA 报告
+        // 获取 QA 报告（同源）
         const qaResponse = await fetch(
-          `http://localhost:8000/api/v1/jobs/${jobId}/output/qa-report`,
+          `/api/v1/jobs/${jobId}/output/qa-report`,
           {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
           }

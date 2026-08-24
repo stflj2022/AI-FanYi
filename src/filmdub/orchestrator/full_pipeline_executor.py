@@ -28,7 +28,8 @@ TALKER = Path("/home/wu/桌面/qwentts/cpp_models/qwen-talker-1.7b-base-Q8_0.ggu
 CODEC = Path("/home/wu/桌面/qwentts/cpp_models/qwen-tokenizer-12hz-Q8_0.gguf")
 LAOBAI_REF_TXT = Path("/home/wu/桌面/AI-FanYi/.reasonix/laobai_ref.txt")
 OLLAMA = "http://localhost:11434"
-OLLAMA_MODEL = "gemma4-e2b"
+# gemma4-e2b 在 ollama 0.32.5 输出异常（空响应/503），改用 gemma4（实测正常）
+OLLAMA_MODEL = "gemma4"
 
 # 工作流定义
 WORKFLOW = {
@@ -108,20 +109,38 @@ async def extract_speaker_features(wav: Path, out_dir: Path):
 
 
 async def translate_batch(segments: List[Dict]) -> List[Dict]:
-    """批量翻译对白"""
-    log("M07", "翻译 -> ollama gemma4-e2b")
-    async with httpx.AsyncClient(timeout=180) as client:
+    """批量翻译对白（一次请求翻译全部，减少 ollama 慢推理导致的超时）"""
+    log("M07", "翻译 -> ollama gemma4（批量）")
+    # trust_env=False：忽略系统 http_proxy，直接连本地 ollama（否则被代理拦截返回 503）
+    async with httpx.AsyncClient(timeout=900, trust_env=False) as client:
+        texts = [seg.get("text", "").strip() for seg in segments]
+        # 合并为一次请求，按编号逐条输出
+        prompt_lines = "\n".join(f"{i}. {t}" for i, t in enumerate(texts) if t)
+        prompt = (
+            "将以下英文对白逐条译为口语化中文。每条一行，按编号对应，只输出译文，不要额外解释。\n"
+            + prompt_lines
+        )
+        r = await client.post(
+            f"{OLLAMA}/api/generate",
+            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
+        )
+        r.raise_for_status()
+        resp = (r.json().get("response") or "").strip()
+
+        # 解析译文：按行，去掉行首编号（"1. xxx" / "1: xxx"）
+        lines = [ln.strip() for ln in resp.splitlines() if ln.strip()]
         out = []
-        for seg in segments:
+        for i, seg in enumerate(segments):
             text = seg.get("text", "").strip()
-            prompt = f"将英文对白译为口语化中文，只输出译文。\n{text}\n译文："
-            r = await client.post(
-                f"{OLLAMA}/api/generate",
-                json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
-            )
-            r.raise_for_status()
-            resp = (r.json().get("response") or "").strip()
-            zh = resp.splitlines()[0] if resp and "|" not in resp[:4] else text
+            zh = text
+            if i < len(lines):
+                candidate = lines[i]
+                # 去掉 "1." / "1:" 前缀
+                parts = candidate.split(" ", 1)
+                if parts and parts[0].rstrip(".:").isdigit() and len(parts) > 1:
+                    candidate = parts[1].strip()
+                if candidate and candidate.lower() not in ("n/a", "none", "skip", "略"):
+                    zh = candidate
             out.append({
                 "idx": seg.get("idx"), "start": seg.get("start"), "end": seg.get("end"),
                 "en": text, "zh": zh
@@ -228,7 +247,9 @@ class FullPipelineExecutor:
         if self.ctx.get("M05"):
             return self.ctx["M05"]
         log("M05", "Audio & Scene Analysis: faster-whisper 转写")
-        vocal = Path(self.ctx["M02"]["vocals"])
+        # M02 分离人声存在则用分离结果，否则回退原始视频（quick 工作流可能不含 M02）
+        m02 = self.ctx.get("M02") or {}
+        vocal = Path(m02.get("vocals", self.video_path))
         from filmdub.workers.audio_scene_analysis.m05_worker import M05Worker
         m = M05Worker(asr_backend="faster-whisper")
         try:
@@ -254,7 +275,9 @@ class FullPipelineExecutor:
         if self.ctx.get("M04"):
             return self.ctx["M04"]
         log("M04", "Character Database + 音色克隆")
-        vocal = Path(self.ctx["M02"]["vocals"])
+        # M02 分离人声存在则用分离结果，否则回退原始视频（quick 工作流可能不含 M02）
+        m02 = self.ctx.get("M02") or {}
+        vocal = Path(m02.get("vocals", self.video_path))
         spk = rvq = None
         try:
             spk, rvq = await extract_speaker_features(vocal, self.dialogue_dir / "voices")
