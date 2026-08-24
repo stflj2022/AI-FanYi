@@ -6,6 +6,7 @@ M02 Worker - Media Research & Identity Resolution
 
 from pathlib import Path
 from typing import Dict, Any, Optional
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,46 @@ class M02Worker:
 
         logger.info(f"Audio analysis completed: {len(result['stems'])} stems extracted")
         return result
+
+    async def analyze_scenes(
+        self,
+        video_path: Path,
+        output_dir: Optional[Path] = None,
+        **detector_kwargs
+    ) -> Dict[str, Any]:
+        """
+        分析视频的场景/镜头/黑屏，输出 Scene Timeline（ticket-034）
+
+        Args:
+            video_path: 视频文件路径
+            output_dir: 输出目录（写入 <stem>_scene_timeline.json）
+            detector_kwargs: SceneDetector 参数（scene_threshold/shot_threshold 等）
+
+        Returns:
+            Scene Timeline 字典（含 scenes/shots/black_frames）
+        """
+        if not Path(video_path).exists():
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+
+        from filmdub.workers.research.scene_detection import SceneDetector
+
+        detector = SceneDetector(**detector_kwargs)
+        timeline = detector.detect(video_path)
+
+        # 写出 Scene Timeline 文件（对齐时间轴）
+        if output_dir is not None:
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            timeline_path = output_dir / f"{Path(video_path).stem}_scene_timeline.json"
+            with open(timeline_path, 'w', encoding='utf-8') as f:
+                json.dump(timeline, f, ensure_ascii=False, indent=2)
+            timeline["timeline_path"] = str(timeline_path)
+
+        logger.info(
+            f"Scene detection completed: {len(timeline['scenes'])} scenes, "
+            f"{len(timeline['shots'])} shots, {len(timeline['black_frames'])} black segments"
+        )
+        return timeline
 
     async def close(self):
         """清理资源"""
