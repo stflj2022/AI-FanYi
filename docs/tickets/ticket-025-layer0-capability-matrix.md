@@ -1,6 +1,6 @@
 # Ticket 025: Layer 0 Capability Matrix
 
-## 状态: todo
+## 状态: done（第1轮实现：CapabilityMatrix 已实现，18 个测试通过）
 
 ## 优先级: P0
 

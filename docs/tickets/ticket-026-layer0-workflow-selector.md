@@ -1,6 +1,6 @@
 # Ticket 026: Layer 0 Workflow Selector
 
-## 状态: todo
+## 状态: done（第1轮实现：WorkflowSelector 已实现，21 个测试通过）
 
 ## 优先级: P0
 

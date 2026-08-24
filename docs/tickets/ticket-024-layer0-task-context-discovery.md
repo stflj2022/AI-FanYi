@@ -1,6 +1,6 @@
 # Ticket 024: Layer 0 Task Context + Asset Discovery
 
-## 状态: todo
+## 状态: done（第1轮实现：TaskContext 和 AssetDiscovery 已实现，34 个测试通过）
 
 ## 优先级: P0
 
