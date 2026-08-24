@@ -248,6 +248,42 @@ async def publish_job_failed(
     return sent_count
 
 
+async def publish_job_created(
+    job_id: UUID,
+    job_name: str,
+    project_id: UUID = None,
+    user_id: UUID = None,
+) -> int:
+    """发布任务创建事件（全局广播给该用户的所有连接，Dashboard/任务列表实时刷新）"""
+    from filmdub.apps.web.backend.websocket.event_types import build_job_created_event
+
+    event = build_job_created_event(job_id, job_name, project_id)
+    if user_id:
+        sent_count = await ws_manager.broadcast_to_user(user_id, event)
+    else:
+        sent_count = await ws_manager.broadcast_to_job(job_id, event)
+    logger.info(f"[WebSocket] Published created event for job {job_id} to {sent_count} connections")
+    return sent_count
+
+
+async def publish_job_status_changed(
+    job_id: UUID,
+    new_status: str,
+    old_status: str = None,
+    user_id: UUID = None,
+) -> int:
+    """发布任务状态变更事件（全局广播给该用户的所有连接）"""
+    from filmdub.apps.web.backend.websocket.event_types import build_status_changed_event
+
+    event = build_status_changed_event(job_id, new_status, old_status)
+    if user_id:
+        sent_count = await ws_manager.broadcast_to_user(user_id, event)
+    else:
+        sent_count = await ws_manager.broadcast_to_job(job_id, event)
+    logger.info(f"[WebSocket] Published status_changed event for job {job_id} -> {new_status} to {sent_count} connections")
+    return sent_count
+
+
 # 启动和停止 WebSocket 管理器
 async def start_websocket_manager():
     """启动 WebSocket 管理器"""

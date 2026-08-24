@@ -27,6 +27,7 @@ class WebSocketEventType(str, Enum):
     # 任务事件
     JOB_CREATED = "job.created"
     JOB_UPDATED = "job.updated"
+    JOB_STATUS_CHANGED = "job.status_changed"
     JOB_PROGRESS = "job.progress"
     JOB_STAGE = "job.stage"
     JOB_COMPLETED = "job.completed"
@@ -208,4 +209,38 @@ def build_error_event(code: str, message: str, details: Optional[Dict[str, Any]]
             "message": message,
             "details": details,
         },
+    )
+
+
+def build_job_created_event(
+    job_id: UUID,
+    job_name: str,
+    project_id: Optional[UUID] = None
+) -> Dict[str, Any]:
+    """构建任务创建事件（供 Dashboard / 任务列表页实时刷新）"""
+    return build_event(
+        event_type=WebSocketEventType.JOB_CREATED,
+        data={
+            "job_id": str(job_id),
+            "job_name": job_name,
+            "project_id": str(project_id) if project_id else None,
+        },
+        job_id=job_id,
+    )
+
+
+def build_status_changed_event(
+    job_id: UUID,
+    new_status: str,
+    old_status: Optional[str] = None
+) -> Dict[str, Any]:
+    """构建任务状态变更事件（供 Dashboard / 任务列表页实时刷新）"""
+    return build_event(
+        event_type=WebSocketEventType.JOB_STATUS_CHANGED,
+        data={
+            "job_id": str(job_id),
+            "old_status": old_status,
+            "new_status": new_status,
+        },
+        job_id=job_id,
     )

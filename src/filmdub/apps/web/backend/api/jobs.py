@@ -3,9 +3,11 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from filmdub.core.orchestrator_db import get_db
+from filmdub.core.models import ProjectRecord
 from filmdub.apps.web.backend.services.job_service import JobService
 from filmdub.apps.web.backend.models import User
 from filmdub.apps.web.backend.api.dependencies import get_current_active_user
@@ -20,6 +22,10 @@ from filmdub.apps.web.backend.api.schemas.job_schemas import (
     JobQueryParams,
     JobStatsResponse,
     RecentJobsResponse,
+)
+from filmdub.apps.web.backend.websocket.events import (
+    publish_job_created,
+    publish_job_status_changed,
 )
 
 router = APIRouter()
@@ -37,6 +43,15 @@ async def create_job(
         job_data=job_data,
         owner_id=current_user.id,
     )
+
+    # 发布任务创建实时事件（Dashboard / 任务列表页刷新）
+    await publish_job_created(
+        job_id=job.id,
+        job_name=job.name,
+        project_id=job.project_id,
+        user_id=current_user.id,
+    )
+
     return JobResponse.model_validate(job)
 
 
@@ -225,6 +240,14 @@ async def pause_job(
         owner_id=current_user.id,
     )
 
+    # 发布任务状态变更实时事件
+    await publish_job_status_changed(
+        job_id=job.id,
+        new_status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        old_status=None,
+        user_id=current_user.id,
+    )
+
     return JobActionResponse(
         id=job.id,
         status=job.status,
@@ -253,6 +276,14 @@ async def resume_job(
         job_id=job_uuid,
         reason=action_data.reason,
         owner_id=current_user.id,
+    )
+
+    # 发布任务状态变更实时事件
+    await publish_job_status_changed(
+        job_id=job.id,
+        new_status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        old_status=None,
+        user_id=current_user.id,
     )
 
     return JobActionResponse(
@@ -285,6 +316,14 @@ async def cancel_job(
         owner_id=current_user.id,
     )
 
+    # 发布任务状态变更实时事件
+    await publish_job_status_changed(
+        job_id=job.id,
+        new_status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        old_status=None,
+        user_id=current_user.id,
+    )
+
     return JobActionResponse(
         id=job.id,
         status=job.status,
@@ -313,6 +352,14 @@ async def retry_job(
         job_id=job_uuid,
         reason=action_data.reason,
         owner_id=current_user.id,
+    )
+
+    # 发布任务状态变更实时事件
+    await publish_job_status_changed(
+        job_id=job.id,
+        new_status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        old_status=None,
+        user_id=current_user.id,
     )
 
     return JobActionResponse(
@@ -364,6 +411,23 @@ async def sync_job_status(
         status=status,
         error_message=error_message,
         output_artifacts=artifacts,
+    )
+
+    # 发布任务状态变更实时事件（Worker/Orchestrator 驱动的状态流转，推送给任务属主）
+    owner_id = None
+    if job.project_id:
+        proj_result = await db.execute(
+            select(ProjectRecord).filter(ProjectRecord.id == job.project_id)
+        )
+        proj = proj_result.scalar_one_or_none()
+        if proj:
+            owner_id = proj.created_by
+
+    await publish_job_status_changed(
+        job_id=job.id,
+        new_status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        old_status=None,
+        user_id=owner_id,
     )
 
     return JobResponse.model_validate(job)

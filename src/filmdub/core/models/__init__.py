@@ -219,6 +219,10 @@ class Job(Base):
         default=JobStatus.PENDING,
         nullable=False,
     )
+    # Web UI 扩展字段（与 JobCreate/JobResponse 对齐）
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    workflow_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # 执行信息
     module_id: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
