@@ -88,9 +88,11 @@ class TestBuildSegments:
         times = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
         segs = SceneDetector._build_segments([3], times, 6, 0.6)
         assert len(segs) == 2
-        assert segs[0] == {"index": 0, "start": 0.0, "end": 0.3}
-        assert segs[1]["start"] == 0.3
-        assert segs[1]["end"] == 0.6
+        assert segs[0].index == 0
+        assert segs[0].start == pytest.approx(0.0)
+        assert segs[0].end == pytest.approx(0.3)
+        assert segs[1].start == pytest.approx(0.3)
+        assert segs[1].end == pytest.approx(0.6)
 
 
 class TestBlackSegments:
@@ -104,9 +106,9 @@ class TestBlackSegments:
             luma_threshold=16.0, min_duration=0.1, fps=10.0,
         )
         assert len(segs) == 2
-        assert segs[0]["start"] == pytest.approx(0.2)
-        assert segs[0]["duration"] == pytest.approx(0.3)
-        assert segs[1]["start"] == pytest.approx(0.6)
+        assert segs[0].start == pytest.approx(0.2)
+        assert segs[0].duration == pytest.approx(0.3)
+        assert segs[1].start == pytest.approx(0.6)
 
     def test_filters_short_black(self):
         luma = [200.0, 5.0, 200.0]
@@ -165,30 +167,30 @@ class TestSceneDetectionIntegration:
         detector = SceneDetector(black_luma_threshold=20.0)
         timeline = detector.detect(synthetic_video)
 
-        assert timeline["video_file"] == synthetic_video
-        assert timeline["total_frames"] >= 30  # 约 40 帧
-        assert timeline["duration"] == pytest.approx(4.0, abs=0.3)
+        assert timeline.video_file == synthetic_video
+        assert timeline.total_frames >= 30  # 约 40 帧
+        assert timeline.duration == pytest.approx(4.0, abs=0.3)
 
         # 4 段纯色（红/蓝/黑/绿）→ 至少 3 个场景切点 → 4 个场景
-        assert len(timeline["scenes"]) >= 2
+        assert len(timeline.scenes) >= 2
         # 首场景从 0 开始
-        assert timeline["scenes"][0]["start"] == pytest.approx(0.0, abs=0.2)
+        assert timeline.scenes[0].start == pytest.approx(0.0, abs=0.2)
 
         # 黑屏段：第 2~3 秒
-        assert len(timeline["black_frames"]) >= 1
-        black = timeline["black_frames"][0]
-        assert black["start"] == pytest.approx(2.0, abs=0.5)
-        assert black["duration"] >= 0.5
+        assert len(timeline.black_frames) >= 1
+        black = timeline.black_frames[0]
+        assert black.start == pytest.approx(2.0, abs=0.5)
+        assert black.duration >= 0.5
 
         # 镜头时间线存在且映射到场景
-        assert len(timeline["shots"]) >= 2
-        assert timeline["shots"][0]["scene_index"] == 0
+        assert len(timeline.shots) >= 2
+        assert timeline.shots[0].scene_index == 0
 
     def test_detect_short_black_filtered(self, synthetic_video):
         # min_black_duration 设为 5s：1s 的黑屏段应被过滤
         detector = SceneDetector(black_luma_threshold=20.0, min_black_duration=5.0)
         timeline = detector.detect(synthetic_video)
-        assert timeline["black_frames"] == []
+        assert timeline.black_frames == []
 
     def test_no_video_stream_raises(self, tmp_path):
         """无视频流（纯音频）时应抛出明确错误而非崩溃"""
@@ -205,3 +207,88 @@ class TestSceneDetectionIntegration:
         detector = SceneDetector()
         with pytest.raises(ValueError, match="无视频流"):
             detector.detect(str(path))
+
+
+class TestSceneTimeline:
+    """SceneTimeline dataclass 测试（优化：类型化时间线）"""
+
+    def test_to_dict(self):
+        from filmdub.workers.research.scene_detection import (
+            SceneTimeline, SceneSegment, ShotSegment, BlackFrameSegment,
+        )
+        tl = SceneTimeline(
+            video_file="/tmp/x.mp4",
+            duration=4.0,
+            width=160,
+            height=90,
+            fps=10.0,
+            total_frames=40,
+            scenes=[SceneSegment(index=0, start=0.0, end=1.0)],
+            shots=[ShotSegment(index=0, start=0.0, end=1.0, scene_index=0)],
+            black_frames=[BlackFrameSegment(start=2.0, end=3.0, duration=1.0)],
+            detection={"scene_threshold": 0.3},
+        )
+        d = tl.to_dict()
+        assert d["video_file"] == "/tmp/x.mp4"
+        assert d["scenes"][0] == {"index": 0, "start": 0.0, "end": 1.0}
+        assert d["shots"][0]["scene_index"] == 0
+        assert d["black_frames"][0]["duration"] == 1.0
+
+    def test_defaults(self):
+        from filmdub.workers.research.scene_detection import SceneTimeline
+        tl = SceneTimeline(video_file="a.mp4", duration=0.0, width=0, height=0, fps=0.0, total_frames=0)
+        assert tl.scenes == []
+        assert tl.shots == []
+        assert tl.black_frames == []
+        assert tl.to_dict()["total_frames"] == 0
+
+
+class TestAnalyzeScenesWorker:
+    """M02Worker.analyze_scenes 输出 Scene Timeline JSON（优化 #7 兼容性）"""
+
+    @pytest.fixture
+    def synthetic_video(self, tmp_path):
+        _require_ffmpeg()
+        path = tmp_path / "segments.mp4"
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=c=0xff0000:s=160x90:r=10:d=1",
+            "-f", "lavfi", "-i", "color=c=0x0000ff:s=160x90:r=10:d=1",
+            "-f", "lavfi", "-i", "color=c=0x000000:s=160x90:r=10:d=1",
+            "-f", "lavfi", "-i", "color=c=0x00ff00:s=160x90:r=10:d=1",
+            "-filter_complex", "[0:v][1:v][2:v][3:v]concat=n=4:v=1:a=0[outv]",
+            "-map", "[outv]", "-pix_fmt", "yuv420p",
+            str(path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            pytest.skip(f"ffmpeg 生成合成视频失败: {result.stderr}")
+        return str(path)
+
+    def test_analyze_scenes_writes_json(self, synthetic_video, tmp_path):
+        import asyncio
+        from filmdub.workers.research.m02_worker import M02Worker
+
+        async def run():
+            worker = M02Worker()
+            try:
+                result = await worker.analyze_scenes(
+                    synthetic_video,
+                    output_dir=tmp_path,
+                    black_luma_threshold=20.0,
+                )
+            finally:
+                await worker.close()
+            return result
+
+        result = asyncio.run(run())
+
+        # 返回 dict（含 timeline_path），可直接 JSON 序列化
+        assert "timeline_path" in result
+        assert result["timeline_path"].endswith("_scene_timeline.json")
+        import json, os
+        with open(result["timeline_path"], encoding="utf-8") as f:
+            data = json.load(f)
+        assert data["total_frames"] >= 30
+        assert len(data["scenes"]) >= 2
+        assert len(data["black_frames"]) >= 1

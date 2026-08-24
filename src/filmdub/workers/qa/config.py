@@ -37,6 +37,20 @@ class M13Config(BaseSettings):
     # 对白完整性
     duplicate_dialogue_gap: float = Field(default=0.5, description="重复台词判定时间间隔（秒）")
 
+    # 配音质量评分权重（总和为 1.0）
+    weight_voice_consistency: float = Field(default=0.25, description="音色一致性权重")
+    weight_emotion_match: float = Field(default=0.25, description="情绪匹配权重")
+    weight_speech_rate: float = Field(default=0.20, description="语速合理性权重")
+    weight_translation: float = Field(default=0.15, description="翻译质量权重")
+    weight_dialogue_completeness: float = Field(default=0.10, description="对白完整性权重")
+    weight_character_mismatch: float = Field(default=0.05, description="人物错配权重")
+
+    # 技术质量扣分（按严重程度）
+    deduction_critical: float = Field(default=30.0, description="严重问题扣分")
+    deduction_high: float = Field(default=15.0, description="高优先级问题扣分")
+    deduction_medium: float = Field(default=5.0, description="中等优先级问题扣分")
+    deduction_low: float = Field(default=2.0, description="低优先级问题扣分")
+
     # 输出格式
     output_format: str = Field(default="json", description="输出格式（json/markdown）")
     output_dir: str = Field(default="/tmp/filmdub_qa", description="输出目录")

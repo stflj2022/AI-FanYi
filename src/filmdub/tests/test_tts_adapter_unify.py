@@ -155,9 +155,36 @@ class TestCosyVoiceAdapter:
         assert info["model_name"] == "CosyVoice-300M"
         assert info["model_version"] == "test-cosy-1.0"
 
-    def test_load_missing_library(self):
+    def test_load_missing_library(self, monkeypatch):
+        """未安装 cosyvoice 库时应抛出 ImportError（确定性：mock import）"""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "cosyvoice" or name.startswith("cosyvoice."):
+                raise ImportError(f"No module named {name}")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
         adapter = CosyVoiceAdapter()
-        # 未安装 cosyvoice 库时应抛出 ImportError
+        with pytest.raises(ImportError):
+            import asyncio
+            asyncio.run(adapter._get_model())
+
+    def test_f5_load_missing_library(self, monkeypatch):
+        """未安装 f5_tts 库时应抛出 ImportError（确定性：mock import）"""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "f5_tts" or name.startswith("f5_tts."):
+                raise ImportError(f"No module named {name}")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        adapter = F5TTSAdapter()
         with pytest.raises(ImportError):
             import asyncio
             asyncio.run(adapter._get_model())

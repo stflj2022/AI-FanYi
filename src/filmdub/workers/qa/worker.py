@@ -350,12 +350,12 @@ class QAChecker:
 
         # 计算配音质量评分
         score = (
-            voice_consistency_score * 0.25 +
-            emotion_match_score * 0.25 +
-            speech_rate_score * 0.20 +
-            translation_score * 0.15 +
-            dialogue_completeness * 0.10 +
-            mismatch_score * 0.05
+            voice_consistency_score * self.config.weight_voice_consistency +
+            emotion_match_score * self.config.weight_emotion_match +
+            speech_rate_score * self.config.weight_speech_rate +
+            translation_score * self.config.weight_translation +
+            dialogue_completeness * self.config.weight_dialogue_completeness +
+            mismatch_score * self.config.weight_character_mismatch
         )
 
         # 创建配音质量结果
@@ -408,21 +408,40 @@ class QAChecker:
             logger.error(f"获取视频信息失败: {e}")
             return None
 
+    @staticmethod
+    def _load_character_db(character_db: Optional[str]) -> Dict[str, Any]:
+        """
+        加载人物数据库（characters 映射）
+
+        Args:
+            character_db: 人物数据库路径
+
+        Returns:
+            characters 字典（文件缺失或解析失败返回空 dict）
+        """
+        characters = {}
+        if character_db and os.path.exists(character_db):
+            try:
+                with open(character_db, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    characters = data.get("characters", {})
+            except Exception as e:
+                logger.warning(f"加载人物数据库失败: {e}")
+        return characters
+
     def _get_video_stream(self, video_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """获取视频流"""
-        if "streams" not in video_info:
-            return None
-        for stream in video_info["streams"]:
-            if stream.get("codec_type") == "video":
-                return stream
-        return None
+        return self._find_stream(video_info, "video")
 
     def _get_audio_stream(self, video_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """获取音频流"""
-        if "streams" not in video_info:
-            return None
-        for stream in video_info["streams"]:
-            if stream.get("codec_type") == "audio":
+        return self._find_stream(video_info, "audio")
+
+    @staticmethod
+    def _find_stream(video_info: Dict[str, Any], codec_type: str) -> Optional[Dict[str, Any]]:
+        """按 codec_type 查找视频/音频流"""
+        for stream in video_info.get("streams", []):
+            if stream.get("codec_type") == codec_type:
                 return stream
         return None
 
@@ -673,14 +692,7 @@ class QAChecker:
             return 100.0, issues
 
         # 加载人物数据库（用于显示人物名）
-        characters = {}
-        if character_db and os.path.exists(character_db):
-            try:
-                with open(character_db, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    characters = data.get("characters", {})
-            except Exception as e:
-                logger.warning(f"加载人物数据库失败: {e}")
+        characters = self._load_character_db(character_db)
 
         mismatches = []
         checkable = 0
@@ -757,14 +769,7 @@ class QAChecker:
             return 100.0, issues
 
         # 加载人物数据库
-        characters = {}
-        if character_db and os.path.exists(character_db):
-            try:
-                with open(character_db, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    characters = data.get("characters", {})
-            except Exception as e:
-                logger.warning(f"加载人物数据库失败: {e}")
+        characters = self._load_character_db(character_db)
 
         # 检查同一人物的音色是否一致
         character_voices: Dict[str, set] = {}
@@ -975,16 +980,15 @@ class QAChecker:
         # 基础分 100
         score = 100.0
 
-        # 根据问题严重程度扣分
+        # 根据问题严重程度扣分（分值来自 config）
+        deduction_map = {
+            QAIssueSeverity.CRITICAL: self.config.deduction_critical,
+            QAIssueSeverity.HIGH: self.config.deduction_high,
+            QAIssueSeverity.MEDIUM: self.config.deduction_medium,
+            QAIssueSeverity.LOW: self.config.deduction_low,
+        }
         for issue in issues:
-            if issue.severity == QAIssueSeverity.CRITICAL:
-                score -= 30
-            elif issue.severity == QAIssueSeverity.HIGH:
-                score -= 15
-            elif issue.severity == QAIssueSeverity.MEDIUM:
-                score -= 5
-            elif issue.severity == QAIssueSeverity.LOW:
-                score -= 2
+            score -= deduction_map.get(issue.severity, 0.0)
 
         return max(score, 0.0)
 

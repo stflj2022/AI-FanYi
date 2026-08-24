@@ -12,6 +12,7 @@ M02 场景/镜头/黑屏检测（ticket-034）
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -22,6 +23,50 @@ logger = logging.getLogger(__name__)
 
 # 默认 8-bit 亮度
 MAX_LUMA = 255.0
+
+
+@dataclass
+class SceneSegment:
+    """场景区间"""
+    index: int
+    start: float
+    end: float
+
+
+@dataclass
+class ShotSegment:
+    """镜头区间（映射到所属场景）"""
+    index: int
+    start: float
+    end: float
+    scene_index: Optional[int] = None
+
+
+@dataclass
+class BlackFrameSegment:
+    """黑屏段"""
+    start: float
+    end: float
+    duration: float
+
+
+@dataclass
+class SceneTimeline:
+    """Scene Timeline（场景/镜头/黑屏检测结果）"""
+    video_file: str
+    duration: float
+    width: int
+    height: int
+    fps: float
+    total_frames: int
+    scenes: List[SceneSegment] = field(default_factory=list)
+    shots: List[ShotSegment] = field(default_factory=list)
+    black_frames: List[BlackFrameSegment] = field(default_factory=list)
+    detection: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典（用于 JSON 序列化）"""
+        return asdict(self)
 
 
 def frame_diff_score(prev: np.ndarray, curr: np.ndarray) -> float:
@@ -91,7 +136,7 @@ class SceneDetector:
     # ------------------------------------------------------------------
     # 公开接口
     # ------------------------------------------------------------------
-    def detect(self, video_path: str | Path) -> Dict[str, Any]:
+    def detect(self, video_path: str | Path) -> SceneTimeline:
         """
         检测视频的场景/镜头/黑屏时间线
 
@@ -99,19 +144,8 @@ class SceneDetector:
             video_path: 视频文件路径
 
         Returns:
-            Scene Timeline 字典：
-            {
-                "video_file": str,
-                "duration": float,
-                "width": int,
-                "height": int,
-                "fps": float,
-                "total_frames": int,
-                "scenes": [{"index", "start", "end"}, ...],
-                "shots": [{"index", "start", "end", "scene_index"}, ...],
-                "black_frames": [{"start", "end", "duration"}, ...],
-                "detection": {...},
-            }
+            SceneTimeline：
+                scenes/shots/black_frames 为类型化分段，含 detection 参数元数据
         """
         video_path = Path(video_path)
         if not video_path.exists():
@@ -154,18 +188,18 @@ class SceneDetector:
         if total_frames == 0:
             # 无有效帧：返回空时间线而非崩溃
             logger.warning(f"未解码到任何视频帧: {video_path}")
-            return {
-                "video_file": str(video_path),
-                "duration": round(duration, 3),
-                "width": width,
-                "height": height,
-                "fps": round(fps, 4),
-                "total_frames": 0,
-                "scenes": [],
-                "shots": [],
-                "black_frames": [],
-                "detection": self._detection_meta(),
-            }
+            return SceneTimeline(
+                video_file=str(video_path),
+                duration=round(duration, 3),
+                width=width,
+                height=height,
+                fps=round(fps, 4),
+                total_frames=0,
+                scenes=[],
+                shots=[],
+                black_frames=[],
+                detection=self._detection_meta(),
+            )
 
         # 检测场景/镜头切点（帧索引 → 时间）
         scene_cuts = self._find_cuts(diffs, self.scene_threshold)
@@ -186,18 +220,18 @@ class SceneDetector:
         shots = self._build_segments(shot_cuts, times, total_frames, duration)
         shots = self._map_shots_to_scenes(shots, scenes)
 
-        return {
-            "video_file": str(video_path),
-            "duration": round(duration, 3),
-            "width": width,
-            "height": height,
-            "fps": round(fps, 4),
-            "total_frames": total_frames,
-            "scenes": scenes,
-            "shots": shots,
-            "black_frames": black_segments,
-            "detection": self._detection_meta(),
-        }
+        return SceneTimeline(
+            video_file=str(video_path),
+            duration=round(duration, 3),
+            width=width,
+            height=height,
+            fps=round(fps, 4),
+            total_frames=total_frames,
+            scenes=scenes,
+            shots=shots,
+            black_frames=black_segments,
+            detection=self._detection_meta(),
+        )
 
     def _detection_meta(self) -> Dict[str, Any]:
         """返回检测参数元数据"""
@@ -263,7 +297,7 @@ class SceneDetector:
         luma_threshold: float = 16.0,
         min_duration: float = 0.3,
         fps: float = 30.0,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[BlackFrameSegment]:
         """
         查找连续黑帧并合并为黑屏段
 
@@ -278,7 +312,8 @@ class SceneDetector:
         Returns:
             黑屏段列表
         """
-        segments: List[Dict[str, Any]] = []
+        # 中间态：连续黑帧的 (起始帧, 结束帧) 索引段
+        segments: List[tuple[int, int]] = []
         black = [i for i, v in enumerate(luma) if v <= luma_threshold]
 
         if not black:
@@ -303,11 +338,11 @@ class SceneDetector:
                 end_t = start_t + (e - s + 1) / fps
             duration = end_t - start_t
             if duration >= min_duration:
-                result.append({
-                    "start": round(start_t, 3),
-                    "end": round(end_t, 3),
-                    "duration": round(duration, 3),
-                })
+                result.append(BlackFrameSegment(
+                    start=round(start_t, 3),
+                    end=round(end_t, 3),
+                    duration=round(duration, 3),
+                ))
         return result
 
     @staticmethod
@@ -316,7 +351,7 @@ class SceneDetector:
         times: List[float],
         total_frames: int,
         duration: float,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[SceneSegment]:
         """
         根据切点构建连续时间区间
 
@@ -341,25 +376,30 @@ class SceneDetector:
             else:
                 # 切点帧属于下一个段，所以当前段结束于切点帧的时间
                 end_t = times[e_frame]
-            segments.append({
-                "index": i,
-                "start": round(start_t, 3),
-                "end": round(end_t, 3),
-            })
+            segments.append(SceneSegment(
+                index=i,
+                start=round(start_t, 3),
+                end=round(end_t, 3),
+            ))
         return segments
 
     @staticmethod
     def _map_shots_to_scenes(
-        shots: List[Dict[str, Any]],
-        scenes: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        shots: List[ShotSegment],
+        scenes: List[SceneSegment],
+    ) -> List[ShotSegment]:
         """将镜头映射到所属场景（scene_index）"""
         result = []
         for shot in shots:
             scene_index = None
             for scene in scenes:
-                if shot["start"] >= scene["start"] - 1e-6 and shot["start"] < scene["end"]:
-                    scene_index = scene["index"]
+                if shot.start >= scene.start - 1e-6 and shot.start < scene.end:
+                    scene_index = scene.index
                     break
-            result.append({**shot, "scene_index": scene_index})
+            result.append(ShotSegment(
+                index=shot.index,
+                start=shot.start,
+                end=shot.end,
+                scene_index=scene_index,
+            ))
         return result

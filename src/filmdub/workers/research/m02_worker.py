@@ -120,6 +120,7 @@ class M02Worker:
 
         detector = SceneDetector(**detector_kwargs)
         timeline = detector.detect(video_path)
+        timeline_dict = timeline.to_dict()
 
         # 写出 Scene Timeline 文件（对齐时间轴）
         if output_dir is not None:
@@ -127,14 +128,14 @@ class M02Worker:
             output_dir.mkdir(parents=True, exist_ok=True)
             timeline_path = output_dir / f"{Path(video_path).stem}_scene_timeline.json"
             with open(timeline_path, 'w', encoding='utf-8') as f:
-                json.dump(timeline, f, ensure_ascii=False, indent=2)
-            timeline["timeline_path"] = str(timeline_path)
+                json.dump(timeline_dict, f, ensure_ascii=False, indent=2)
+            timeline_dict["timeline_path"] = str(timeline_path)
 
         logger.info(
-            f"Scene detection completed: {len(timeline['scenes'])} scenes, "
-            f"{len(timeline['shots'])} shots, {len(timeline['black_frames'])} black segments"
+            f"Scene detection completed: {len(timeline.scenes)} scenes, "
+            f"{len(timeline.shots)} shots, {len(timeline.black_frames)} black segments"
         )
-        return timeline
+        return timeline_dict
 
     async def close(self):
         """清理资源"""

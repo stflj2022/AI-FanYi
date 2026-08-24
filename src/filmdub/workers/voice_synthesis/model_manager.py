@@ -16,13 +16,6 @@ from .config import M09Config
 class TTSModelManager:
     """TTS 模型管理器"""
 
-    # 业务模型名 → Adapter backend 名
-    BACKEND_MAP = {
-        "cosyvoice": "cosyvoice",
-        "f5_tts": "f5-tts",
-        "qwen": "qwen",
-    }
-
     def __init__(self, config: M09Config = None):
         """
         初始化模型管理器
@@ -59,7 +52,9 @@ class TTSModelManager:
         Returns:
             是否成功
         """
-        model_name = model_name or self.config.default_model
+        from filmdub.adapter.voice import normalize_voice_backend
+
+        model_name = normalize_voice_backend(model_name or self.config.default_model)
 
         if model_name in self.models:
             logger.info(f"Model {model_name} already loaded")
@@ -71,7 +66,7 @@ class TTSModelManager:
 
             if model_name == "cosyvoice":
                 model = self._load_cosyvoice()
-            elif model_name == "f5_tts" and self.config.enable_f5_tts:
+            elif model_name == normalize_voice_backend("f5_tts") and self.config.enable_f5_tts:
                 model = self._load_f5_tts()
             else:
                 logger.error(f"Unknown or disabled model: {model_name}")
@@ -89,42 +84,25 @@ class TTSModelManager:
             return False
 
     def _load_cosyvoice(self) -> Any:
-        """加载 CosyVoice 模型。
+        """加载 CosyVoice 模型（复用 CosyVoiceAdapter.load_model，避免重复导入/文案）"""
+        from filmdub.adapter import CosyVoiceAdapter
 
-        需要安装 CosyVoice 及其依赖（torch 等），否则抛出 ImportError。
-        """
-        try:
-            from cosyvoice.cli.cosyvoice import CosyVoice  # type: ignore
-
-            logger.info("Loading CosyVoice model...")
-            model = CosyVoice(self.config.cosyvoice_model_name)
-            logger.info("CosyVoice model loaded")
-            return model
-
-        except ImportError as e:
-            raise ImportError(
-                "CosyVoice is not installed. Please install CosyVoice and its "
-                "dependencies (torch) before using voice synthesis."
-            ) from e
+        adapter = CosyVoiceAdapter(
+            model_path=self.config.model_path,
+            model_name=self.config.cosyvoice_model_name,
+            device=self.config.cosyvoice_device,
+        )
+        return adapter.load_model()
 
     def _load_f5_tts(self) -> Any:
-        """加载 F5-TTS 模型。
+        """加载 F5-TTS 模型（复用 F5TTSAdapter.load_model）"""
+        from filmdub.adapter import F5TTSAdapter
 
-        需要安装 F5-TTS 及其依赖，否则抛出 ImportError。
-        """
-        try:
-            from f5_tts.api import F5TTS  # type: ignore
-
-            logger.info("Loading F5-TTS model...")
-            model = F5TTS(model_dir=self.config.f5_tts_model_path)
-            logger.info("F5-TTS model loaded")
-            return model
-
-        except ImportError as e:
-            raise ImportError(
-                "F5-TTS is not installed. Please install F5-TTS and its "
-                "dependencies before using voice synthesis."
-            ) from e
+        adapter = F5TTSAdapter(
+            model_path=self.config.f5_tts_model_path,
+            sample_rate=self.config.sample_rate,
+        )
+        return adapter.load_model()
 
     def switch_model(self, model_name: str) -> bool:
         """
@@ -136,6 +114,9 @@ class TTSModelManager:
         Returns:
             是否成功
         """
+        from filmdub.adapter.voice import normalize_voice_backend
+
+        model_name = normalize_voice_backend(model_name)
         if model_name not in self.models:
             logger.info(f"Model {model_name} not loaded, loading now...")
             return self.load_model(model_name)
@@ -155,6 +136,9 @@ class TTSModelManager:
         Returns:
             是否成功
         """
+        from filmdub.adapter.voice import normalize_voice_backend
+
+        model_name = normalize_voice_backend(model_name)
         if model_name not in self.models:
             logger.warning(f"Model {model_name} not loaded")
             return False
@@ -192,7 +176,11 @@ class TTSModelManager:
         Returns:
             模型信息
         """
+        from filmdub.adapter.voice import normalize_voice_backend
+
         model_name = model_name or self.get_current_model_name()
+        if model_name is not None:
+            model_name = normalize_voice_backend(model_name)
 
         if not model_name or model_name not in self.models:
             return None
@@ -207,7 +195,7 @@ class TTSModelManager:
         }
 
     def get_available_models(self) -> List[str]:
-        """获取可用模型列表"""
+        """获取可用模型列表（业务层命名：cosyvoice/f5_tts/qwen，与 Adapter 层 f5-tts 归一名区分）"""
         models = ["cosyvoice"]
 
         if self.config.enable_f5_tts:
@@ -233,9 +221,10 @@ class TTSModelManager:
             ValueError: 不支持的 backend
         """
         from filmdub.adapter import VoiceAdapter
+        from filmdub.adapter.voice import normalize_voice_backend
 
         backend = backend or self.config.default_model
-        adapter_backend = self.BACKEND_MAP.get(backend, backend)
+        adapter_backend = normalize_voice_backend(backend)
         adapter_kwargs = dict(kwargs)
 
         if adapter_backend == "cosyvoice":

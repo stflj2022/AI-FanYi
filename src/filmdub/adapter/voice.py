@@ -10,9 +10,34 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 import httpx
 import logging
-import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# 受支持的 TTS 后端（规范化后名称）
+SUPPORTED_BACKENDS = ("qwen", "cosyvoice", "f5-tts")
+
+# 别名 → 规范化后端名（统一命名约定，避免 f5_tts/f5-tts/f5tts、cosy_voice 等写法分裂）
+_BACKEND_ALIASES = {
+    "qwen": "qwen",
+    "qwen-tts": "qwen",
+    "cosyvoice": "cosyvoice",
+    "cosy-voice": "cosyvoice",
+    "cosy": "cosyvoice",
+    "f5-tts": "f5-tts",
+    "f5tts": "f5-tts",
+    "f5": "f5-tts",
+}
+
+
+def normalize_voice_backend(backend: str) -> str:
+    """
+    将任意 TTS 后端写法规范化为统一名称
+
+    ``f5_tts``/``F5TTS``/``f5`` → ``f5-tts``；``cosy_voice``/``cosy`` → ``cosyvoice``；
+    ``qwen``/``qwen-tts`` → ``qwen``。未知值原样返回（由调用方校验）。
+    """
+    key = str(backend).strip().lower().replace("_", "-")
+    return _BACKEND_ALIASES.get(key, key)
 
 
 class VoiceAdapterInterface(ABC):
@@ -312,6 +337,22 @@ class LocalVoiceAdapter(VoiceAdapterInterface):
                 self._model_version = getattr(self._model, "version", None)
         return self._model
 
+    def load_model(self):
+        """
+        同步加载本地模型（公开接口，供 TTSModelManager 等外部复用）
+
+        Returns:
+            模型对象
+
+        Raises:
+            ImportError: 未安装对应 TTS 库
+        """
+        if self._model is None:
+            self._model = self._load_model()
+            if self._model_version is None:
+                self._model_version = getattr(self._model, "version", None)
+        return self._model
+
     # ------------------------------------------------------------------
     # VoiceAdapterInterface 实现
     # ------------------------------------------------------------------
@@ -393,34 +434,9 @@ class LocalVoiceAdapter(VoiceAdapterInterface):
 
     @staticmethod
     def _save_audio(audio, sample_rate: int, output_path: Path) -> Path:
-        """numpy 音频落盘为 WAV（soundfile 优先，wave 回退）"""
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        audio = np.asarray(audio).squeeze()
-        if audio.ndim > 1:
-            # 多声道 → 取均值转单声道
-            audio = audio.mean(axis=-1)
-        if audio.dtype == np.int16:
-            audio = audio.astype(np.float32) / 32768.0
-        elif np.issubdtype(audio.dtype, np.integer):
-            audio = audio.astype(np.float32) / (np.iinfo(audio.dtype).max + 1.0)
-        audio = np.clip(audio, -1.0, 1.0)
-
-        if output_path.suffix.lower() != ".wav":
-            output_path = output_path.with_suffix(".wav")
-
-        try:
-            import soundfile as sf
-            sf.write(str(output_path), audio, sample_rate)
-        except ImportError:
-            pcm = (audio * 32767.0).astype(np.int16)
-            import wave
-            with wave.open(str(output_path), "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(sample_rate)
-                wf.writeframes(pcm.tobytes())
-        return output_path
+        """numpy 音频落盘为 WAV（复用公共工具 save_audio_to_wav）"""
+        from filmdub.adapter.audio_io import save_audio_to_wav
+        return save_audio_to_wav(audio, sample_rate, output_path)
 
 
 class CosyVoiceAdapter(LocalVoiceAdapter):
@@ -454,8 +470,6 @@ class CosyVoiceAdapter(LocalVoiceAdapter):
     def _run_inference(
         self, model, text: str, voice_id: str, speed: float, pitch: float, kwargs: Dict[str, Any]
     ) -> Any:
-        import numpy as np  # noqa: F401 (本地引用保持一致性)
-
         prompt_text = kwargs.get("prompt_text") or voice_id or ""
         reference_audio = kwargs.get("reference_audio") or kwargs.get("prompt_speech")
 
@@ -552,23 +566,25 @@ class VoiceAdapter(VoiceAdapterInterface):
             ValueError: 不支持的 backend
         """
         self.backend = backend
-        normalized = backend.lower().replace("_", "-")
+        normalized = normalize_voice_backend(backend)
         if normalized == "qwen":
             self._adapter = QwenTTSAdapter(**kwargs)
-        elif normalized in ("cosyvoice", "cosy-voice"):
+        elif normalized == "cosyvoice":
             self._adapter = CosyVoiceAdapter(**kwargs)
-        elif normalized in ("f5-tts", "f5tts"):
+        elif normalized == "f5-tts":
             self._adapter = F5TTSAdapter(**kwargs)
         else:
-            raise ValueError(f"Unsupported voice backend: {backend}")
+            raise ValueError(
+                f"Unsupported voice backend: {backend} (支持: {', '.join(SUPPORTED_BACKENDS)})"
+            )
 
     def model_info(self) -> Dict[str, Any]:
         """返回当前后端的模型版本/参数信息（进入 Artifact 可复现）"""
         if hasattr(self._adapter, "model_info"):
             return self._adapter.model_info()
         return {
-            "backend": self.backend,
-            "model_name": self.backend,
+            "backend": normalize_voice_backend(self.backend),
+            "model_name": normalize_voice_backend(self.backend),
             "model_version": None,
         }
 

@@ -432,17 +432,10 @@ class TTSEngine:
 
     def _save_audio(self, audio: np.ndarray, output_path: str):
         """
-        保存音频
+        保存音频（复用公共工具 save_audio_to_wav）
 
-        优先使用 soundfile；不可用时回退到标准库 wave 写入 16-bit PCM WAV。
-
-        Args:
-            audio: 音频数据
-            output_path: 输出路径
+        保持原有行为：非 int16 音频先归一化到满幅再写盘。
         """
-        # 确保目录存在
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
         # 确保是一维数组
         audio = np.asarray(audio).squeeze()
         if audio.dtype != np.int16:
@@ -451,17 +444,5 @@ class TTSEngine:
             audio = np.clip(audio / peak, -1.0, 1.0)
             audio = (audio * 32767).astype(np.int16)
 
-        try:
-            import soundfile as sf
-            sf.write(output_path, audio, self.config.sample_rate)
-            return
-        except ImportError:
-            pass
-
-        # 回退：标准库 wave 写入 PCM WAV
-        import wave
-        with wave.open(output_path, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(self.config.sample_rate)
-            wf.writeframes(audio.astype(np.int16).tobytes())
+        from filmdub.adapter.audio_io import save_audio_to_wav
+        save_audio_to_wav(audio, self.config.sample_rate, output_path)

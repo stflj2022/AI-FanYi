@@ -32,20 +32,18 @@ class WorkerDBPersistence:
         """
         获取或创建项目（返回真实的 UUID）
 
+        先尝试解析现有项目（复用 _resolve_project_uuid），不存在才创建。
+
         Args:
             project_id: 项目标识符（可能是字符串 ID）
 
         Returns:
             项目 UUID
         """
-        # 尝试查找现有项目
-        result = await self.db.execute(
-            select(Project).where(Project.name == project_id)
-        )
-        project = result.scalar_one_or_none()
-
-        if project:
-            return project.id
+        try:
+            return await self._resolve_project_uuid(project_id)
+        except ValueError:
+            pass
 
         # 创建新项目
         project = Project(
@@ -92,6 +90,26 @@ class WorkerDBPersistence:
             return project_id_uuid
 
         raise ValueError(f"Project not found: {project_id}")
+
+    @staticmethod
+    def _coerce_uuid(value, field_name: str) -> uuid.UUID:
+        """
+        将字符串安全转换为 UUID，非法值抛出清晰错误
+
+        Args:
+            value: UUID 字符串
+            field_name: 字段名（用于错误信息）
+
+        Returns:
+            uuid.UUID
+
+        Raises:
+            ValueError: 不是合法 UUID
+        """
+        try:
+            return uuid.UUID(str(value))
+        except (ValueError, TypeError, AttributeError) as e:
+            raise ValueError(f"{field_name} 不是合法 UUID: {value}") from e
 
     async def save_character(
         self,
@@ -205,8 +223,9 @@ class WorkerDBPersistence:
             return existing
 
         # 创建新记录
+        character_uuid = self._coerce_uuid(character_id, "character_id")
         voice_profile = VoiceProfile(
-            character_id=uuid.UUID(character_id),
+            character_id=character_uuid,
             project_id=project_uuid,
             name=voice_data.get("name", f"Voice-{character_id[:8]}"),
             version=voice_data.get("version", "v1.0"),
@@ -228,14 +247,14 @@ class WorkerDBPersistence:
 
     async def get_character_by_name(
         self,
-        project_id: uuid.UUID,
+        project_id,
         name: str,
     ) -> Optional[Character]:
         """
         根据名称查询人物（跨集复用）
 
         Args:
-            project_id: 项目 UUID
+            project_id: 项目标识符（UUID / UUID 字符串 / 项目名）
             name: 人物名称
 
         Returns:
@@ -264,7 +283,7 @@ class WorkerDBPersistence:
             Character 对象或 None
         """
         result = await self.db.execute(
-            select(Character).where(Character.id == uuid.UUID(character_id))
+            select(Character).where(Character.id == self._coerce_uuid(character_id, "character_id"))
         )
         return result.scalar_one_or_none()
 
@@ -276,14 +295,15 @@ class WorkerDBPersistence:
         根据人物 ID 查询音色档案（跨集复用）
 
         Args:
-            character_id: 人物 ID
+            character_id: 人物 ID（UUID 字符串）
 
         Returns:
             VoiceProfile 对象或 None
         """
+        character_uuid = self._coerce_uuid(character_id, "character_id")
         result = await self.db.execute(
             select(VoiceProfile).where(
-                VoiceProfile.character_id == uuid.UUID(character_id),
+                VoiceProfile.character_id == character_uuid,
                 VoiceProfile.is_active == True,
             )
         )
