@@ -18,7 +18,7 @@ from .schemas.upload_schemas import (
 )
 from ..services.upload_service import get_upload_service, UploadService
 
-router = APIRouter(prefix="/uploads", tags=["uploads"])
+router = APIRouter(tags=["uploads"])
 
 # 允许的 MIME 类型
 ALLOWED_MIME_TYPES = {

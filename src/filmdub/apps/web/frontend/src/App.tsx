@@ -10,6 +10,10 @@ import { Register } from './pages/Register'
 import { ProjectList } from './pages/ProjectList'
 import { ProjectCreate } from './pages/ProjectCreate'
 import { ProjectDetail } from './pages/ProjectDetail'
+import { Upload } from './pages/Upload'
+import { JobList } from './pages/JobList'
+import { Settings } from './pages/Settings'
+import { SystemStatusPage } from './pages/SystemStatus'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,15 +41,16 @@ function App() {
             }
           >
             <Route index element={<Dashboard />} />
+            <Route path="upload" element={<Upload />} />
             <Route path="health" element={<HealthCheck />} />
             <Route path="projects" element={<ProjectList />} />
             <Route path="projects/new" element={<ProjectCreate />} />
             <Route path="projects/:id" element={<ProjectDetail />} />
             <Route path="projects/:id/edit" element={<ProjectCreate />} />
-            <Route path="jobs" element={<div>Jobs Page (TODO)</div>} />
+            <Route path="jobs" element={<JobList />} />
             <Route path="characters" element={<div>Characters Page (TODO)</div>} />
-            <Route path="settings" element={<div>Settings Page (TODO)</div>} />
-            <Route path="system" element={<div>System Status Page (TODO)</div>} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="system" element={<SystemStatusPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
