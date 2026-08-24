@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { projectAPI, type ProjectCreate, type ProjectUpdate } from '../services/projectAPI'
+import { projectAPI } from '../services/projectAPI'
+import type { ProjectCreate, ProjectUpdate } from '../types'
 
 type ProjectFormData = Omit<ProjectCreate, 'config'> & {
   config?: string
@@ -124,7 +125,7 @@ export function ProjectForm() {
     }
   }
 
-  const handleChange = (field: keyof ProjectFormData, value: any) => {
+  const handleChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
     // 清除该字段的错误
     if (errors[field]) {

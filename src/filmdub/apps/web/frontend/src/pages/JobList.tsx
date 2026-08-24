@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { JobCard } from '../components/job/JobCard';
-import { JobStatus, JobResponse, jobAPI } from '../services/jobAPI';
+import jobAPI from '../services/jobAPI';
+import type { JobStatus, JobResponse } from '../services/jobAPI';
 import {
   Filter,
   Search,

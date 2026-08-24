@@ -71,6 +71,7 @@ export function useBrowserNotification() {
     permission,
     requestPermission,
     show,
+    sendNotification: show,
     success,
     error,
   }

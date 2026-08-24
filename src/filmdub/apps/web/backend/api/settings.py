@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from filmdub.core.orchestrator_db import get_db_context
+from filmdub.core.orchestrator_db import get_db
 from filmdub.apps.web.backend.models import User
 from filmdub.apps.web.backend.api.dependencies import get_current_active_user
 from filmdub.apps.web.backend.api.schemas.settings_schemas import (
@@ -27,7 +27,7 @@ async def get_settings(
 async def update_settings(
     settings_data: UserSettingsUpdate,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """更新用户设置"""
     from datetime import datetime
@@ -54,7 +54,7 @@ async def update_settings(
 async def change_password(
     password_data: ChangePasswordRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """修改密码"""
     # 验证旧密码

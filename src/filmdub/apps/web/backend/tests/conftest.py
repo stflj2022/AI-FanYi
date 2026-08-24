@@ -7,7 +7,7 @@ from typing import AsyncGenerator
 from filmdub.apps.web.backend.main import app
 from filmdub.apps.web.backend.models import User, Base
 from filmdub.core.models import ProjectRecord as Project, Character, Job
-from filmdub.core.orchestrator_db import get_db_context
+from filmdub.core.orchestrator_db import get_db
 from filmdub.apps.web.backend.services.auth_service import AuthService
 
 
@@ -49,7 +49,7 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
 
     # 覆盖数据库依赖
     from filmdub.core import orchestrator_db
-    app.dependency_overrides[orchestrator_db.get_db_context] = override_get_db
+    app.dependency_overrides[orchestrator_db.get_db] = override_get_db
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

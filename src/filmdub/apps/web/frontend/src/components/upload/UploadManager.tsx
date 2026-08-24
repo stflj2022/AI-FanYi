@@ -4,7 +4,8 @@ import { UploadArea } from './UploadArea';
 import { UploadProgress } from './UploadProgress';
 import { MediaInfo } from './MediaInfo';
 import { X, ChevronDown, ChevronUp } from 'lucide-react';
-import uploadAPI, { UploadStatus, MediaType } from '../../services/uploadAPI';
+import uploadAPI from '../../services/uploadAPI';
+import type { UploadStatus, MediaType } from '../../services/uploadAPI';
 
 interface UploadTask {
   id: string;

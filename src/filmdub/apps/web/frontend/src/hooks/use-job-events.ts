@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useWebSocket } from './use-websocket'
-import { useAuthStore } from '../store/auth'
+import { useAuthStore } from '../store/authStore'
 
 export interface JobEvent {
   event_type: string
@@ -63,7 +63,7 @@ export function useJobEvents(jobId: string, options: UseJobEventsOptions = {}) {
   const wsRef = useRef<any>(null)
 
   // 构建 WebSocket URL
-  const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8000'}/api/v1/ws/jobs?token=${token}`
+  const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8001'}/api/v1/ws/jobs?token=${token}`
 
   // WebSocket 消息处理
   const handleMessage = useCallback((message: JobEvent) => {

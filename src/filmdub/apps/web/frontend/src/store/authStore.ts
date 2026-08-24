@@ -8,6 +8,7 @@ interface AuthState {
   isAuthenticated: boolean
   isLoading: boolean
   error: string | null
+  token: string | null
 
   // Actions
   login: (username: string, password: string) => Promise<void>
@@ -24,6 +25,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: authAPI.isAuthenticated(),
       isLoading: false,
       error: null,
+      token: typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null,
 
       login: async (username: string, password: string) => {
         set({ isLoading: true, error: null })
@@ -35,6 +37,7 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
             error: null,
+            token: response.access_token,
           })
         } catch (error: any) {
           set({
@@ -78,6 +81,7 @@ export const useAuthStore = create<AuthState>()(
             user: null,
             isAuthenticated: false,
             error: null,
+            token: null,
           })
         }
       },
@@ -104,6 +108,7 @@ export const useAuthStore = create<AuthState>()(
                 isAuthenticated: true,
                 isLoading: false,
                 error: null,
+                token: response.access_token,
               })
               return
             } catch (refreshError) {
@@ -114,6 +119,7 @@ export const useAuthStore = create<AuthState>()(
                 isAuthenticated: false,
                 isLoading: false,
                 error: null,
+                token: null,
               })
               return
             }
@@ -123,6 +129,7 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: false,
             isLoading: false,
             error: null,
+            token: null,
           })
         }
       },

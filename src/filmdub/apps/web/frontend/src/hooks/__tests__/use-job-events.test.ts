@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useJobEvents } from '../use-job-events'
-import { useAuthStore } from '../../store/auth'
+import { useAuthStore } from '../../store/authStore'
 
 // Mock WebSocket
 class MockWebSocket {
@@ -47,7 +47,7 @@ class MockWebSocket {
 global.WebSocket = MockWebSocket as any
 
 // Mock auth store
-vi.mock('../../store/auth', () => ({
+vi.mock('../../store/authStore', () => ({
   useAuthStore: vi.fn(),
 }))
 

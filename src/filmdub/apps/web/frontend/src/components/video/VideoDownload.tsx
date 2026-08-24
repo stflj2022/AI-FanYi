@@ -40,7 +40,7 @@ export function VideoDownload({
         throw new Error('Failed to get reader')
       }
 
-      const chunks: Uint8Array[] = []
+      const chunks: BlobPart[] = []
       let receivedLength = 0
 
       while (true) {

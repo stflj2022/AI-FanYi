@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc, asc
+from sqlalchemy import select, and_, or_, desc, asc, func
 from sqlalchemy.orm import selectinload
 
 from filmdub.core.models import Job, Workflow, Worker, ProjectRecord
@@ -124,7 +124,7 @@ class JobService:
         """获取任务列表"""
         # 构建基础查询
         query = select(Job)
-        count_query = select(Job.id)
+        count_query = select(func.count()).select_from(Job)
 
         # 关联项目以验证所有权
         if owner_id:
@@ -162,8 +162,8 @@ class JobService:
             query = query.order_by(asc(sort_column))
 
         # 获取总数
-        total_result = await db.execute(select(count_query).subquery())
-        total = len(total_result.all())
+        total_result = await db.execute(count_query)
+        total = total_result.scalar_one()
 
         # 分页
         query = query.offset((page - 1) * page_size).limit(page_size)

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { UploadManager } from '../components/upload/UploadManager';
-import { MediaType } from '../services/uploadAPI';
+import type { MediaType } from '../services/uploadAPI';
 import { ArrowLeft, Video, Music, Image as ImageIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 

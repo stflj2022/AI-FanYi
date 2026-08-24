@@ -1,4 +1,4 @@
-import { JobResponse } from '../../services/jobAPI'
+import type { JobResponse } from '../../services/jobAPI'
 import { Link } from 'react-router-dom'
 
 interface RecentJobsListProps {

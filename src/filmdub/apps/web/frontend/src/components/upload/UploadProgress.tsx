@@ -1,6 +1,6 @@
 /** 上传进度条组件 */
 import { Upload, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react';
-import { UploadStatus } from '../../services/uploadAPI';
+import type { UploadStatus } from '../../services/uploadAPI';
 
 interface UploadProgressProps {
   filename: string;

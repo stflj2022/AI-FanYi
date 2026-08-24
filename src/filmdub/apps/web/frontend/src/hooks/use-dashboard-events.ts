@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useWebSocket } from './use-websocket'
-import { useAuthStore } from '../store/auth'
+import { useAuthStore } from '../store/authStore'
 
 export interface DashboardEvent {
   event_type: string
@@ -38,7 +38,7 @@ export function useDashboardEvents(options: UseDashboardEventsOptions = {}) {
   const [isSubscribed, setIsSubscribed] = useState(false)
 
   // 构建 WebSocket URL
-  const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8000'}/api/v1/ws/dashboard?token=${token}`
+  const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8001'}/api/v1/ws/jobs?token=${token}`
 
   // WebSocket 消息处理
   const handleMessage = useCallback((message: DashboardEvent) => {

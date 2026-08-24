@@ -33,6 +33,8 @@ volumes:
     name: film-dubbing-model-data
   log_data:
     name: film-dubbing-log-data
+  celerybeat_schedule:
+    name: film-dubbing-celbyat-schedule
 
 # ============================================
 # 服务配置
@@ -290,9 +292,7 @@ services:
     restart: unless-stopped
     runtime: nvidia  # 需要 nvidia-docker2
     environment:
-      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
-    command: celery -A src.worker worker --loglevel=info --concurrency=1 -Q gpu,tts
-    environment:
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-0}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-filmdubbing}:${POSTGRES_PASSWORD:-filmdubbing_password}@postgres:5432/${POSTGRES_DB:-filmdubbing}
       - REDIS_URL=redis://redis:6379/0
       - MINIO_ENDPOINT=minio:9000
@@ -301,6 +301,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - WORKER_TYPE=gpu
+    command: celery -A src.worker worker --loglevel=info --concurrency=1 -Q gpu,tts
     volumes:
       - ./src:/app/src
       - artifact_data:/app/artifacts
@@ -412,7 +413,7 @@ services:
       - "${WEB_BACKEND_PORT:-8001}:8000"
     environment:
       # 数据库
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-filmdubbing}:${POSTGRES_PASSWORD:-filmdubbing_password}@postgres:5432/${POSTGRES_DB:-filmdubbing}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-filmdubbing}:${POSTGRES_PASSWORD:-filmdubbing_password}@postgres:5432/${POSTGRES_DB:-filmdubbing}
       # Redis
       - REDIS_URL=redis://redis:6379/0
       # MinIO
@@ -489,7 +490,3 @@ services:
         reservations:
           cpus: '0.25'
           memory: 128M
-
-volumes:
-  celerybeat_schedule:
-    name: film-dubbing-celbyat-schedule

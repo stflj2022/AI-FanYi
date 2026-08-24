@@ -1,4 +1,4 @@
-import { JobStatsResponse } from '../../services/jobAPI'
+import type { JobStatsResponse } from '../../services/jobAPI'
 
 interface JobStatsCardProps {
   stats: JobStatsResponse

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { Toast, ToastProps, ToastType } from './Toast'
+import { Toast } from './toast'
+import type { ToastProps, ToastType } from './toast'
 
 interface ToastState {
   toasts: ToastProps[]

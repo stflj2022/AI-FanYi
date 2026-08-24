@@ -1,6 +1,6 @@
 /** 媒体信息显示组件 */
 import { FileVideo, FileAudio, FileImage, Clock, Film, Music, Subtitles } from 'lucide-react';
-import { MediaMetadataResponse } from '../../services/uploadAPI';
+import type { MediaMetadataResponse } from '../../services/uploadAPI';
 
 interface MediaInfoProps {
   metadata: MediaMetadataResponse;

@@ -15,7 +15,7 @@ from filmdub.apps.web.backend.api.schemas.system_schemas import (
     QueueStatus,
     SystemResourceStatus,
 )
-from filmdub.core.orchestrator_db import get_db_context
+from filmdub.core.orchestrator_db import get_db
 from filmdub.core.models import Job, JobStatus
 
 router = APIRouter()
@@ -155,7 +155,7 @@ async def get_queue_status(db: AsyncSession) -> QueueStatus:
 @router.get("/status", response_model=SystemStatus)
 async def get_system_status(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取系统状态（需要管理员权限）"""
     if not current_user.is_admin:
@@ -191,7 +191,7 @@ async def get_workers(
 @router.get("/queue", response_model=QueueStatus)
 async def get_queue(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取队列状态（需要管理员权限）"""
     if not current_user.is_admin:

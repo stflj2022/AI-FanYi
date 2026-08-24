@@ -1,40 +1,7 @@
 import { api } from './api'
-import type { Project } from '../types'
+import type { Project, ProjectCreate, ProjectUpdate } from '../types'
 
-/** 项目请求类型 */
-export interface ProjectCreate {
-  name: string
-  description?: string
-  title?: string
-  title_en?: string
-  season?: number
-  episode?: number
-  year?: number
-  original_language?: string
-  target_language: string
-  media_type?: string
-  tmdb_id?: number
-  imdb_id?: string
-  config?: Record<string, any>
-}
-
-export interface ProjectUpdate {
-  name?: string
-  description?: string
-  title?: string
-  title_en?: string
-  season?: number
-  episode?: number
-  year?: number
-  original_language?: string
-  target_language?: string
-  media_type?: string
-  tmdb_id?: number
-  imdb_id?: string
-  config?: Record<string, any>
-  status?: string
-}
-
+/** 项目列表查询参数 */
 export interface ProjectListParams {
   page?: number
   page_size?: number

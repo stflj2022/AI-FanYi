@@ -1,5 +1,4 @@
 import axios, { AxiosError } from 'axios'
-import type { ApiResponse } from '../types'
 
 // API 基础配置
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -40,19 +39,19 @@ apiClient.interceptors.response.use(
   }
 )
 
-// 通用 API 方法
+// 通用 API 方法（后端各端点直接返回 response_model，无 {data} 信封包装）
 export const api = {
-  get: <T>(url: string, params?: any) =>
-    apiClient.get<ApiResponse<T>>(url, { params }).then((res) => res.data.data),
+  get: <T>(url: string, params?: any): Promise<T> =>
+    apiClient.get<T>(url, { params }).then((res) => res.data as T),
 
-  post: <T>(url: string, data?: any) =>
-    apiClient.post<ApiResponse<T>>(url, data).then((res) => res.data.data),
+  post: <T>(url: string, data?: any): Promise<T> =>
+    apiClient.post<T>(url, data).then((res) => res.data as T),
 
-  put: <T>(url: string, data?: any) =>
-    apiClient.put<ApiResponse<T>>(url, data).then((res) => res.data.data),
+  put: <T>(url: string, data?: any): Promise<T> =>
+    apiClient.put<T>(url, data).then((res) => res.data as T),
 
-  delete: <T>(url: string) =>
-    apiClient.delete<ApiResponse<T>>(url).then((res) => res.data.data),
+  delete: <T>(url: string): Promise<T> =>
+    apiClient.delete<T>(url).then((res) => res.data as T),
 
   // 原始响应方法（直接返回完整响应）
   getRaw: <T>(url: string, params?: any) =>

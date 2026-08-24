@@ -2,7 +2,8 @@
 import { useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, X, FileVideo, FileAudio, FileImage, AlertCircle } from 'lucide-react';
-import uploadAPI, { MediaType } from '../../services/uploadAPI';
+import uploadAPI from '../../services/uploadAPI';
+import type { MediaType } from '../../services/uploadAPI';
 
 interface UploadAreaProps {
   onUploadStart?: (file: File) => void;

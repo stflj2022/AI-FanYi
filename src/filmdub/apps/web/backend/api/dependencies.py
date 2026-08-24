@@ -7,7 +7,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
-from filmdub.core.orchestrator_db import AsyncSessionLocal, get_db_context
+from filmdub.core.orchestrator_db import AsyncSessionLocal, get_db
 from filmdub.apps.web.backend.services.auth_service import AuthService
 from filmdub.apps.web.backend.models import User
 from filmdub.apps.web.backend.api.schemas.auth_schemas import UserResponse
@@ -19,7 +19,7 @@ security = HTTPBearer()
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     """获取当前登录用户"""
     credentials_exception = HTTPException(
@@ -79,7 +79,7 @@ async def get_current_admin_user(current_user: User = Depends(get_current_user))
 # 可选认证（不需要登录）
 async def get_optional_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ) -> Optional[User]:
     """可选认证（获取当前用户，未登录返回 None）"""
     if credentials is None:

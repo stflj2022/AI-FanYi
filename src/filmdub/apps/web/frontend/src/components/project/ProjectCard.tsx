@@ -1,4 +1,4 @@
-import { Project } from '../../types'
+import type { Project } from '../../types'
 import { Edit, Trash2, FolderOpen } from 'lucide-react'
 
 interface ProjectCardProps {

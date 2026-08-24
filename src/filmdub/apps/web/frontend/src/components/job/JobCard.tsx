@@ -1,5 +1,5 @@
 /** 任务卡片组件 */
-import { JobStatus, JobResponse } from '../../services/jobAPI';
+import type { JobStatus, JobResponse } from '../../services/jobAPI';
 import {
   Clock,
   Play,

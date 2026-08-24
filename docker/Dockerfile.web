@@ -40,6 +40,8 @@ COPY src/ ./src/
 
 # 确保 Python 可以找到用户安装的包
 ENV PATH=/root/.local/bin:$PATH
+# 确保 src 目录在模块搜索路径中（filmdub 包位于 /app/src 下）
+ENV PYTHONPATH=/app/src
 
 # 暴露端口
 EXPOSE 8000

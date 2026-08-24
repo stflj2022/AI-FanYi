@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from filmdub.core.orchestrator_db import get_db_context
+from filmdub.core.orchestrator_db import get_db
 from filmdub.apps.web.backend.services.project_service import ProjectService
 from filmdub.apps.web.backend.models import User
 from filmdub.apps.web.backend.api.dependencies import get_current_active_user
@@ -21,7 +21,7 @@ router = APIRouter()
 async def create_project(
     project_data: ProjectCreate,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """创建项目"""
     project = await ProjectService.create_project(
@@ -39,7 +39,7 @@ async def list_projects(
     search: str | None = Query(None, description="搜索关键词"),
     status: str | None = Query(None, description="状态筛选"),
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取项目列表（支持分页、搜索和筛选）"""
     projects, total = await ProjectService.list_projects(
@@ -63,7 +63,7 @@ async def list_projects(
 async def get_project(
     project_id: str,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取项目详情"""
     project = await ProjectService.get_project_by_id(
@@ -86,7 +86,7 @@ async def update_project(
     project_id: str,
     project_data: ProjectUpdate,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """更新项目"""
     project = await ProjectService.update_project(
@@ -109,7 +109,7 @@ async def update_project(
 async def delete_project(
     project_id: str,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """删除项目"""
     success = await ProjectService.delete_project(

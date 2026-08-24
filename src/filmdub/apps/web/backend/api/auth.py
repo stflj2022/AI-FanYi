@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from filmdub.core.orchestrator_db import get_db_context
+from filmdub.core.orchestrator_db import get_db
 from filmdub.apps.web.backend.services.auth_service import AuthService
 from filmdub.apps.web.backend.models import User
 from filmdub.apps.web.backend.api.dependencies import get_current_active_user, get_current_admin_user
@@ -22,7 +22,7 @@ router = APIRouter()
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     user_data: UserRegister,
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """用户注册"""
     # 检查用户名是否已存在
@@ -56,7 +56,7 @@ async def register(
 @router.post("/login", response_model=TokenResponse)
 async def login(
     login_data: UserLogin,
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """用户登录"""
     # 验证用户
@@ -88,7 +88,7 @@ async def login(
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
     refresh_data: RefreshTokenRequest,
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
 ):
     """刷新 Token"""
     # 解码刷新 Token
@@ -156,7 +156,7 @@ async def get_current_user_info(
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
-    db: AsyncSession = Depends(get_db_context),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     """列出所有用户（仅管理员）"""

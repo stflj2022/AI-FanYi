@@ -52,6 +52,41 @@ export interface Project {
   completed_at?: string
 }
 
+/** 创建项目请求 */
+export interface ProjectCreate {
+  name: string
+  description?: string
+  title?: string
+  title_en?: string
+  season?: number
+  episode?: number
+  year?: number
+  original_language?: string
+  target_language: string
+  media_type?: string
+  tmdb_id?: number
+  imdb_id?: string
+  config?: Record<string, any>
+}
+
+/** 更新项目请求 */
+export interface ProjectUpdate {
+  name?: string
+  description?: string
+  title?: string
+  title_en?: string
+  season?: number
+  episode?: number
+  year?: number
+  original_language?: string
+  target_language?: string
+  media_type?: string
+  tmdb_id?: number
+  imdb_id?: string
+  config?: Record<string, any>
+  status?: string
+}
+
 /** 任务类型 */
 export interface Job {
   id: string
