@@ -11,7 +11,6 @@ export function Dashboard() {
   const [stats, setStats] = useState<JobStatsResponse | null>(null)
   const [recentJobs, setRecentJobs] = useState<JobResponse[]>([])
   const [loading, setLoading] = useState(true)
-  const [refreshKey, setRefreshKey] = useState(0)
   const lastRefreshRef = useRef(0)
 
   // 浏览器通知
@@ -60,8 +59,7 @@ export function Dashboard() {
   const { isConnected } = useDashboardEvents({
     onJobCreated: (event) => {
       console.log('Job created:', event)
-      // 刷新数据
-      setRefreshKey((prev) => prev + 1)
+      throttledRefresh()
       sendNotification({
         title: '新任务已创建',
         body: event.data.job_name,
@@ -69,8 +67,7 @@ export function Dashboard() {
     },
     onJobStatusChanged: (event) => {
       console.log('Job status changed:', event)
-      // 刷新数据
-      setRefreshKey((prev) => prev + 1)
+      throttledRefresh()
       if (event.data.new_status === 'completed') {
         sendNotification({
           title: '任务已完成',
@@ -85,13 +82,6 @@ export function Dashboard() {
     },
     onAnyEvent: throttledRefresh,
   })
-
-  // 当 refreshKey 变化时刷新数据
-  useEffect(() => {
-    if (refreshKey > 0) {
-      Promise.all([loadStats(), loadRecentJobs()])
-    }
-  }, [refreshKey, loadStats, loadRecentJobs])
 
   return (
     <div>
