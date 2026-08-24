@@ -77,8 +77,10 @@ class UploadAPI {
     }
 
     // 使用 apiClient（axios 实例）以支持 onUploadProgress 进度回调；
-    // FormData 由 axios 自动设置 multipart Content-Type（含 boundary）
+    // Content-Type 置 undefined，覆盖 apiClient 默认的 application/json，
+    // 由浏览器对 FormData 自动设置带 boundary 的 multipart/form-data
     const response = await apiClient.post<UploadResponse>('/uploads', formData, {
+      headers: { 'Content-Type': undefined },
       onUploadProgress: (progressEvent) => {
         if (progressEvent.total && options.onProgress) {
           options.onProgress((progressEvent.loaded / progressEvent.total) * 100);
