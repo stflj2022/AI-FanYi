@@ -559,14 +559,27 @@ class FullPipelineExecutor:
                 break  # 依赖失败则停止
 
         done = [m for m in WORKFLOW["order"] if m in self.ctx or m in mods_run]
+        output_video = self.ctx.get("M11", {}).get("video") or self.ctx.get("M12", {}).get("output")
+        qa_result = self.ctx.get("M13", {}).get("result", {})
+
         result = {
             "project_id": self.project_id,
             "completed_modules": done,
             "failed_modules": failed_modules,
-            "output_video": self.ctx.get("M11", {}).get("video") or self.ctx.get("M12", {}).get("output"),
+            "output_video": output_video,
+            "qa_report": qa_result,
             "work_dir": str(self.work_dir),
             "status": "completed" if not failed_modules and len(done) == len(WORKFLOW["order"]) else "failed"
         }
 
         log("FULL_PIPELINE", f"流水线完成，状态: {result['status']}")
         return result
+
+    def get_output_video_path(self) -> Optional[Path]:
+        """获取最终输出视频路径"""
+        video = self.ctx.get("M11", {}).get("video") or self.ctx.get("M12", {}).get("output")
+        return Path(video) if video else None
+
+    def get_qa_report(self) -> Dict:
+        """获取 QA 报告"""
+        return self.ctx.get("M13", {}).get("result", {})

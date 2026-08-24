@@ -376,3 +376,108 @@ async def get_job_logs(
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         "logs": log_entries,
     }
+
+
+@router.get("/{job_id}/output/video", tags=["jobs"])
+async def get_job_output_video(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取任务的最终输出视频
+    
+    返回最终配音视频的下载链接或流式播放 URL
+    """
+    # 检查任务是否存在
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job {job_id} not found"
+        )
+    
+    # 检查任务是否完成
+    if job.status != JobStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Job {job_id} is not completed. Current status: {job.status.value}"
+        )
+    
+    # 从 output_artifacts 中查找视频 artifact
+    video_artifact_id = None
+    for art_ref in (job.output_artifacts or []):
+        if art_ref.startswith("final_video:"):
+            video_artifact_id = art_ref.split(":", 1)[1]
+            break
+    
+    if not video_artifact_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No output video found for job {job_id}"
+        )
+    
+    # 重定向到 artifact 下载端点
+    from filmdub.apps.api.routers.artifacts import download_artifact
+    
+    try:
+        artifact_uuid = UUID(video_artifact_id)
+        return await download_artifact(artifact_uuid, db)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Invalid video artifact ID: {video_artifact_id}"
+        )
+
+
+@router.get("/{job_id}/output/qa-report", tags=["jobs"])
+async def get_job_qa_report(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取任务的 QA 报告
+    
+    返回 QA 检查结果，包括评分、问题列表等
+    """
+    # 检查任务是否存在
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job {job_id} not found"
+        )
+    
+    # 检查任务是否完成
+    if job.status != JobStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Job {job_id} is not completed. Current status: {job.status.value}"
+        )
+    
+    # 从 work_dir 读取 QA 报告
+    import json
+    from pathlib import Path
+    
+    work_dir = Path(f"/tmp/filmdub_pipeline/job_{job_id}")
+    qa_file = work_dir / "manifests" / "ctx_M13.json"
+    
+    if not qa_file.exists():
+        # 尝试从 job 的 config 中获取
+        if job.config and "qa_report" in job.config:
+            return job.config["qa_report"]
+        
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"QA report not found for job {job_id}"
+        )
+    
+    try:
+        qa_data = json.loads(qa_file.read_text())
+        return qa_data.get("result", {})
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read QA report: {str(e)}"
+        )

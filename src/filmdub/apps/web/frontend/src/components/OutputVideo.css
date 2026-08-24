@@ -1,0 +1,192 @@
+/* 输出视频容器样式 */
+.output-video-container {
+  width: 100%;
+  padding: 1.5rem;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.loading-message,
+.no-output-message,
+.error-message {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+  font-size: 1rem;
+}
+
+.output-video-container.error .error-message {
+  color: #d32f2f;
+  background: #ffebee;
+  border-radius: 4px;
+}
+
+.progress-info {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f5f5f5;
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.progress-info div {
+  margin: 0.25rem 0;
+}
+
+/* 视频播放器 */
+.video-player-wrapper {
+  width: 100%;
+  margin-bottom: 1rem;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.video-player {
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+  display: block;
+}
+
+/* 操作按钮 */
+.video-actions {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background: #1976d2;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #1565c0;
+}
+
+/* QA 报告 */
+.qa-report-section {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: #f9f9f9;
+  border-radius: 4px;
+  border-left: 4px solid #4CAF50;
+}
+
+.qa-report-section h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #333;
+  font-size: 1.125rem;
+}
+
+.qa-score {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: white;
+  border-radius: 4px;
+}
+
+.qa-label {
+  font-weight: 500;
+  color: #666;
+}
+
+.qa-value {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #4CAF50;
+}
+
+/* QA 问题列表 */
+.qa-issues {
+  margin-bottom: 1rem;
+}
+
+.qa-issues h4 {
+  margin-bottom: 0.5rem;
+  color: #333;
+  font-size: 1rem;
+}
+
+.issues-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.issue-item {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  background: white;
+  border-radius: 4px;
+  border-left: 3px solid #999;
+}
+
+.issue-item.error {
+  border-left-color: #f44336;
+  background: #ffebee;
+}
+
+.issue-item.warning {
+  border-left-color: #ff9800;
+  background: #fff3e0;
+}
+
+.issue-item.info {
+  border-left-color: #2196f3;
+  background: #e3f2fd;
+}
+
+.issue-item.success {
+  border-left-color: #4CAF50;
+  background: #e8f5e9;
+}
+
+.issue-type {
+  font-weight: 500;
+  color: #666;
+  min-width: 80px;
+}
+
+.issue-message {
+  flex: 1;
+  color: #333;
+}
+
+/* QA 详细信息 */
+.qa-details {
+  margin-top: 1rem;
+}
+
+.qa-details h4 {
+  margin-bottom: 0.5rem;
+  color: #333;
+  font-size: 1rem;
+}
+
+.qa-details-json {
+  padding: 1rem;
+  background: #263238;
+  color: #eceff1;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
