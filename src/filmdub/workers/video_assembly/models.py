@@ -1,13 +1,24 @@
 """
 M11 数据模型
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional, List, Dict, Any
+from pathlib import Path
+
+
+class AudioTrackType(str, Enum):
+    """音频轨道类型"""
+    DIALOGUE = "dialogue"  # AI 对白
+    BACKGROUND = "background"  # 背景音乐
+    AMBIENT = "ambient"  # 环境音
+    EFFECTS = "effects"  # 音效
+    ORIGINAL = "original"  # 原声（需要去除）
 
 
 @dataclass
 class AudioSegment:
-    """音频片段"""
+    """音频片段（用于 AI 对白）"""
     dialogue_id: str
     audio_path: str
     start_time: float
@@ -24,6 +35,30 @@ class AudioSegment:
             "end_time": self.end_time,
             "target_start_time": self.target_start_time,
             "target_end_time": self.target_end_time
+        }
+
+
+@dataclass
+class AudioTrack:
+    """音频轨道（背景音乐/环境音/音效）"""
+    track_type: AudioTrackType
+    audio_path: str
+    start_time: float = 0.0  # 轨道开始时间
+    end_time: Optional[float] = None  # 轨道结束时间（None 表示到结束）
+    volume: float = 1.0  # 音量因子
+    fade_in: float = 0.0  # 淡入时长（秒）
+    fade_out: float = 0.0  # 淡出时长（秒）
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "track_type": self.track_type.value,
+            "audio_path": self.audio_path,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "volume": self.volume,
+            "fade_in": self.fade_in,
+            "fade_out": self.fade_out,
         }
 
 
@@ -82,6 +117,10 @@ class AssemblyResult:
     audio_codec: str
     video_codec: str
     subtitle_path: Optional[str] = None
+    lufs_level: Optional[float] = None  # LUFS 响度
+    
+    # 分离的音轨路径
+    separated_tracks: Dict[str, Path] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""

@@ -1,7 +1,7 @@
 """
 M11 Video Assembly 配置
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 
 
@@ -34,3 +34,28 @@ class M11Config:
     # 性能
     max_concurrent_jobs: int = 2
     gpu_acceleration: bool = False
+
+    # 音频分离配置
+    enable_audio_separation: bool = True
+    separation_model: str = "htdemucs"  # HTDemucs 模型
+    separation_device: str = "cpu"
+
+    # LUFS 响度归一化配置
+    enable_lufs_normalization: bool = True
+    target_lufs: float = -16.0  # EBU R128 目标响度
+    lufs_tolerance: float = 2.0  # 容差
+
+    # 原声处理配置
+    original_vocal_volume: float = 0.0  # 原人声音量（0.0 = 完全静音）
+    dialogue_suppression_db: float = -60.0  # 对白时段原声衰减 dB
+
+    # 音轨音量配置
+    dialogue_volume: float = 1.0  # AI 对白音量
+    background_volume: float = 0.3  # 背景音乐音量
+    ambient_volume: float = 0.5  # 环境音音量
+    effects_volume: float = 0.8  # 音效音量
+
+    # 音轨混合配置
+    default_fade_in: float = 0.5  # 默认淡入时长
+    default_fade_out: float = 0.5  # 默认淡出时长
+    crossfade_duration: float = 0.2  # 交叉混合时长

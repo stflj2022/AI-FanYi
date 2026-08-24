@@ -15,7 +15,7 @@ from filmdub.orchestrator.job_logs import job_log_store
 
 from .config import M11Config
 from .assembler import VideoAssembler
-from .models import AudioSegment, SubtitleEntry
+from .models import AudioSegment, SubtitleEntry, AudioTrack, AudioTrackType
 
 
 class M11Worker:
