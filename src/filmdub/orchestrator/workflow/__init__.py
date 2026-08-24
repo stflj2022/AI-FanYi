@@ -19,6 +19,11 @@ from .capability_matrix import (
     CapabilityThreshold,
     CapabilityBuilder,
 )
+from .workflow_selector import (
+    WorkflowType,
+    SelectionReason,
+    WorkflowSelector,
+)
 
 __all__ = [
     "TaskContext",
@@ -32,4 +37,7 @@ __all__ = [
     "CapabilityEntry",
     "CapabilityThreshold",
     "CapabilityBuilder",
+    "WorkflowType",
+    "SelectionReason",
+    "WorkflowSelector",
 ]
