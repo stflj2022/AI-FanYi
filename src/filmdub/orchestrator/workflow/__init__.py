@@ -12,6 +12,13 @@
 
 from .task_context import TaskContext, TaskType, QualityRequirement
 from .asset_discovery import AssetStatus, AssetDiscovery, AssetState
+from .capability_matrix import (
+    CapabilityMatrix,
+    CapabilityState,
+    CapabilityEntry,
+    CapabilityThreshold,
+    CapabilityBuilder,
+)
 
 __all__ = [
     "TaskContext",
@@ -20,4 +27,9 @@ __all__ = [
     "AssetStatus",
     "AssetDiscovery",
     "AssetState",
+    "CapabilityMatrix",
+    "CapabilityState",
+    "CapabilityEntry",
+    "CapabilityThreshold",
+    "CapabilityBuilder",
 ]
