@@ -37,6 +37,42 @@ from filmdub.workers.media_intake.probe import FFprobeParser
 from filmdub.workers.common import save_json_artifact
 from .full_pipeline_executor import FullPipelineExecutor
 
+# 模块到人性化文案的映射
+MODULE_STAGE_MAP = {
+    "M01": "正在导入视频媒体",
+    "M02": "正在分离音频和背景音",
+    "M03": "正在获取字幕信息",
+    "M05": "正在转写对白文字",
+    "M04": "正在建立人物数据库",
+    "M06": "正在识别说话人物",
+    "M07": "正在翻译对白为中文",
+    "M08": "正在规划语音韵律",
+    "M09": "正在合成中文语音",
+    "M10": "正在混音处理",
+    "M11": "正在组装视频",
+    "M12": "正在封装最终视频",
+    "M13": "正在进行质量检查",
+    "M14": "正在归档项目",
+}
+
+# 错误人性化文案映射
+ERROR_MESSAGE_MAP = {
+    "M01": "视频导入失败，请检查视频格式是否支持",
+    "M02": "音频分离失败，系统正在自动重试",
+    "M03": "字幕获取失败，将使用自动转写",
+    "M05": "对白转写失败，系统正在自动重试",
+    "M04": "人物数据库创建失败，请稍后重试",
+    "M06": "说话人识别失败，系统正在自动重试",
+    "M07": "翻译服务暂时不可用，系统正在自动重试",
+    "M08": "韵律规划失败，使用默认参数继续",
+    "M09": "语音合成暂时遇到问题，系统正在自动重试",
+    "M10": "音频混音失败，系统正在自动重试",
+    "M11": "视频组装失败，系统正在自动重试",
+    "M12": "视频封装失败，请检查输出格式",
+    "M13": "质量检查失败，请查看详细报告",
+    "M14": "项目归档失败，请检查存储空间",
+}
+
 logger = logging.getLogger(__name__)
 
 MINIO_BUCKET = "filmdub-uploads"
@@ -201,16 +237,79 @@ class JobRunner:
             work_dir=self.work_dir / f"job_{job.id}"
         )
 
-        # 执行完整流水线
-        result = await executor.run()
-        logger.info(f"Full pipeline completed: {result['completed_modules']}, failed: {result['failed_modules']}")
+        # 发送初始进度
+        await self._broadcast_progress(job, 0, "M01", "准备开始处理")
+
+        # 执行完整流水线并监听进度
+        total_modules = 14
+        completed = 0
+        failed_modules = []
+
+        # 逐模块执行，发送进度
+        for mod in ["M01", "M02", "M03", "M05", "M04", "M06", "M07",
+                    "M08", "M09", "M10", "M11", "M12", "M13", "M14"]:
+            # 发送模块开始进度
+            await self._broadcast_progress(
+                job,
+                int(completed / total_modules * 100),
+                mod,
+                MODULE_STAGE_MAP.get(mod, f"正在执行 {mod}")
+            )
+
+            try:
+                await getattr(executor, f"exec_{mod}")()
+                completed += 1
+                # 发送模块完成进度
+                await self._broadcast_progress(
+                    job,
+                    int(completed / total_modules * 100),
+                    mod,
+                    f"{MODULE_STAGE_MAP.get(mod, mod)} 完成"
+                )
+            except Exception as e:
+                error_msg = ERROR_MESSAGE_MAP.get(mod, f"{mod} 执行失败: {str(e)}")
+                logger.error(f"Module {mod} failed: {e}")
+                failed_modules.append((mod, str(e)))
+                # 发送失败进度
+                await self._broadcast_progress(job, int(completed / total_modules * 100), mod, error_msg)
+                break
+
+        logger.info(f"Full pipeline completed: {completed}/{total_modules} modules, failed: {failed_modules}")
 
         # 如果有失败模块，抛出异常
-        if result['failed_modules']:
-            failed_info = ", ".join([f"{m}: {e}" for m, e in result['failed_modules']])
+        if failed_modules:
+            failed_info = ", ".join([f"{m}: {e}" for m, e in failed_modules])
             raise RuntimeError(f"流水线执行失败: {failed_info}")
 
-        return result
+        # 发送完成进度
+        await self._broadcast_progress(job, 100, "DONE", "处理完成")
+
+        return {
+            "completed_modules": completed,
+            "total_modules": total_modules,
+            "failed_modules": failed_modules
+        }
+
+    async def _broadcast_progress(
+        self,
+        job: Job,
+        progress: int,
+        module: str,
+        message: str
+    ):
+        """广播作业进度到 WebSocket"""
+        try:
+            from filmdub.apps.api.websocket.handler import broadcast_job_progress
+            project_id = str(job.project_id) if job.project_id else "unknown"
+            await broadcast_job_progress(
+                job_id=str(job.id),
+                project_id=project_id,
+                progress=float(progress),
+                status="running",
+                message=message
+            )
+        except Exception as e:
+            logger.warning(f"Failed to broadcast progress: {e}")
 
 
 async def main() -> None:
