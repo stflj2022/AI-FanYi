@@ -52,9 +52,15 @@ class ResearchConfig:
         if self.cache_dir is None:
             self.cache_dir = Path("./cache")
         
-        # Load from environment
-        self.tmdb_api_key = os.getenv("TMDB_API_KEY") or self.tmdb_api_key
-        self.omdb_api_key = os.getenv("OMDB_API_KEY") or self.omdb_api_key
+        # Load from environment (ignore placeholder values)
+        tmdb_key = os.getenv("TMDB_API_KEY")
+        if tmdb_key and tmdb_key not in ["your_tmdb_api_key_here", "", "none"]:
+            self.tmdb_api_key = tmdb_key
+        
+        omdb_key = os.getenv("OMDB_API_KEY")
+        if omdb_key and omdb_key not in ["your_omdb_api_key_here", "", "none"]:
+            self.omdb_api_key = omdb_key
+        
         self.llm_enabled = os.getenv("RESEARCH_LLM_ENABLED", "false").lower() == "true"
         self.llm_base_url = os.getenv("LLM_BASE_URL", self.llm_base_url)
         self.qwen_api_url = os.getenv("QWEN_API_URL") or self.qwen_api_url
