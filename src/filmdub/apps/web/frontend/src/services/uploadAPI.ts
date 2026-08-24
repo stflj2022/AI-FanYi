@@ -1,5 +1,5 @@
 /** 上传 API 服务 */
-import api from './api';
+import apiClient from './api';
 
 export type MediaType = 'video' | 'audio' | 'image';
 export type UploadStatus = 'pending' | 'uploading' | 'ready' | 'failed';
@@ -76,14 +76,12 @@ class UploadAPI {
       formData.append('project_id', options.project_id);
     }
 
-    const response = await api.post<UploadResponse>('/uploads', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+    // 使用 apiClient（axios 实例）以支持 onUploadProgress 进度回调；
+    // FormData 由 axios 自动设置 multipart Content-Type（含 boundary）
+    const response = await apiClient.post<UploadResponse>('/uploads', formData, {
       onUploadProgress: (progressEvent) => {
         if (progressEvent.total && options.onProgress) {
-          const progress = (progressEvent.loaded / progressEvent.total) * 100;
-          options.onProgress(progress);
+          options.onProgress((progressEvent.loaded / progressEvent.total) * 100);
         }
       },
     });
@@ -95,7 +93,7 @@ class UploadAPI {
    * 获取上传进度
    */
   async getUploadProgress(uploadId: string): Promise<UploadProgressResponse> {
-    const response = await api.get<UploadProgressResponse>(`/uploads/${uploadId}`);
+    const response = await apiClient.get<UploadProgressResponse>(`/uploads/${uploadId}`);
     return response.data;
   }
 
@@ -103,7 +101,7 @@ class UploadAPI {
    * 获取媒体元数据
    */
   async getMediaMetadata(uploadId: string): Promise<MediaMetadataResponse> {
-    const response = await api.get<MediaMetadataResponse>(`/uploads/${uploadId}/metadata`);
+    const response = await apiClient.get<MediaMetadataResponse>(`/uploads/${uploadId}/metadata`);
     return response.data;
   }
 
@@ -111,7 +109,7 @@ class UploadAPI {
    * 删除上传会话
    */
   async deleteUpload(uploadId: string): Promise<void> {
-    await api.delete(`/uploads/${uploadId}`);
+    await apiClient.delete(`/uploads/${uploadId}`);
   }
 }
 
