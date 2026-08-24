@@ -1,7 +1,7 @@
 import axios, { AxiosError } from 'axios'
 
-// API 基础配置
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
+// API 基础配置（默认走同源相对路径，经 nginx 反代到后端，避免跨端口/代理问题）
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 // 创建 axios 实例
 const apiClient = axios.create({

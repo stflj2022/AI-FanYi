@@ -7,6 +7,12 @@ FROM node:20-alpine as builder
 
 WORKDIR /app
 
+# 可选注入 Vite 环境变量（如自定义部署域名）；不传时前端默认走同源相对路径 /api/v1
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ARG VITE_WS_URL
+ENV VITE_WS_URL=$VITE_WS_URL
+
 # 复制 package 文件
 COPY src/filmdub/apps/web/frontend/package*.json ./
 

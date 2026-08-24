@@ -62,8 +62,8 @@ export function useJobEvents(jobId: string, options: UseJobEventsOptions = {}) {
   const [isSubscribed, setIsSubscribed] = useState(false)
   const wsRef = useRef<any>(null)
 
-  // 构建 WebSocket URL
-  const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8001'}/api/v1/ws/jobs?token=${token}`
+  // 构建 WebSocket URL（默认同源，经 nginx 反代；VITE_WS_URL 可覆盖）
+  const wsUrl = `${import.meta.env.VITE_WS_URL || window.location.origin.replace(/^http/, 'ws')}/api/v1/ws/jobs?token=${token ?? ''}`
 
   // WebSocket 消息处理
   const handleMessage = useCallback((message: JobEvent) => {

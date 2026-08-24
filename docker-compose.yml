@@ -467,8 +467,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.frontend
-      args:
-        VITE_API_BASE_URL: http://localhost:${WEB_BACKEND_PORT:-8001}
+      # 前端默认走同源相对路径 /api/v1（经 nginx 反代后端），无需注入绝对地址
+      args: {}
     image: film-dubbing-web-frontend:${VERSION:-latest}
     container_name: film-dubbing-web-frontend
     restart: unless-stopped

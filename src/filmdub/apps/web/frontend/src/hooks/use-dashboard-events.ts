@@ -38,7 +38,7 @@ export function useDashboardEvents(options: UseDashboardEventsOptions = {}) {
   const [isSubscribed, setIsSubscribed] = useState(false)
 
   // 构建 WebSocket URL
-  const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8001'}/api/v1/ws/jobs?token=${token}`
+  const wsUrl = `${import.meta.env.VITE_WS_URL || window.location.origin.replace(/^http/, 'ws')}/api/v1/ws/jobs?token=${token ?? ''}`
 
   // WebSocket 消息处理
   const handleMessage = useCallback((message: DashboardEvent) => {
