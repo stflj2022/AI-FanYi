@@ -738,3 +738,65 @@ Project = ProjectM01  # 默认使用 M01（用于 workers）
 
 # Web UI 使用 ProjectRecord
 WebProject = ProjectRecord
+
+
+# ==================== Story Bible 模型 ====================
+
+class StoryEntryType(str, PyEnum):
+    """剧情条目类型"""
+    CHARACTER = "character"  # 角色
+    EVENT = "event"  # 事件
+    RELATIONSHIP = "relationship"  # 关系
+    TIMELINE = "timeline"  # 时间线
+    STATE = "state"  # 剧情状态
+
+
+class StoryEntry(Base):
+    """剧情条目（Story Bible）"""
+    __tablename__ = "story_entries"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    episode_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    entry_type: Mapped[StoryEntryType] = mapped_column(Enum(StoryEntryType), nullable=False)
+    
+    # 条目内容
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # 角色相关字段
+    character_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    character_role: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # 主角/配角等
+    personality: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 性格特点
+    speech_style: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 说话风格
+    
+    # 事件相关字段
+    event_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    event_location: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    
+    # 关系相关字段
+    from_character: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    to_character: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    relationship_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # 父子/夫妻/朋友等
+    
+    # 时间线相关字段
+    timeline_order: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    season: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    episode: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    
+    # 剧情状态相关字段
+    state_key: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    state_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # 元数据
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("idx_story_entry_project", "project_id"),
+        Index("idx_story_entry_episode", "episode_id"),
+        Index("idx_story_entry_type", "entry_type"),
+        Index("idx_story_entry_character", "character_name"),
+    )
