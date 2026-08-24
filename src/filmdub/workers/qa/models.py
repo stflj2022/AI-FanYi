@@ -88,6 +88,14 @@ class VoiceQuality(BaseModel):
     translation_quality: float = Field(default=100.0, ge=0.0, le=100.0, description="翻译质量评分")
     translation_issues: int = Field(default=0, description="翻译问题数量")
 
+    # 对白完整性（漏台词/重复台词）
+    dialogue_completeness: float = Field(default=100.0, ge=0.0, le=100.0, description="对白完整性评分")
+    dialogue_issues: int = Field(default=0, description="漏台词/重复台词问题数量")
+
+    # 人物错配
+    character_mismatch_score: float = Field(default=100.0, ge=0.0, le=100.0, description="人物错配评分")
+    mismatch_issues: int = Field(default=0, description="人物错配问题数量")
+
 
 class QAResult(BaseModel):
     """QA 检查结果"""
@@ -112,6 +120,7 @@ class QAResult(BaseModel):
     checked_at: datetime = Field(default_factory=datetime.utcnow, description="检查时间")
     video_file: str = Field(..., description="检查的视频文件")
     duration_seconds: float = Field(default=0.0, description="视频时长（秒）")
+    report_path: Optional[str] = Field(default=None, description="QA 报告文件路径")
 
     def calculate_statistics(self):
         """计算问题统计"""

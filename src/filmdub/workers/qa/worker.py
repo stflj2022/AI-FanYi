@@ -10,7 +10,8 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
+from datetime import datetime
 import re
 
 from .config import M13Config
@@ -92,6 +93,11 @@ class QAChecker:
                 # 非严格模式：只有严重和高优先级问题导致失败
                 critical_or_high = result.critical_issues + result.high_issues
                 result.success = critical_or_high == 0
+
+            # 写出 QA 报告文件
+            report_path = self._write_report(result)
+            if report_path:
+                result.report_path = report_path
 
             logger.info(f"QA 检查完成: 评分={result.overall_score:.1f}, 问题={len(issues)}, 通过={result.success}")
 
@@ -248,6 +254,31 @@ class QAChecker:
                 suggestion="使用音视频同步工具调整时间轴"
             ))
 
+        # 响度检测（EBU R128 / ITU-R BS.1770）
+        loudness_lufs, peak_db = self._check_loudness(input_data.video_file)
+        if loudness_lufs is not None and abs(loudness_lufs - self.config.target_lufs) > self.config.lufs_tolerance:
+            issues.append(QAIssue(
+                category=QAIssueCategory.TECHNICAL,
+                severity=QAIssueSeverity.MEDIUM,
+                title="响度不符合标准",
+                description=f"音频响度 {loudness_lufs:.1f} LUFS，目标 {self.config.target_lufs} LUFS（容差 ±{self.config.lufs_tolerance} LUFS）",
+                suggestion="使用 loudnorm 进行响度归一化（EBU R128）"
+            ))
+
+        # 静音检测
+        silence_issues = self._check_silence(input_data.video_file)
+        issues.extend(silence_issues)
+
+        # 爆音/削波检测
+        if peak_db is not None and peak_db > self.config.peak_db:
+            issues.append(QAIssue(
+                category=QAIssueCategory.TECHNICAL,
+                severity=QAIssueSeverity.HIGH,
+                title="音频爆音/削波",
+                description=f"音频峰值 {peak_db:.1f} dB 超过安全阈值 {self.config.peak_db} dB",
+                suggestion="降低增益或使用限幅器避免削波"
+            ))
+
         # 计算技术质量评分
         score = self._calculate_technical_score(issues, video_info)
 
@@ -266,6 +297,8 @@ class QAChecker:
             audio_bitrate=int(audio_stream.get("bit_rate", 0)) if audio_stream else None,
             sync_offset=sync_offset,
             sync_issues=1 if abs(sync_offset) > self.config.sync_tolerance_seconds else 0,
+            loudness_lufs=loudness_lufs,
+            peak_db=peak_db,
             duration=float(video_info.get("format", {}).get("duration", 0)),
             size_bytes=int(video_info.get("format", {}).get("size", 0))
         )
@@ -307,12 +340,22 @@ class QAChecker:
         translation_score, translation_issues = self._check_translation_quality(dialogues)
         issues.extend(translation_issues)
 
+        # 对白完整性检查（漏台词/重复台词）
+        dialogue_completeness, dialogue_issues = self._check_missing_duplicate_dialogue(dialogues)
+        issues.extend(dialogue_issues)
+
+        # 人物错配检查（说话人 vs 计划人物）
+        mismatch_score, mismatch_issues = self._check_character_mismatch(dialogues, input_data.character_db)
+        issues.extend(mismatch_issues)
+
         # 计算配音质量评分
         score = (
-            voice_consistency_score * 0.3 +
-            emotion_match_score * 0.3 +
-            speech_rate_score * 0.2 +
-            translation_score * 0.2
+            voice_consistency_score * 0.25 +
+            emotion_match_score * 0.25 +
+            speech_rate_score * 0.20 +
+            translation_score * 0.15 +
+            dialogue_completeness * 0.10 +
+            mismatch_score * 0.05
         )
 
         # 创建配音质量结果
@@ -326,7 +369,11 @@ class QAChecker:
             speech_rate_reasonable=speech_rate_score,
             speech_rate_issues=len(speech_rate_issues),
             translation_quality=translation_score,
-            translation_issues=len(translation_issues)
+            translation_issues=len(translation_issues),
+            dialogue_completeness=dialogue_completeness,
+            dialogue_issues=len(dialogue_issues),
+            character_mismatch_score=mismatch_score,
+            mismatch_issues=len(mismatch_issues)
         )
 
     def _get_video_info(self, video_file: str) -> Optional[Dict[str, Any]]:
@@ -442,6 +489,256 @@ class QAChecker:
             logger.warning(f"音画同步检查失败: {e}")
 
         return 0.0
+
+    def _run_ffmpeg_capture(self, cmd: List[str]) -> Optional[str]:
+        """
+        运行 ffmpeg 并捕获输出（ffmpeg 分析日志输出到 stderr）
+
+        Args:
+            cmd: 命令参数列表
+
+        Returns:
+            stderr 文本，失败返回 None
+        """
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            return result.stderr or result.stdout or ""
+        except subprocess.TimeoutExpired:
+            logger.warning("ffmpeg 执行超时")
+            return None
+        except Exception as e:
+            logger.warning(f"ffmpeg 执行失败: {e}")
+            return None
+
+    def _parse_ebur128_loudness(self, output: str) -> Optional[float]:
+        """解析 ebur128 输出的综合响度（LUFS）"""
+        m = re.search(r"I:\s*(-?\d+(?:\.\d+)?)\s*LUFS", output)
+        return float(m.group(1)) if m else None
+
+    def _parse_dbfs_peak(self, output: str) -> Optional[float]:
+        """解析 ebur128 输出的峰值（dBFS）"""
+        m = re.search(r"Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS", output)
+        return float(m.group(1)) if m else None
+
+    def _parse_volumedetect(self, output: str, key: str) -> Optional[float]:
+        """解析 volumedetect 输出的指标（mean_volume/max_volume）"""
+        m = re.search(rf"{key}:\s*(-?\d+(?:\.\d+)?)\s*dB", output)
+        return float(m.group(1)) if m else None
+
+    def _check_loudness(self, video_file: str) -> Tuple[Optional[float], Optional[float]]:
+        """
+        检测音频响度（LUFS）和峰值（dB）
+
+        优先使用 ebur128 滤波器（ITU-R BS.1770 / EBU R128），
+        失败时回退到 volumedetect（mean_volume 近似响度）。
+
+        Returns:
+            (loudness_lufs, peak_db)
+        """
+        # 方式一：ebur128
+        cmd = [
+            self.config.ffmpeg_path, "-hide_banner", "-nostats", "-i", video_file,
+            "-af", "ebur128", "-f", "null", "-",
+        ]
+        output = self._run_ffmpeg_capture(cmd)
+        if output:
+            loudness = self._parse_ebur128_loudness(output)
+            peak = self._parse_dbfs_peak(output)
+            if loudness is not None:
+                return loudness, peak
+
+        # 方式二：volumedetect（无 ebur128 时回退）
+        # 注意：volumedetect 的 mean_volume 是 dBFS 均值，并非 ITU-R BS.1770 的 LUFS，
+        # 此处仅作为响度的近似值（近似 LUFS），并同时返回准确的峰值（max_volume）。
+        cmd = [
+            self.config.ffmpeg_path, "-hide_banner", "-nostats", "-i", video_file,
+            "-af", "volumedetect", "-f", "null", "-",
+        ]
+        output = self._run_ffmpeg_capture(cmd)
+        if output:
+            mean = self._parse_volumedetect(output, "mean_volume")
+            peak = self._parse_volumedetect(output, "max_volume")
+            return mean, peak
+
+        return None, None
+
+    def _check_silence(self, video_file: str) -> List[QAIssue]:
+        """
+        检测明显静音时段（silencedetect）
+
+        Args:
+            video_file: 视频文件路径
+
+        Returns:
+            静音问题列表（最多 10 条，避免噪音）
+        """
+        cmd = [
+            self.config.ffmpeg_path, "-hide_banner", "-nostats", "-i", video_file,
+            "-af", (
+                f"silencedetect=noise={self.config.silence_threshold_db}dB:"
+                f"d={self.config.min_silence_duration}"
+            ),
+            "-f", "null", "-",
+        ]
+        output = self._run_ffmpeg_capture(cmd)
+        if not output:
+            return []
+
+        starts = [float(x) for x in re.findall(r"silence_start:\s*(-?\d+(?:\.\d+)?)", output)]
+        ends = [float(x) for x in re.findall(r"silence_end:\s*(-?\d+(?:\.\d+)?)", output)]
+
+        issues: List[QAIssue] = []
+        for i, start in enumerate(starts):
+            end = ends[i] if i < len(ends) else start + self.config.min_silence_duration
+            duration = end - start
+            if duration >= self.config.min_silence_duration:
+                issues.append(QAIssue(
+                    category=QAIssueCategory.TECHNICAL,
+                    severity=QAIssueSeverity.MEDIUM,
+                    title="检测到明显静音时段",
+                    description=f"在 {start:.1f}s - {end:.1f}s 存在 {duration:.1f}s 的静音",
+                    timestamp=start,
+                    duration=duration,
+                    suggestion="检查该时段音频是否正常生成"
+                ))
+
+        return issues[:10]
+
+    def _check_missing_duplicate_dialogue(self, dialogues: List[Dict]) -> Tuple[float, List[QAIssue]]:
+        """
+        漏台词/重复台词检测（对照 Dialogue Timeline）
+
+        - 漏台词：对白缺少文本（未翻译/未合成）
+        - 重复台词：相同文本且起始时间间隔小于容差（重复切分/重复合成）
+
+        Returns:
+            (评分, 问题列表)
+        """
+        issues: List[QAIssue] = []
+        if not dialogues:
+            return 100.0, issues
+
+        # 漏台词：文本为空或缺失
+        missing = [d for d in dialogues if not (d.get("text") or "").strip()]
+        if missing:
+            issues.append(QAIssue(
+                category=QAIssueCategory.VOICE,
+                severity=QAIssueSeverity.HIGH,
+                title="发现漏台词",
+                description=f"发现 {len(missing)} 条对白缺少文本（可能未翻译/未合成）",
+                suggestion="检查翻译和语音合成输出"
+            ))
+
+        # 重复台词：相同文本且起始时间接近
+        duplicates = []
+        seen_text: Dict[str, List[float]] = {}
+        for d in dialogues:
+            text = (d.get("text") or "").strip()
+            if not text:
+                continue
+            start = float(d.get("start_time") or 0.0)
+            if any(abs(prev - start) <= self.config.duplicate_dialogue_gap for prev in seen_text.get(text, [])):
+                duplicates.append(text)
+            seen_text.setdefault(text, []).append(start)
+        if duplicates:
+            issues.append(QAIssue(
+                category=QAIssueCategory.VOICE,
+                severity=QAIssueSeverity.MEDIUM,
+                title="发现重复台词",
+                description=f"发现 {len(duplicates)} 处重复台词（相同文本、时间重叠）",
+                suggestion="检查字幕/对白切分是否重复"
+            ))
+
+        total = len(missing) + len(duplicates)
+        score = 100.0 - (total / max(len(dialogues), 1)) * 40.0
+        return max(score, 0.0), issues
+
+    def _check_character_mismatch(self, dialogues: List[Dict], character_db: Optional[str]) -> Tuple[float, List[QAIssue]]:
+        """
+        人物错配检测（说话人 vs 计划人物）
+
+        对白同时携带 speaker_id（说话人识别）与 character_id（计划人物）时，
+        二者不一致即为错配。缺少 speaker 信息时给出 INFO 提示但不惩罚。
+
+        Returns:
+            (评分, 问题列表)
+        """
+        issues: List[QAIssue] = []
+        if not dialogues:
+            return 100.0, issues
+
+        # 加载人物数据库（用于显示人物名）
+        characters = {}
+        if character_db and os.path.exists(character_db):
+            try:
+                with open(character_db, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    characters = data.get("characters", {})
+            except Exception as e:
+                logger.warning(f"加载人物数据库失败: {e}")
+
+        mismatches = []
+        checkable = 0
+        for d in dialogues:
+            character_id = d.get("character_id")
+            speaker_id = d.get("speaker_id") or d.get("speaker")
+            if not character_id or not speaker_id:
+                continue
+            checkable += 1
+            if str(character_id) != str(speaker_id):
+                char_name = characters.get(str(character_id), {}).get("name", character_id)
+                mismatches.append((char_name, speaker_id, d.get("start_time", 0)))
+
+        if checkable == 0:
+            issues.append(QAIssue(
+                category=QAIssueCategory.VOICE,
+                severity=QAIssueSeverity.INFO,
+                title="缺少说话人信息",
+                description="对白时间轴缺少 speaker_id，无法执行人物错配检查",
+                suggestion="为对白时间轴补充说话人识别结果"
+            ))
+            return 100.0, issues
+
+        if mismatches:
+            issues.append(QAIssue(
+                category=QAIssueCategory.VOICE,
+                severity=QAIssueSeverity.HIGH,
+                title="人物错配",
+                description=f"发现 {len(mismatches)} 处对白的人物与说话人不匹配，例如 {mismatches[0][0]} 被识别为 {mismatches[0][1]}",
+                suggestion="检查说话人识别与人物映射结果"
+            ))
+
+        score = 100.0 - (len(mismatches) / checkable) * 100.0
+        return max(score, 0.0), issues
+
+    def _write_report(self, result: QAResult) -> Optional[str]:
+        """
+        写出 QA 报告文件（JSON）
+
+        Args:
+            result: QA 检查结果
+
+        Returns:
+            报告文件路径，未启用或失败时返回 None
+        """
+        if not self.config.report_enabled:
+            return None
+        try:
+            os.makedirs(self.config.output_dir, exist_ok=True)
+            base = Path(result.video_file).stem
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_path = Path(self.config.output_dir) / f"qa_report_{base}_{ts}.json"
+            with open(report_path, 'w', encoding='utf-8') as f:
+                json.dump(result.model_dump(), f, ensure_ascii=False, indent=2, default=str)
+            return str(report_path)
+        except Exception as e:
+            logger.error(f"写出 QA 报告失败: {e}")
+            return None
 
     def _check_voice_consistency(self, dialogues: List[Dict], character_db: Optional[str]) -> tuple[float, List[QAIssue]]:
         """

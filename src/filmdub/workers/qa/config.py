@@ -30,9 +30,17 @@ class M13Config(BaseSettings):
     # 同步检查
     sync_tolerance_seconds: float = Field(default=0.1, description="音画同步容差（秒）")
 
+    # 静音检测
+    silence_threshold_db: float = Field(default=-40.0, description="静音检测阈值（dB）")
+    min_silence_duration: float = Field(default=2.0, description="最小静音持续时长（秒），超过即报告")
+
+    # 对白完整性
+    duplicate_dialogue_gap: float = Field(default=0.5, description="重复台词判定时间间隔（秒）")
+
     # 输出格式
     output_format: str = Field(default="json", description="输出格式（json/markdown）")
     output_dir: str = Field(default="/tmp/filmdub_qa", description="输出目录")
+    report_enabled: bool = Field(default=True, description="是否写出 QA 报告文件")
 
     # 严格程度
     strict_mode: bool = Field(default=False, description="严格模式（所有问题都导致失败）")
