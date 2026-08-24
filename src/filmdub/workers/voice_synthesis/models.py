@@ -39,6 +39,11 @@ class AudioArtifact:
     sample_rate: int
     num_channels: int = 1
 
+    # TTS 模型版本/参数（ticket-035：进入 Artifact 保证可复现）
+    tts_model: Optional[str] = None
+    tts_model_version: Optional[str] = None
+    tts_config: Optional[Dict[str, Any]] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
@@ -48,7 +53,10 @@ class AudioArtifact:
             "file_path": self.file_path,
             "duration": self.duration,
             "sample_rate": self.sample_rate,
-            "num_channels": self.num_channels
+            "num_channels": self.num_channels,
+            "tts_model": self.tts_model,
+            "tts_model_version": self.tts_model_version,
+            "tts_config": self.tts_config,
         }
 
 

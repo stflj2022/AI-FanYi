@@ -194,7 +194,7 @@ def test_batch_synthesizer_success_and_error(tmp_path):
     mgr.current_model = _FakeTTSModel()
     mgr.models["fake"] = mgr.current_model
 
-    synthesizer = BatchSynthesizer(mgr, M09Config())
+    synthesizer = BatchSynthesizer(mgr, M09Config(use_adapter=False))
     import asyncio
 
     inputs = [
@@ -213,7 +213,7 @@ def test_batch_synthesizer_success_and_error(tmp_path):
 def test_batch_synthesizer_error_path(tmp_path):
     """无模型时批量合成全部报错但不崩溃。"""
     mgr = TTSModelManager(M09Config())
-    synthesizer = BatchSynthesizer(mgr, M09Config())
+    synthesizer = BatchSynthesizer(mgr, M09Config(use_adapter=False))
     import asyncio
 
     inputs = [M09Input(dialogue_id="d1", character_id="C1", voice_profile_id="vp1", text="x")]

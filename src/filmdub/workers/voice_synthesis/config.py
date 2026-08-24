@@ -35,6 +35,9 @@ class M09Config:
     max_concurrent_jobs: int = 4
     synthesis_timeout: int = 60
 
+    # 统一走 Adapter（ticket-035）：True 时经 model_manager 的 Adapter 接口合成，后端可配置切换
+    use_adapter: bool = True
+
     # 缓存
     enable_cache: bool = True
     cache_dir: str = "./cache/m09"

@@ -118,6 +118,73 @@ class TTSEngine:
             logger.error(f"Synthesis failed: {e}")
             return None
 
+    async def synthesize_async(
+        self,
+        text: str,
+        voice_profile_id: str,
+        prosody: Dict[str, Any],
+        output_path: str
+    ) -> Optional[AudioArtifact]:
+        """
+        通过 Adapter 统一合成语音（ticket-035）
+
+        后端由 model_manager 配置决定（qwen/cosyvoice/f5-tts），无需改业务代码。
+        韵律后处理（音高/时间拉伸/停顿）由 M10 处理，本方法仅负责调用 Adapter
+        合成并记录模型版本/参数到 Artifact。
+
+        Args:
+            text: 文本
+            voice_profile_id: 音色 ID
+            prosody: 韵律参数（speed 透传给后端）
+            output_path: 输出路径
+
+        Returns:
+            音频 Artifact（含 tts_model/tts_model_version/tts_config）
+        """
+        try:
+            processed_text = self._preprocess_text(text)
+            result_path, model_info = await self.model_manager.synthesize_via_adapter(
+                text=processed_text,
+                voice_id=voice_profile_id,
+                output_path=output_path,
+                speed=prosody.get("speed", 1.0),
+                pitch=prosody.get("pitch", 1.0),
+                reference_audio=prosody.get("reference_audio"),
+                prompt_text=prosody.get("prompt_text", ""),
+            )
+
+            duration = self._audio_duration(result_path)
+            artifact = AudioArtifact(
+                artifact_id=f"audio_{Path(output_path).stem}",
+                dialogue_id=prosody.get("dialogue_id", ""),
+                character_id=prosody.get("character_id", ""),
+                file_path=str(result_path),
+                duration=duration,
+                sample_rate=self.config.sample_rate,
+                tts_model=(model_info or {}).get("model_name"),
+                tts_model_version=(model_info or {}).get("model_version"),
+                tts_config=model_info,
+            )
+
+            logger.info(f"Adapter synthesis completed: {result_path} ({duration:.2f}s)")
+            return artifact
+
+        except Exception as e:
+            logger.error(f"Adapter synthesis failed: {e}")
+            return None
+
+    @staticmethod
+    def _audio_duration(audio_path: str | Path) -> float:
+        """估算音频时长（秒）：优先读取 WAV 头，失败回退 0"""
+        import wave
+        try:
+            with wave.open(str(audio_path), "rb") as wf:
+                frames = wf.getnframes()
+                rate = wf.getframerate()
+                return round(frames / rate, 3) if rate else 0.0
+        except Exception:
+            return 0.0
+
     def _preprocess_text(self, text: str) -> str:
         """
         前处理文本

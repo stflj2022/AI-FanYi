@@ -143,16 +143,26 @@ class BatchSynthesizer:
                 "emotion_intensity": input_item.emotion_intensity
             }
 
-            # 在线程池中运行合成（避免阻塞事件循环）
-            loop = asyncio.get_event_loop()
-            artifact = await loop.run_in_executor(
-                None,
-                self.tts_engine.synthesize,
-                input_item.text,
-                input_item.voice_profile_id,
-                prosody,
-                output_path
-            )
+            # 统一走 Adapter（ticket-035）：经 model_manager 的 Adapter 接口合成，
+            # 后端（qwen/cosyvoice/f5-tts）由配置切换，无需改业务代码
+            if self.config.use_adapter:
+                artifact = await self.tts_engine.synthesize_async(
+                    input_item.text,
+                    input_item.voice_profile_id,
+                    prosody,
+                    output_path
+                )
+            else:
+                # 旧路径：本地模型直接合成（向后兼容）
+                loop = asyncio.get_event_loop()
+                artifact = await loop.run_in_executor(
+                    None,
+                    self.tts_engine.synthesize,
+                    input_item.text,
+                    input_item.voice_profile_id,
+                    prosody,
+                    output_path
+                )
 
             if artifact:
                 return M09Output(
