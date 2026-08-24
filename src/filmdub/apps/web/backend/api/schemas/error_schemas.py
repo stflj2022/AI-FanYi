@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ErrorType(str, Enum):
@@ -54,8 +54,7 @@ class ErrorLogResponse(BaseModel):
     context: Optional[Dict[str, Any]] = Field(None, description="上下文信息")
     created_at: datetime = Field(..., description="创建时间")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ErrorLogListResponse(BaseModel):

@@ -2,6 +2,7 @@
 配置管理模块
 """
 from typing import Optional
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -49,10 +50,11 @@ class Settings(BaseSettings):
     # API
     api_v1_prefix: str = "/api/v1"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        # extra = "forbid"  # 暂时禁用以支持更多配置
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        # extra="forbid"  # 暂时禁用以支持更多配置
+    )
 
 
 # 全局配置实例

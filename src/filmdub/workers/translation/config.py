@@ -1,5 +1,6 @@
 """Translation module configuration."""
 
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -28,9 +29,11 @@ class TranslationConfig(BaseSettings):
     # 术语库配置
     glossary_path: str = "data/glossary.json"
 
-    class Config:
-        env_prefix = "TRANSLATION_"
-        env_file = ".env"
+    model_config = ConfigDict(
+        env_prefix="TRANSLATION_",
+        env_file=".env",
+        extra="ignore"
+    )
 
 
 def get_config() -> TranslationConfig:

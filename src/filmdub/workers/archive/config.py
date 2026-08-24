@@ -1,7 +1,7 @@
 """
 M14 归档配置
 """
-from pydantic import Field
+from pydantic import ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 
@@ -42,6 +42,7 @@ class M14Config(BaseSettings):
     # 是否包含中间文件
     include_intermediate_files: bool = Field(default=False, description="是否包含中间处理文件")
 
-    class Config:
-        env_prefix = "M14_"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_prefix="M14_",
+        case_sensitive=False
+    )

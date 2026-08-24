@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ==================== Project Schemas ====================
@@ -37,8 +37,7 @@ class ProjectResponse(BaseModel):
     updated_at: datetime
     episode_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Episode Schemas ====================
@@ -69,8 +68,7 @@ class EpisodeResponse(BaseModel):
     updated_at: datetime
     media_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Media Schemas ====================
@@ -102,8 +100,7 @@ class MediaStreamResponse(BaseModel):
     # Subtitle-specific
     subtitle_codec: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MediaResponse(BaseModel):
@@ -120,8 +117,7 @@ class MediaResponse(BaseModel):
     created_at: datetime
     streams: list[MediaStreamResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MediaOverview(BaseModel):
@@ -160,8 +156,7 @@ class JobResponse(BaseModel):
     error_message: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class JobEventResponse(BaseModel):
@@ -175,8 +170,7 @@ class JobEventResponse(BaseModel):
     message: Optional[str] = None
     payload: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Manifest Schemas ====================

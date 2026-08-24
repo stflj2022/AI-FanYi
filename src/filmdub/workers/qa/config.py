@@ -1,7 +1,7 @@
 """
 M13 QA 配置
 """
-from pydantic import Field
+from pydantic import ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 
@@ -59,6 +59,7 @@ class M13Config(BaseSettings):
     # 严格程度
     strict_mode: bool = Field(default=False, description="严格模式（所有问题都导致失败）")
 
-    class Config:
-        env_prefix = "M13_"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_prefix="M13_",
+        case_sensitive=False
+    )

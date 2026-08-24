@@ -1,7 +1,7 @@
 """
 M12 视频封装配置
 """
-from pydantic import Field
+from pydantic import ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 
@@ -41,6 +41,7 @@ class M12Config(BaseSettings):
     # 临时目录
     temp_dir: str = Field(default="/tmp/filmdub_m12", description="临时文件目录")
 
-    class Config:
-        env_prefix = "M12_"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_prefix="M12_",
+        case_sensitive=False
+    )

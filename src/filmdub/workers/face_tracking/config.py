@@ -1,5 +1,6 @@
 """Face tracking module configuration."""
 
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -32,10 +33,11 @@ class FaceTrackingConfig(BaseSettings):
     save_embeddings: bool = True
     save_crops: bool = False
 
-    class Config:
-        env_prefix = "FACE_TRACKING_"
-        env_file = ".env"
-        extra = "forbid"  # 禁止额外字段，确保配置严格
+    model_config = ConfigDict(
+        env_prefix="FACE_TRACKING_",
+        env_file=".env",
+        extra="ignore"  # 忽略额外字段
+    )
 
 
 def get_config() -> FaceTrackingConfig:
