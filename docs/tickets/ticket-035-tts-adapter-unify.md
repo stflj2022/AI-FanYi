@@ -1,6 +1,6 @@
 # Ticket 035: TTS Adapter 统一
 
-## 状态: todo
+## 状态: done
 
 ## 优先级: P2
 

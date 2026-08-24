@@ -1,6 +1,6 @@
 # Ticket 032: worker→DB 持久化打通
 
-## 状态: todo
+## 状态: done
 
 ## 优先级: P1
 
