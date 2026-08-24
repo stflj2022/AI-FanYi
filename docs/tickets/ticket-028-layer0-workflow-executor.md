@@ -1,6 +1,6 @@
 # Ticket 028: Layer 0 Workflow Executor 集成
 
-## 状态: todo
+## 状态: done（第1轮实现：WorkflowExecutor 已实现，集成调度器和 Artifact Registry，支持 checkpoint 和失败恢复，531 测试通过）
 
 ## 优先级: P0
 

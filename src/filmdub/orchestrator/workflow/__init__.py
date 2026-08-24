@@ -35,6 +35,10 @@ from .workflow_planner import (
     ExecutionStep,
     ExecutionMode,
 )
+from .workflow_executor import (
+    WorkflowExecutor,
+    ExecutionState,
+)
 
 __all__ = [
     "TaskContext",
@@ -58,4 +62,6 @@ __all__ = [
     "ExecutionPlan",
     "ExecutionStep",
     "ExecutionMode",
+    "WorkflowExecutor",
+    "ExecutionState",
 ]
