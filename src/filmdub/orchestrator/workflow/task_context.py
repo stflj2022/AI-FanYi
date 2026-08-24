@@ -117,11 +117,15 @@ class TaskContext(BaseModel):
 
     def has_subtitle(self) -> bool:
         """是否有字幕"""
-        return self.subtitle.exists
+        return self.subtitle is not None and self.subtitle.exists
 
     def has_verified_subtitle(self) -> bool:
         """是否有已验证的字幕"""
-        return self.subtitle.exists and self.subtitle.quality == "verified"
+        return (
+            self.subtitle is not None
+            and self.subtitle.exists
+            and self.subtitle.quality == "verified"
+        )
 
     def character_db_complete(self) -> bool:
         """人物库是否完整（覆盖率 ≥ 90%）"""

@@ -1,6 +1,6 @@
 # Ticket 027: Layer 0 Workflow Planner
 
-## 状态: todo
+## 状态: done（第1轮实现：DependencyResolver + WorkflowPlanner 已实现，全量测试 515 通过）
 
 ## 优先级: P0
 

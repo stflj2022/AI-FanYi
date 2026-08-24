@@ -24,6 +24,17 @@ from .workflow_selector import (
     SelectionReason,
     WorkflowSelector,
 )
+from .dependency_resolver import (
+    DependencyResolver,
+    DependencyGraph,
+    ModuleDependency,
+)
+from .workflow_planner import (
+    WorkflowPlanner,
+    ExecutionPlan,
+    ExecutionStep,
+    ExecutionMode,
+)
 
 __all__ = [
     "TaskContext",
@@ -40,4 +51,11 @@ __all__ = [
     "WorkflowType",
     "SelectionReason",
     "WorkflowSelector",
+    "DependencyResolver",
+    "DependencyGraph",
+    "ModuleDependency",
+    "WorkflowPlanner",
+    "ExecutionPlan",
+    "ExecutionStep",
+    "ExecutionMode",
 ]
