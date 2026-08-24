@@ -3,7 +3,8 @@ import { useState, useCallback } from 'react';
 import { UploadArea } from './UploadArea';
 import { UploadProgress } from './UploadProgress';
 import { MediaInfo } from './MediaInfo';
-import { X, ChevronDown, ChevronUp } from 'lucide-react';
+import { CreateJobForm } from './CreateJobForm';
+import { X, ChevronDown, ChevronUp, Play } from 'lucide-react';
 import uploadAPI from '../../services/uploadAPI';
 import type { UploadStatus, MediaType } from '../../services/uploadAPI';
 
@@ -33,6 +34,7 @@ export function UploadManager({
 }: UploadManagerProps) {
   const [tasks, setTasks] = useState<Map<string, UploadTask>>(new Map());
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [activeCreateJob, setActiveCreateJob] = useState<string | null>(null);
 
   const handleUploadStart = useCallback((file: File) => {
     const taskId = crypto.randomUUID();
@@ -237,17 +239,26 @@ export function UploadManager({
             {/* 操作按钮和展开/收起 */}
             {task.status === 'ready' && (
               <div className="flex items-center justify-between">
-                <button
-                  onClick={() => toggleExpand(task.id)}
-                  className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800 transition-colors"
-                >
-                  <span>{expandedTasks.has(task.id) ? '收起' : '查看'}</span>
-                  {expandedTasks.has(task.id) ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
-                </button>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => setActiveCreateJob(activeCreateJob === task.id ? null : task.id)}
+                    className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800 transition-colors font-medium"
+                  >
+                    <Play className="w-4 h-4" />
+                    <span>{activeCreateJob === task.id ? '收起' : '创建配音任务'}</span>
+                  </button>
+                  <button
+                    onClick={() => toggleExpand(task.id)}
+                    className="flex items-center space-x-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    <span>{expandedTasks.has(task.id) ? '收起' : '查看'}</span>
+                    {expandedTasks.has(task.id) ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
 
                 <button
                   onClick={() => handleRemove(task.id)}
@@ -257,6 +268,15 @@ export function UploadManager({
                   <span>移除</span>
                 </button>
               </div>
+            )}
+
+            {/* 创建配音任务表单 */}
+            {task.status === 'ready' && activeCreateJob === task.id && task.response && (
+              <CreateJobForm
+                uploadId={task.response.id}
+                filename={task.file.name}
+                onCreated={() => setActiveCreateJob(null)}
+              />
             )}
 
             {/* 媒体信息 */}
