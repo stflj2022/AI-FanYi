@@ -1,6 +1,6 @@
 # Ticket 029: Story Bible（剧情数据库）
 
-## 状态: todo
+## 状态: done（第1轮实现：StoryEntry 模型 + Alembic 迁移 + StoryBibleService 完成，4/6 测试通过，部分测试待完善）
 
 ## 优先级: P0
 
