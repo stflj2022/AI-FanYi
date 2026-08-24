@@ -62,11 +62,11 @@ export function UploadArea({
       if (disabled) return;
 
       for (const file of acceptedFiles) {
-        const fileId = crypto.randomUUID();
+        // 用 onUploadStart 返回的 taskId 作为 fileId，确保与 UploadManager 的 tasks key 一致
+        // （否则进度/完成回调查不到对应任务，进度条永不更新）
+        const fileId = onUploadStart?.(file) ?? crypto.randomUUID();
 
         try {
-          onUploadStart?.(file);
-
           const response = await uploadAPI.uploadFile({
             file,
             project_id: projectId,

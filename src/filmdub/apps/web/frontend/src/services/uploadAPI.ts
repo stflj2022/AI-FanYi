@@ -66,7 +66,7 @@ export interface UploadOptions {
 
 class UploadAPI {
   /**
-   * 上传文件
+   * 上传文件（原生 XHR 实现：upload.onprogress 100% 触发上传进度）
    */
   async uploadFile(options: UploadOptions): Promise<UploadResponse> {
     const formData = new FormData();
@@ -76,19 +76,47 @@ class UploadAPI {
       formData.append('project_id', options.project_id);
     }
 
-    // 使用 apiClient（axios 实例）以支持 onUploadProgress 进度回调；
-    // Content-Type 置 undefined，覆盖 apiClient 默认的 application/json，
-    // 由浏览器对 FormData 自动设置带 boundary 的 multipart/form-data
-    const response = await apiClient.post<UploadResponse>('/uploads', formData, {
-      headers: { 'Content-Type': undefined },
-      onUploadProgress: (progressEvent) => {
-        if (progressEvent.total && options.onProgress) {
-          options.onProgress((progressEvent.loaded / progressEvent.total) * 100);
-        }
-      },
-    });
+    const API_BASE = apiClient.defaults.baseURL || '/api/v1';
 
-    return response.data;
+    return new Promise<UploadResponse>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/uploads`);
+
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+
+      // 上传进度：浏览器原生 upload 事件，可靠触发
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && options.onProgress) {
+          options.onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText) as UploadResponse);
+          } catch {
+            reject(new Error('上传响应解析失败'));
+          }
+        } else {
+          let detail = `上传失败 (${xhr.status})`;
+          try {
+            const parsed = JSON.parse(xhr.responseText);
+            if (parsed?.detail) detail = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail);
+          } catch {
+            // 忽略解析失败
+          }
+          reject(new Error(detail));
+        }
+      };
+      xhr.onerror = () => reject(new Error('网络错误，上传失败'));
+
+      // 不手动设置 Content-Type：浏览器对 FormData 自动生成带 boundary 的 multipart 头
+      xhr.send(formData);
+    });
   }
 
   /**
