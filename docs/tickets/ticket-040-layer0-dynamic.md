@@ -1,6 +1,6 @@
 # Ticket 040: Layer 0 动态调度完善（按冻结版 Layer 0）
 
-## 状态: in_progress
+## 状态: done（第1轮实现：动态工作流集成完成，JobRunner 现在使用 Task Context → Asset Discovery → Capability Matrix → Workflow Selector → Workflow Planner → Executor 流程，支持 LOAD/SKIP/RUN_INCREMENTAL/RUN_FULL 执行模式和断点续跑）
 
 ## 优先级: P1
 

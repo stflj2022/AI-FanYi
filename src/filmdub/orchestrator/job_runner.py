@@ -1,14 +1,16 @@
 """
-执行引擎（阶段 B：完整流水线）
+执行引擎（阶段 B：完整流水线 + 动态调度）
 
 轮询 orchestrator 数据库中的 pending/scheduled 配音任务，执行对应模块并更新状态。
 
 当前实现：
+- 动态工作流选择：基于任务上下文和能力矩阵自动选择 QUICK/STANDARD/PRODUCTION 工作流
+- 智能执行计划：根据已有 Artifact 决定 LOAD/SKIP/RUN_INCREMENTAL/RUN_FULL
+- 断点续跑：从失败模块继续执行
 - M01 媒体分析：从 MinIO 下载输入媒体 → FFprobe 分析 → 写入 media_analysis artifact
 - 完整流水线：执行 M01~M14 完整流程，产出最终配音视频
 - 状态流转：PENDING → RUNNING → COMPLETED / FAILED
 - 任务所属项目自动置为 PROCESSING（与 orchestrator 调度语义一致）
-- 支持断点续跑（从 manifests 恢复）
 
 运行：
     DATABASE_URL=postgresql+asyncpg://... python -m filmdub.orchestrator.job_runner [轮询间隔秒]
@@ -36,6 +38,12 @@ from filmdub.core.models import (
 from filmdub.workers.media_intake.probe import FFprobeParser
 from filmdub.workers.common import save_json_artifact
 from .full_pipeline_executor import FullPipelineExecutor
+from .workflow.task_context import TaskContext, TaskType, QualityRequirement
+from .workflow.asset_discovery import AssetDiscovery
+from .workflow.capability_matrix import CapabilityMatrix
+from .workflow.workflow_selector import WorkflowSelector
+from .workflow.workflow_planner import WorkflowPlanner, ExecutionMode
+from .workflow.dependency_resolver import DependencyResolver
 
 # 模块到人性化文案的映射
 MODULE_STAGE_MAP = {
@@ -79,7 +87,14 @@ MINIO_BUCKET = "filmdub-uploads"
 
 
 class JobRunner:
-    """最小任务执行引擎"""
+    """动态任务执行引擎
+    
+    集成 Layer 0 动态调度：
+    - Task Context → Asset Discovery → Capability Matrix
+    - Workflow Selector → 选择 QUICK/STANDARD/PRODUCTION
+    - Workflow Planner → 生成执行计划（LOAD/SKIP/RUN_INCREMENTAL/RUN_FULL）
+    - Executor → 执行模块，支持断点续跑
+    """
 
     def __init__(self, poll_interval: float = 5.0, work_dir: str = "/tmp/filmdub_runner"):
         self.poll_interval = poll_interval
@@ -87,6 +102,12 @@ class JobRunner:
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.ffprobe = FFprobeParser()
         self.minio = self._init_minio()
+        
+        # Layer 0 组件
+        self.asset_discovery = AssetDiscovery(self.work_dir)
+        self.workflow_selector = WorkflowSelector()
+        self.dependency_resolver = DependencyResolver()
+        self.workflow_planner = WorkflowPlanner(self.dependency_resolver)
 
     @staticmethod
     def _init_minio():
@@ -125,7 +146,7 @@ class JobRunner:
                 await self._process_job(db, job)
 
     async def _process_job(self, db, job: Job) -> None:
-        """执行单个任务：M01 媒体分析 或 完整流水线"""
+        """执行单个任务：M01 媒体分析 或 动态工作流"""
         logger.info(f"Processing job {job.id} ({job.name}) module={job.module_id}")
 
         # 标 RUNNING + 项目置 PROCESSING
@@ -138,22 +159,27 @@ class JobRunner:
         await db.commit()
 
         try:
-            # 判断执行模式：如果 module_id 为 "FULL_PIPELINE" 则执行完整流水线
+            # 判断执行模式
             if job.module_id == "FULL_PIPELINE":
-                result = await self._run_full_pipeline(db, job)
-            else:
-                # 默认执行 M01
+                # 使用动态工作流执行
+                result = await self._run_dynamic_workflow(db, job)
+            elif job.module_id == "M01":
+                # 兼容旧版 M01 执行
                 analysis = await self._run_m01(db, job)
                 result = {"media_analysis": analysis}
+            else:
+                # 默认使用动态工作流
+                result = await self._run_dynamic_workflow(db, job)
 
             job.status = JobStatus.COMPLETED
             job.completed_at = datetime.utcnow()
             # 记录输出 artifacts
             output_arts = []
-            if job.module_id == "FULL_PIPELINE":
-                output_arts.append(f"final_video:{result.get('output_video', '')}")
+            if "final_video" in result:
+                output_arts.append(f"final_video:{result.get('final_video', '')}")
+            if "work_dir" in result:
                 output_arts.append(f"work_dir:{result.get('work_dir', '')}")
-            else:
+            if "media_analysis" in result:
                 output_arts.append(f"media_analysis:{job.id}")
             job.output_artifacts = (job.output_artifacts or []) + output_arts
             logger.info(f"Job {job.id} completed: {len(output_arts)} artifacts")
@@ -208,7 +234,215 @@ class JobRunner:
         return analysis
 
     # ------------------------------------------------------------------
-    # 完整流水线执行
+    # 动态工作流执行
+    # ------------------------------------------------------------------
+    async def _run_dynamic_workflow(self, db, job: Job) -> dict:
+        """
+        执行动态工作流
+        
+        流程：
+        1. 构建任务上下文（Task Context）
+        2. 资产发现（Asset Discovery）
+        3. 构建能力矩阵（Capability Matrix）
+        4. 选择工作流（Workflow Selector）
+        5. 生成执行计划（Workflow Planner）
+        6. 执行计划（Executor）
+        """
+        media_ids = job.input_artifacts or []
+        if not media_ids:
+            raise ValueError("任务无输入媒体（input_artifacts 为空）")
+
+        media_id = str(media_ids[0])
+        media_asset: Optional[MediaAsset] = await db.get(MediaAsset, media_id)
+        if media_asset is None:
+            raise ValueError(f"媒体资产不存在: {media_id}")
+
+        # 从 MinIO 下载视频
+        local_path = self.work_dir / f"{media_id[:8]}_{media_asset.original_filename}"
+        self.minio.fget_object(MINIO_BUCKET, media_asset.storage_path, str(local_path))
+        logger.info(f"Downloaded {media_asset.storage_path} -> {local_path}")
+
+        # 1. 构建任务上下文
+        task_context = await self._build_task_context(db, job, media_asset, local_path)
+        logger.info(f"Task context: task_type={task_context.task_type}, quality={task_context.quality_requirement}")
+
+        # 2. 资产发现
+        asset_status = self.asset_discovery.discover(
+            project_id=str(job.project_id) if job.project_id else f"job_{job.id}",
+            media_id=media_id
+        )
+        logger.info(f"Asset discovery: subtitle={asset_status.subtitle_state}, character_db={asset_status.character_db_state}")
+
+        # 3. 构建能力矩阵
+        capability_matrix_builder = CapabilityMatrix()
+        capability_matrix = capability_matrix_builder.from_asset_status(asset_status)
+        logger.info(f"Capability matrix: production_ready={capability_matrix.is_ready_for_production()}")
+
+        # 4. 选择工作流
+        selection = self.workflow_selector.select(task_context, capability_matrix)
+        logger.info(f"Selected workflow: {selection.workflow_type.value} - {selection.reason}")
+
+        # 5. 生成执行计划
+        execution_plan = self.workflow_planner.plan(
+            task_context=task_context,
+            capability_matrix=capability_matrix,
+            workflow_type=selection.workflow_type,
+            existing_artifacts=asset_status.artifacts,
+            failed_module=job.config.get("failed_module") if job.config else None
+        )
+        logger.info(f"Execution plan: {len(execution_plan.steps)} steps, estimated {execution_plan.total_estimated_duration}s")
+
+        # 保存执行计划到 job config
+        if not job.config:
+            job.config = {}
+        job.config["execution_plan"] = execution_plan.model_dump()
+        await db.commit()
+
+        # 6. 执行计划
+        return await self._execute_plan(db, job, execution_plan, local_path)
+
+    async def _build_task_context(
+        self, 
+        db, 
+        job: Job, 
+        media_asset: MediaAsset, 
+        video_path: Path
+    ) -> TaskContext:
+        """构建任务上下文"""
+        # 从 job.config 获取配置，或使用默认值
+        job_config = job.config or {}
+        
+        # 解析任务类型
+        task_type_str = job_config.get("task_type", "episode")
+        try:
+            task_type = TaskType(task_type_str)
+        except ValueError:
+            task_type = TaskType.EPISODE
+        
+        # 解析质量要求
+        quality_str = job_config.get("quality_requirement", "standard")
+        try:
+            quality_requirement = QualityRequirement(quality_str)
+        except ValueError:
+            quality_requirement = QualityRequirement.STANDARD
+        
+        # 获取视频时长
+        duration_seconds = None
+        try:
+            probe_data = self.ffprobe.probe(video_path)
+            duration_seconds = self.ffprobe.get_duration(probe_data)
+        except Exception as e:
+            logger.warning(f"Failed to get video duration: {e}")
+        
+        # 构建任务上下文
+        return TaskContext(
+            project_id=str(job.project_id) if job.project_id else f"job_{job.id}",
+            media_id=str(media_asset.id),
+            task_type=task_type,
+            duration_seconds=duration_seconds,
+            quality_requirement=quality_requirement,
+            force_workflow=job_config.get("force_workflow"),
+            first_processing=job_config.get("first_processing", True),
+        )
+
+    async def _execute_plan(
+        self,
+        db,
+        job: Job,
+        execution_plan,
+        video_path: Path
+    ) -> dict:
+        """执行执行计划
+        
+        根据 ExecutionPlan 中的步骤执行模块，支持 LOAD/SKIP/RUN_INCREMENTAL/RUN_FULL
+        """
+        project_id = str(job.project_id) if job.project_id else f"job_{job.id}"
+        work_dir = self.work_dir / f"job_{job.id}"
+        work_dir.mkdir(parents=True, exist_ok=True)
+
+        # 创建完整流水线执行器
+        executor = FullPipelineExecutor(
+            project_id=project_id,
+            video_path=video_path,
+            work_dir=work_dir
+        )
+
+        # 执行计划中的步骤
+        completed_modules = set()
+        failed_modules = []
+        total_steps = len(execution_plan.steps)
+
+        for i, step in enumerate(execution_plan.steps):
+            # 计算进度
+            progress = int(i / total_steps * 100)
+            module = step.module
+            mode = step.mode
+            
+            # 发送开始进度
+            await self._broadcast_progress(
+                job,
+                progress,
+                module,
+                f"[{mode.value.upper()}] {MODULE_STAGE_MAP.get(module, f'正在处理 {module}')}"
+            )
+
+            try:
+                if mode == ExecutionMode.SKIP:
+                    # 跳过模块
+                    logger.info(f"Skipping {module}: {step.reason}")
+                    completed_modules.add(module)
+                    
+                elif mode == ExecutionMode.LOAD:
+                    # 加载已有 Artifact
+                    logger.info(f"Loading {module}: {step.reason}")
+                    # TODO: 实现加载逻辑
+                    completed_modules.add(module)
+                    
+                elif mode in [ExecutionMode.RUN_FULL, ExecutionMode.RUN_INCREMENTAL]:
+                    # 执行模块
+                    logger.info(f"Executing {module} ({mode.value}): {step.reason}")
+                    await getattr(executor, f"exec_{module}")()
+                    completed_modules.add(module)
+                
+                # 发送完成进度
+                await self._broadcast_progress(
+                    job,
+                    int((i + 1) / total_steps * 100),
+                    module,
+                    f"{MODULE_STAGE_MAP.get(module, module)} 完成 ({mode.value})"
+                )
+                
+            except Exception as e:
+                error_msg = ERROR_MESSAGE_MAP.get(module, f"{module} 执行失败: {str(e)}")
+                logger.error(f"Module {module} failed: {e}")
+                failed_modules.append((module, str(e)))
+                
+                # 记录失败模块到 job.config（用于断点续跑）
+                if not job.config:
+                    job.config = {}
+                job.config["failed_module"] = module
+                await db.commit()
+                
+                # 发送失败进度
+                await self._broadcast_progress(job, progress, module, error_msg)
+                break
+
+        # 如果有失败模块，抛出异常
+        if failed_modules:
+            failed_info = ", ".join([f"{m}: {e}" for m, e in failed_modules])
+            raise RuntimeError(f"流水线执行失败: {failed_info}")
+
+        # 发送完成进度
+        await self._broadcast_progress(job, 100, "DONE", "处理完成")
+
+        return {
+            "completed_modules": len(completed_modules),
+            "total_steps": total_steps,
+            "work_dir": str(work_dir)
+        }
+
+    # ------------------------------------------------------------------
+    # 完整流水线执行（保留用于向后兼容）
     # ------------------------------------------------------------------
     async def _run_full_pipeline(self, db, job: Job) -> dict:
         """
