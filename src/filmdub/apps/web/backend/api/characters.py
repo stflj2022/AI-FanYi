@@ -266,3 +266,44 @@ async def delete_voice_profile(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Voice profile {voice_profile_id} not found",
         )
+
+
+# ==================== 跨集复用 ====================
+
+@router.get("/available/{project_id}", response_model=List[dict])
+async def get_available_characters(
+    project_id: UUID,
+    source_project_id: Optional[UUID] = Query(None, description="源项目 ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取可以复制到目标项目的人物列表"""
+    available = await CharacterService.get_available_characters_for_project(
+        db=db,
+        project_id=source_project_id,
+        exclude_project_id=project_id,
+    )
+    return available
+
+
+@router.post("/copy/{character_id}/to/{target_project_id}", response_model=CharacterResponse)
+async def copy_character_to_project(
+    character_id: UUID,
+    target_project_id: UUID,
+    copy_voice_profile: bool = Query(True, description="是否同时复制音色档案"),
+    db: AsyncSession = Depends(get_db),
+):
+    """将人物复制到目标项目（跨集复用）"""
+    new_character = await CharacterService.copy_character_to_project(
+        db=db,
+        source_character_id=character_id,
+        target_project_id=target_project_id,
+        copy_voice_profile=copy_voice_profile,
+    )
+
+    if not new_character:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Character {character_id} not found",
+        )
+
+    return new_character

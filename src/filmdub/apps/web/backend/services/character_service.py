@@ -246,3 +246,126 @@ class CharacterService:
         await db.delete(voice_profile)
         await db.commit()
         return True
+
+    @staticmethod
+    async def get_characters_by_series(
+        db: AsyncSession,
+        series_name: Optional[str] = None,
+        season_number: Optional[int] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> tuple[List[Character], int]:
+        """根据剧集名称和季数获取人物列表（用于跨集复用）
+        
+        注意：此功能需要在 Project 模型中添加 series_name 和 season_number 字段
+        当前实现通过 project_id 查询，实际使用需要扩展数据模型
+        """
+        # TODO: 当 Project 模型添加 series_name 和 season_number 字段后实现
+        # 当前返回空列表
+        return [], 0
+
+    @staticmethod
+    async def copy_character_to_project(
+        db: AsyncSession,
+        source_character_id: UUID,
+        target_project_id: UUID,
+        copy_voice_profile: bool = True,
+    ) -> Optional[Character]:
+        """将人物复制到目标项目（跨集复用）
+        
+        Args:
+            db: 数据库会话
+            source_character_id: 源人物 ID
+            target_project_id: 目标项目 ID
+            copy_voice_profile: 是否同时复制音色档案
+        
+        Returns:
+            新创建的人物对象
+        """
+        # 获取源人物
+        source_character = await CharacterService.get_character_by_id(db, source_character_id)
+        if not source_character:
+            return None
+
+        # 检查目标项目是否已存在同名人物
+        existing = await CharacterService.get_character_by_name(
+            db, target_project_id, source_character.name
+        )
+        if existing:
+            return existing
+
+        # 创建新人物
+        new_character = await CharacterService.create_character(
+            db=db,
+            project_id=target_project_id,
+            name=source_character.name,
+            gender=source_character.gender,
+            age_range=source_character.age_range,
+            role_type=source_character.role_type,
+            description=source_character.description,
+            original_actor=source_character.actor_name,
+            avatar_url=source_character.avatar_url,
+            metadata=source_character.relationships if source_character.relationships else {},
+        )
+
+        # 如果需要复制音色档案
+        if copy_voice_profile:
+            source_voice_profiles = await CharacterService.get_voice_profiles(db, source_character_id)
+            for vp in source_voice_profiles:
+                await CharacterService.create_voice_profile(
+                    db=db,
+                    character_id=new_character.id,
+                    voice_id=vp.voice_id,
+                    provider=vp.provider,
+                    model=vp.model,
+                    style=vp.style,
+                    similarity_score=vp.similarity_score,
+                    is_active=vp.is_active,
+                    metadata=vp.metadata if vp.metadata else {},
+                )
+
+        return new_character
+
+    @staticmethod
+    async def get_available_characters_for_project(
+        db: AsyncSession,
+        project_id: UUID,
+        exclude_project_id: UUID,
+    ) -> List[dict]:
+        """获取可以复制到目标项目的人物列表
+        
+        Args:
+            db: 数据库会话
+            project_id: 源项目 ID（可选，用于筛选同一剧集的项目）
+            exclude_project_id: 排除的目标项目 ID
+        
+        Returns:
+            可用人物列表，包含项目信息和人物信息
+        """
+        # 查询所有其他项目的人物
+        query = select(Character).where(Character.project_id != exclude_project_id)
+        if project_id:
+            query = query.where(Character.project_id == project_id)
+        
+        result = await db.execute(query.order_by(Character.name))
+        characters = result.scalars().all()
+
+        # 按项目分组
+        grouped: dict = {}
+        for char in characters:
+            if char.project_id not in grouped:
+                grouped[char.project_id] = {
+                    "project_id": str(char.project_id),
+                    "characters": [],
+                }
+            grouped[char.project_id]["characters"].append({
+                "id": str(char.id),
+                "name": char.name,
+                "gender": char.gender,
+                "age_range": char.age_range,
+                "role_type": char.role_type,
+                "actor_name": char.actor_name,
+                "has_voice_profile": True,  # 需要实际查询
+            })
+
+        return list(grouped.values())
