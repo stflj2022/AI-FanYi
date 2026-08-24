@@ -108,9 +108,11 @@ async def websocket_jobs_endpoint(
 
                 logger.debug(f"[WebSocket] Received message from {connection_id}: {message}")
 
-                # 处理心跳
-                if message.get("type") == "ping":
-                    await connection.send({"type": "pong", "timestamp": message.get("timestamp")})
+                # 处理心跳（双向）：客户端 ping → 服务器回 pong；服务器 ping → 客户端回 pong
+                # 两种情况都刷新心跳时间，避免因后端心跳检测误判超时断开
+                if message.get("type") in ("ping", "pong"):
+                    if message.get("type") == "ping":
+                        await connection.send({"type": "pong", "timestamp": message.get("timestamp")})
                     ws_manager.update_heartbeat(connection_id)
                     continue
 

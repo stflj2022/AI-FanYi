@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { QuickActionsCard } from '../components/dashboard/QuickActionsCard'
 import { JobStatsCard } from '../components/dashboard/JobStatsCard'
 import { RecentJobsList } from '../components/dashboard/RecentJobsList'
@@ -12,6 +12,7 @@ export function Dashboard() {
   const [recentJobs, setRecentJobs] = useState<JobResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)
+  const lastRefreshRef = useRef(0)
 
   // 浏览器通知
   const { requestPermission, sendNotification } = useBrowserNotification()
@@ -37,6 +38,15 @@ export function Dashboard() {
       setLoading(false)
     }
   }, [])
+
+  // 节流刷新：WS 事件频繁时不请求风暴（至少间隔 2s）
+  const throttledRefresh = useCallback(() => {
+    const now = Date.now()
+    if (now - lastRefreshRef.current > 2000) {
+      lastRefreshRef.current = now
+      Promise.all([loadStats(), loadRecentJobs()])
+    }
+  }, [loadStats, loadRecentJobs])
 
   // 初始加载
   useEffect(() => {
@@ -73,10 +83,7 @@ export function Dashboard() {
         })
       }
     },
-    onAnyEvent: () => {
-      // 任何事件都触发数据刷新
-      Promise.all([loadStats(), loadRecentJobs()])
-    },
+    onAnyEvent: throttledRefresh,
   })
 
   // 当 refreshKey 变化时刷新数据

@@ -5,6 +5,7 @@ interface WebSocketMessage {
   job_id: string
   timestamp: string
   data: any
+  type?: string  // 心跳等系统消息类型
 }
 
 interface UseWebSocketOptions {
@@ -36,6 +37,11 @@ export function useWebSocket(url: string, options: UseWebSocketOptions = {}) {
       ws.onmessage = (event) => {
         try {
           const message: WebSocketMessage = JSON.parse(event.data)
+          // 心跳：回 pong 维持连接，不传给业务回调（避免误触发刷新）
+          if (message?.type === 'ping') {
+            ws.send(JSON.stringify({ type: 'pong' }))
+            return
+          }
           options.onMessage?.(message)
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error)
