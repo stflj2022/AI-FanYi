@@ -14,6 +14,8 @@ import { Upload } from './pages/Upload'
 import { JobList } from './pages/JobList'
 import { Settings } from './pages/Settings'
 import { SystemStatusPage } from './pages/SystemStatus'
+import Characters from './pages/Characters'
+import TranslationMemory from './pages/TranslationMemory'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,7 +50,8 @@ function App() {
             <Route path="projects/:id" element={<ProjectDetail />} />
             <Route path="projects/:id/edit" element={<ProjectCreate />} />
             <Route path="jobs" element={<JobList />} />
-            <Route path="characters" element={<div>Characters Page (TODO)</div>} />
+            <Route path="characters" element={<Characters />} />
+            <Route path="translation-memory" element={<TranslationMemory />} />
             <Route path="settings" element={<Settings />} />
             <Route path="system" element={<SystemStatusPage />} />
           </Route>
