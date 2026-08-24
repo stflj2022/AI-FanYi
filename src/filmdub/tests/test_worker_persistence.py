@@ -4,6 +4,7 @@ Worker 数据库持久化测试
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 import uuid
 
 from filmdub.orchestrator.worker_persistence import WorkerDBPersistence
@@ -170,6 +171,35 @@ class TestWorkerDBPersistence:
         assert len(characters) == 3
 
     @pytest.mark.asyncio
+    async def test_save_audio_analysis(self, persistence, project_id):
+        """测试保存音频分析结果"""
+        analysis_id = await persistence.save_audio_analysis(
+            project_id,
+            {
+                "media_file": "ep1.mp4",
+                "analysis_type": "speaker_segment",
+                "payload": {
+                    "segments": [
+                        {"speaker_id": "s1", "start_time": 0.0, "end_time": 2.0}
+                    ]
+                },
+            },
+        )
+        # 应返回真实 UUID（而非旧占位符）
+        import uuid
+        assert uuid.UUID(analysis_id)
+
+        # 验证已落库
+        from filmdub.orchestrator.models import AudioAnalysis
+        result = await persistence.db.execute(
+            select(AudioAnalysis).where(AudioAnalysis.id == uuid.UUID(analysis_id))
+        )
+        saved = result.scalar_one_or_none()
+        assert saved is not None
+        assert saved.analysis_type == "speaker_segment"
+        assert saved.payload["segments"][0]["speaker_id"] == "s1"
+
+    @pytest.mark.asyncio
     async def test_cross_project_isolation(self, persistence):
         """测试跨项目隔离"""
         project_id_1 = "project_1"
@@ -193,6 +223,12 @@ class TestWorkerDBPersistence:
 
         assert char_1 is not None
         assert char_2 is not None
-        assert char_1.project_id == project_id_1
-        assert char_2.project_id == project_id_2
+        # 两个项目各自的同名人物应归属不同的 project UUID（跨项目隔离）
+        assert char_1.project_id != char_2.project_id
         assert char_1.id != char_2.id
+
+        # 反向验证：用项目名解析出的 UUID 应能查到各自人物
+        proj_1_uuid = await persistence._resolve_project_uuid(project_id_1)
+        proj_2_uuid = await persistence._resolve_project_uuid(project_id_2)
+        assert char_1.project_id == proj_1_uuid
+        assert char_2.project_id == proj_2_uuid

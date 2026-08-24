@@ -558,6 +558,40 @@ class VoiceProfile(Base):
     )
 
 
+class AudioAnalysis(Base):
+    """音频分析表（M05 产出落库，ticket-032）"""
+    __tablename__ = "audio_analysis"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # 分析信息
+    media_file: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    analysis_type: Mapped[str] = mapped_column(String(50), default="speaker_segment", nullable=False)
+
+    # 分析结果载荷（说话人片段/音频特征等）
+    payload: Mapped[dict] = mapped_column(JSON, nullable=True)
+
+    # 状态
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # 索引
+    __table_args__ = (
+        Index("idx_audio_analysis_project", "project_id"),
+    )
+
+
 class ErrorLog(Base):
     """错误日志表"""
     __tablename__ = "error_log"

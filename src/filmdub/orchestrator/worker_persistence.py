@@ -58,6 +58,41 @@ class WorkerDBPersistence:
 
         return project.id
 
+    async def _resolve_project_uuid(self, project_id) -> uuid.UUID:
+        """
+        把项目标识符解析为真实的 project UUID（纯查询，不创建）
+
+        接受：uuid.UUID 对象、UUID 格式字符串、或项目名（Project.name）字符串。
+        项目不存在时抛出 ValueError，避免查询路径意外创建项目。
+
+        Args:
+            project_id: 项目标识符（UUID / UUID 字符串 / 项目名）
+
+        Returns:
+            项目 UUID
+
+        Raises:
+            ValueError: 项目无法解析为现有项目
+        """
+        if isinstance(project_id, uuid.UUID):
+            return project_id
+
+        # 字符串：先尝试按 UUID 解析
+        try:
+            return uuid.UUID(str(project_id))
+        except (ValueError, TypeError, AttributeError):
+            pass
+
+        # 否则按项目名查询
+        result = await self.db.execute(
+            select(Project.id).where(Project.name == str(project_id))
+        )
+        project_id_uuid = result.scalar_one_or_none()
+        if project_id_uuid is not None:
+            return project_id_uuid
+
+        raise ValueError(f"Project not found: {project_id}")
+
     async def save_character(
         self,
         project_id: str,
@@ -206,9 +241,10 @@ class WorkerDBPersistence:
         Returns:
             Character 对象或 None
         """
+        project_uuid = await self._resolve_project_uuid(project_id)
         result = await self.db.execute(
             select(Character).where(
-                Character.project_id == project_id,
+                Character.project_id == project_uuid,
                 Character.name == name,
             )
         )
@@ -266,7 +302,7 @@ class WorkerDBPersistence:
         Returns:
             Character 列表
         """
-        project_uuid = await self._get_or_create_project(project_id)
+        project_uuid = await self._resolve_project_uuid(project_id)
         result = await self.db.execute(
             select(Character).where(
                 Character.project_id == project_uuid,
@@ -288,7 +324,7 @@ class WorkerDBPersistence:
         Returns:
             VoiceProfile 列表
         """
-        project_uuid = await self._get_or_create_project(project_id)
+        project_uuid = await self._resolve_project_uuid(project_id)
         result = await self.db.execute(
             select(VoiceProfile).where(
                 VoiceProfile.project_id == project_uuid,
@@ -303,16 +339,26 @@ class WorkerDBPersistence:
         analysis_data: Dict[str, Any],
     ) -> str:
         """
-        保存音频分析结果
+        保存音频分析结果到 audio_analysis 表（M05 产出落库，ticket-032）
 
         Args:
             project_id: 项目 ID
-            analysis_data: 音频分析数据
+            analysis_data: 音频分析数据（media_file/analysis_type/payload）
 
         Returns:
-            保存的 artifact ID
+            保存的 AudioAnalysis 记录 ID
         """
-        # TODO: 实现 AudioAnalysis 模型后完成
-        # 目前先保存到 artifact
-        logger.info(f"Audio analysis saved for project: {project_id}")
-        return f"audio_analysis_{project_id}"
+        from filmdub.orchestrator.models import AudioAnalysis
+
+        project_uuid = await self._get_or_create_project(project_id)
+        analysis = AudioAnalysis(
+            project_id=project_uuid,
+            media_file=analysis_data.get("media_file"),
+            analysis_type=analysis_data.get("analysis_type", "speaker_segment"),
+            payload=analysis_data.get("payload") or analysis_data,
+        )
+        self.db.add(analysis)
+        await self.db.commit()
+        await self.db.refresh(analysis)
+        logger.info(f"Audio analysis saved for project: {project_id} (id={analysis.id})")
+        return str(analysis.id)
