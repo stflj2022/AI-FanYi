@@ -3,13 +3,16 @@
 提供 WebSocket 连接端点，支持任务事件订阅和实时推送
 """
 import json
+import uuid
 from uuid import UUID
 from typing import Dict, Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.websockets import WebSocketState
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from filmdub.core.config import settings
+from filmdub.core.orchestrator_db import get_db
 from filmdub.apps.web.backend.websocket.manager import ws_manager
 from filmdub.apps.web.backend.websocket.event_types import (
     WebSocketEventType,
@@ -21,16 +24,22 @@ from filmdub.apps.web.backend.services.auth_service import AuthService
 import logging
 
 logger = logging.getLogger(__name__)
-security = HTTPBearer()
 
 router = APIRouter()
 
 
 async def get_current_user_ws(
     websocket: WebSocket,
-    token: str = Query(..., description="JWT 认证令牌")
+    token: str = Query(None, description="JWT 认证令牌"),
+    db: AsyncSession = Depends(get_db),
 ) -> UUID:
-    """WebSocket JWT 认证依赖"""
+    """WebSocket JWT 认证依赖（本地免登录模式下不校验 Token）"""
+    # 本地免登录模式：返回与 HTTP 一致的本地用户真实 ID（保证实时事件能匹配）
+    if settings.auth_disabled:
+        from filmdub.apps.web.backend.api.dependencies import _get_or_create_local_user
+        user = await _get_or_create_local_user(db)
+        return user.id
+
     try:
         # 验证 token 并获取 user_id
         user_id = await AuthService.verify_token(token)
@@ -44,8 +53,9 @@ async def get_current_user_ws(
 @router.websocket("/jobs")
 async def websocket_jobs_endpoint(
     websocket: WebSocket,
-    token: str = Query(..., description="JWT 认证令牌"),
+    token: str = Query(None, description="JWT 认证令牌"),
     connection_id: str = Query(None, description="连接 ID（可选）"),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     WebSocket 任务事件端点
@@ -70,12 +80,11 @@ async def websocket_jobs_endpoint(
     """
     # 生成连接 ID
     if not connection_id:
-        import uuid
         connection_id = str(uuid.uuid4())
 
     try:
         # 认证
-        user_id = await get_current_user_ws(websocket, token)
+        user_id = await get_current_user_ws(websocket, token, db)
 
         # 建立连接
         connection = await ws_manager.connect(websocket, user_id, connection_id)

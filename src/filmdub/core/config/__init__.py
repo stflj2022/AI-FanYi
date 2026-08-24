@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expiration_hours: int = Field(default=24, description="JWT token expiration in hours")
 
+    # 本地免登录模式：true 时所有需认证接口自动使用本地用户（环境变量 AUTH_DISABLED=true）
+    auth_disabled: bool = Field(
+        default=False,
+        description="Local no-login mode: skip authentication and use local user",
+    )
+
     @field_validator("projects_base_dir", "upload_temp_dir", mode="before")
     @classmethod
     def resolve_path(cls, v: str | Path) -> Path:

@@ -15,6 +15,7 @@ interface AuthState {
   register: (username: string, email: string, password: string, confirmPassword: string) => Promise<void>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
+  bootstrap: () => Promise<void>
   clearError: () => void
 }
 
@@ -131,6 +132,24 @@ export const useAuthStore = create<AuthState>()(
             error: null,
             token: null,
           })
+        }
+      },
+
+      // 启动时静默检测本地免登录模式（AUTH_DISABLED）：命中则自动登录本地用户，无需输入密码
+      bootstrap: async () => {
+        set({ isLoading: true })
+        try {
+          const health = await authAPI.getAuthStatus()
+          if (health.auth_disabled) {
+            // 本地免登录模式：清除任何旧 Token 残留，用本地用户覆盖
+            authAPI.clearTokens()
+            const user = await authAPI.getCurrentUser()
+            set({ user, isAuthenticated: true, token: null, error: null })
+          }
+        } catch {
+          // 后端不可达或非本地模式：保持未登录状态
+        } finally {
+          set({ isLoading: false })
         }
       },
 

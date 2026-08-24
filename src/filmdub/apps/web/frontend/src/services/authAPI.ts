@@ -31,8 +31,18 @@ export interface ChangePasswordRequest {
   new_password: string
 }
 
+export interface HealthStatus {
+  status: string
+  version?: string
+  service?: string
+  auth_disabled?: boolean
+}
+
 /** 认证 API 服务 */
 export const authAPI = {
+  /** 获取后端认证模式（本地免登录检测） */
+  getAuthStatus: () =>
+    api.get<HealthStatus>('/health'),
   /** 用户注册 */
   register: (data: RegisterRequest) =>
     api.postRaw<User>('/auth/register', data),

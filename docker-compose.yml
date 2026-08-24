@@ -426,6 +426,8 @@ services:
       - DEBUG=${DEBUG:-0}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+      # 认证（本地免登录模式：AUTH_DISABLED=true 时无需登录）
+      - AUTH_DISABLED=${AUTH_DISABLED:-false}
     volumes:
       - ./src:/app/src:ro
       - artifact_data:/app/artifacts
@@ -477,7 +479,8 @@ services:
     depends_on:
       - web-backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      # 经 nginx 代理验证整条链路（/health 在后端无路由返回 404，改用 /api/v1/health）
+      test: ["CMD", "curl", "-f", "http://localhost/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3

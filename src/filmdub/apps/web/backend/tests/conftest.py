@@ -9,6 +9,14 @@ from filmdub.apps.web.backend.models import User, Base
 from filmdub.core.models import ProjectRecord as Project, Character, Job
 from filmdub.core.orchestrator_db import get_db
 from filmdub.apps.web.backend.services.auth_service import AuthService
+from filmdub.core.config import settings
+
+
+@pytest.fixture(autouse=True)
+def _default_auth_enabled(monkeypatch):
+    """测试默认非本地免登录模式（不受 .env 的 AUTH_DISABLED 影响），需要本地模式的测试自行开启"""
+    monkeypatch.setattr(settings, "auth_disabled", False)
+    yield
 
 
 # 测试数据库配置

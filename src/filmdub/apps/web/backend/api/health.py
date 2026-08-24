@@ -2,6 +2,8 @@
 from fastapi import APIRouter, status
 from pydantic import BaseModel
 
+from filmdub.core.config import settings
+
 
 router = APIRouter()
 
@@ -11,6 +13,7 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     service: str
+    auth_disabled: bool = False
 
 
 @router.get("/health", status_code=status.HTTP_200_OK, response_model=HealthResponse)
@@ -20,4 +23,5 @@ async def health_check():
         status="ok",
         version="1.0.0",
         service="web-backend",
+        auth_disabled=settings.auth_disabled,
     )
