@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from filmdub.core.config import settings
 from filmdub.core.database import Base
-from filmdub.apps.web.backend.api import health, auth, projects, jobs, uploads, characters, system, errors, settings as settings_api
+from filmdub.apps.web.backend.api import health, auth, projects, jobs, uploads, characters, system, errors, settings as settings_api, translation_memory
 from filmdub.apps.web.backend.websocket import events
 from filmdub.apps.web.backend.models import User  # 确保 User 模型被导入
 
@@ -58,6 +58,7 @@ app.include_router(projects.router, prefix="/api/v1/projects", tags=["Projects"]
 app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["Jobs"])
 app.include_router(uploads.router, prefix="/api/v1/uploads", tags=["Uploads"])
 app.include_router(characters.router, prefix="/api/v1/characters", tags=["Characters"])
+app.include_router(translation_memory.router, prefix="/api/v1/translation-memory", tags=["Translation Memory"])
 app.include_router(errors.router, prefix="/api/v1/errors", tags=["Errors"])
 app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
 

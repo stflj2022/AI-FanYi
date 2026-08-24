@@ -190,6 +190,8 @@ class ProjectRecord(Base):
     jobs: Mapped[list["Job"]] = relationship("Job", back_populates="project", cascade="all, delete-orphan")
     characters: Mapped[list["Character"]] = relationship("Character", back_populates="project", cascade="all, delete-orphan")
     artifacts: Mapped[list["Artifact"]] = relationship("Artifact", back_populates="project", cascade="all, delete-orphan")
+    translation_memory_entries: Mapped[list["TranslationMemoryEntry"]] = relationship("TranslationMemoryEntry", back_populates="project", cascade="all, delete-orphan")
+    glossary_terms: Mapped[list["GlossaryTerm"]] = relationship("GlossaryTerm", back_populates="project", cascade="all, delete-orphan")
 
     # 索引
     __table_args__ = (
@@ -799,4 +801,95 @@ class StoryEntry(Base):
         Index("idx_story_entry_episode", "episode_id"),
         Index("idx_story_entry_type", "entry_type"),
         Index("idx_story_entry_character", "character_name"),
+    )
+
+
+# ==================== Translation Memory 模型 ====================
+
+class TranslationMemoryEntry(Base):
+    """翻译记忆条目"""
+    __tablename__ = "translation_memory_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    # 翻译内容
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)
+    translated_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_lang: Mapped[str] = mapped_column(String(10), nullable=False)  # en, zh, ja等
+    target_lang: Mapped[str] = mapped_column(String(10), nullable=False)
+
+    # 上下文信息
+    context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    character_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    scene_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # 使用统计
+    usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_used: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    similarity_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # 相似度分数
+
+    # 时间戳
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # 关系
+    project: Mapped["ProjectRecord"] = relationship("ProjectRecord", back_populates="translation_memory_entries")
+
+    # 索引
+    __table_args__ = (
+        Index("idx_tm_entry_project", "project_id"),
+        Index("idx_tm_entry_lang_pair", "source_lang", "target_lang"),
+        Index("idx_tm_entry_source_text", "source_text"),
+        Index("idx_tm_entry_usage", "usage_count"),
+    )
+
+
+class GlossaryTerm(Base):
+    """术语库条目"""
+    __tablename__ = "glossary_terms"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    # 术语内容
+    source_term: Mapped[str] = mapped_column(String(500), nullable=False)
+    target_term: Mapped[str] = mapped_column(String(500), nullable=False)
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # 人物/地名/组织等
+
+    # 补充信息
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    examples: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+
+    # 使用统计
+    usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # 时间戳
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # 关系
+    project: Mapped["ProjectRecord"] = relationship("ProjectRecord", back_populates="glossary_terms")
+
+    # 索引
+    __table_args__ = (
+        Index("idx_glossary_project", "project_id"),
+        Index("idx_glossary_source", "source_term"),
+        Index("idx_glossary_category", "category"),
     )
