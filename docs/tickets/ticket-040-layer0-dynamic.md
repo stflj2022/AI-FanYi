@@ -1,6 +1,6 @@
 # Ticket 040: Layer 0 动态调度完善（按冻结版 Layer 0）
 
-## 状态: todo
+## 状态: in_progress
 
 ## 优先级: P1
 
