@@ -1,6 +1,6 @@
 # Ticket 041: laobai 端到端验证 + 测试 + 双遍 review + 推送 + 文档
 
-## 状态: todo
+## 状态: in_progress
 
 ## 优先级: P0
 
