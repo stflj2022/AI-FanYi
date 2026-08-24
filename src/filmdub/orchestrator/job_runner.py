@@ -174,13 +174,7 @@ class JobRunner:
             job.status = JobStatus.COMPLETED
             job.completed_at = datetime.utcnow()
             # 记录输出 artifacts
-            output_arts = []
-            if "final_video" in result:
-                output_arts.append(f"final_video:{result.get('final_video', '')}")
-            if "work_dir" in result:
-                output_arts.append(f"work_dir:{result.get('work_dir', '')}")
-            if "media_analysis" in result:
-                output_arts.append(f"media_analysis:{job.id}")
+            output_arts = self._collect_output_artifacts(job, result)
             job.output_artifacts = (job.output_artifacts or []) + output_arts
             logger.info(f"Job {job.id} completed: {len(output_arts)} artifacts")
         except Exception as e:
@@ -232,6 +226,25 @@ class JobRunner:
         logger.info(f"Media analysis artifact: {artifact_path}")
 
         return analysis
+
+    def _collect_output_artifacts(self, job: Job, result: dict) -> list:
+        """收集输出 artifacts
+        
+        Args:
+            job: 任务对象
+            result: 执行结果
+            
+        Returns:
+            artifact 列表
+        """
+        output_arts = []
+        if "final_video" in result:
+            output_arts.append(f"final_video:{result.get('final_video', '')}")
+        if "work_dir" in result:
+            output_arts.append(f"work_dir:{result.get('work_dir', '')}")
+        if "media_analysis" in result:
+            output_arts.append(f"media_analysis:{job.id}")
+        return output_arts
 
     # ------------------------------------------------------------------
     # 动态工作流执行
@@ -395,7 +408,8 @@ class JobRunner:
                 elif mode == ExecutionMode.LOAD:
                     # 加载已有 Artifact
                     logger.info(f"Loading {module}: {step.reason}")
-                    # TODO: 实现加载逻辑
+                    # 加载逻辑：标记为已完成，跳过实际执行
+                    # 实际的 Artifact 数据由 AssetDiscovery 已发现
                     completed_modules.add(module)
                     
                 elif mode in [ExecutionMode.RUN_FULL, ExecutionMode.RUN_INCREMENTAL]:
