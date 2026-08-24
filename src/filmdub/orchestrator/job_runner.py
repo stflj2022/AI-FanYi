@@ -1,12 +1,14 @@
 """
-最小执行引擎（阶段 A）
+执行引擎（阶段 B：完整流水线）
 
 轮询 orchestrator 数据库中的 pending/scheduled 配音任务，执行对应模块并更新状态。
 
 当前实现：
 - M01 媒体分析：从 MinIO 下载输入媒体 → FFprobe 分析 → 写入 media_analysis artifact
+- 完整流水线：执行 M01~M14 完整流程，产出最终配音视频
 - 状态流转：PENDING → RUNNING → COMPLETED / FAILED
 - 任务所属项目自动置为 PROCESSING（与 orchestrator 调度语义一致）
+- 支持断点续跑（从 manifests 恢复）
 
 运行：
     DATABASE_URL=postgresql+asyncpg://... python -m filmdub.orchestrator.job_runner [轮询间隔秒]
@@ -33,6 +35,7 @@ from filmdub.core.models import (
 )
 from filmdub.workers.media_intake.probe import FFprobeParser
 from filmdub.workers.common import save_json_artifact
+from .full_pipeline_executor import FullPipelineExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +89,7 @@ class JobRunner:
                 await self._process_job(db, job)
 
     async def _process_job(self, db, job: Job) -> None:
-        """执行单个任务：M01 媒体分析"""
+        """执行单个任务：M01 媒体分析 或 完整流水线"""
         logger.info(f"Processing job {job.id} ({job.name}) module={job.module_id}")
 
         # 标 RUNNING + 项目置 PROCESSING
@@ -99,11 +102,25 @@ class JobRunner:
         await db.commit()
 
         try:
-            analysis = await self._run_m01(db, job)
+            # 判断执行模式：如果 module_id 为 "FULL_PIPELINE" 则执行完整流水线
+            if job.module_id == "FULL_PIPELINE":
+                result = await self._run_full_pipeline(db, job)
+            else:
+                # 默认执行 M01
+                analysis = await self._run_m01(db, job)
+                result = {"media_analysis": analysis}
+
             job.status = JobStatus.COMPLETED
             job.completed_at = datetime.utcnow()
-            job.output_artifacts = (job.output_artifacts or []) + [f"media_analysis:{job.id}"]
-            logger.info(f"Job {job.id} completed: {len(analysis.get('streams', []))} streams analyzed")
+            # 记录输出 artifacts
+            output_arts = []
+            if job.module_id == "FULL_PIPELINE":
+                output_arts.append(f"final_video:{result.get('output_video', '')}")
+                output_arts.append(f"work_dir:{result.get('work_dir', '')}")
+            else:
+                output_arts.append(f"media_analysis:{job.id}")
+            job.output_artifacts = (job.output_artifacts or []) + output_arts
+            logger.info(f"Job {job.id} completed: {len(output_arts)} artifacts")
         except Exception as e:
             job.status = JobStatus.FAILED
             job.error_message = str(e)[:2000]
@@ -153,6 +170,47 @@ class JobRunner:
         logger.info(f"Media analysis artifact: {artifact_path}")
 
         return analysis
+
+    # ------------------------------------------------------------------
+    # 完整流水线执行
+    # ------------------------------------------------------------------
+    async def _run_full_pipeline(self, db, job: Job) -> dict:
+        """
+        执行完整 M01~M14 流水线
+
+        从 input_artifacts 解析媒体资产 → MinIO 下载 → 执行完整流水线 → 产出 final 视频
+        """
+        media_ids = job.input_artifacts or []
+        if not media_ids:
+            raise ValueError("任务无输入媒体（input_artifacts 为空）")
+
+        media_id = str(media_ids[0])
+        media_asset: Optional[MediaAsset] = await db.get(MediaAsset, media_id)
+        if media_asset is None:
+            raise ValueError(f"媒体资产不存在: {media_id}")
+
+        # 从 MinIO 下载视频
+        local_path = self.work_dir / f"{media_id[:8]}_{media_asset.original_filename}"
+        self.minio.fget_object(MINIO_BUCKET, media_asset.storage_path, str(local_path))
+        logger.info(f"Downloaded {media_asset.storage_path} -> {local_path}")
+
+        # 创建完整流水线执行器
+        executor = FullPipelineExecutor(
+            project_id=str(job.project_id) if job.project_id else f"job_{job.id}",
+            video_path=local_path,
+            work_dir=self.work_dir / f"job_{job.id}"
+        )
+
+        # 执行完整流水线
+        result = await executor.run()
+        logger.info(f"Full pipeline completed: {result['completed_modules']}, failed: {result['failed_modules']}")
+
+        # 如果有失败模块，抛出异常
+        if result['failed_modules']:
+            failed_info = ", ".join([f"{m}: {e}" for m, e in result['failed_modules']])
+            raise RuntimeError(f"流水线执行失败: {failed_info}")
+
+        return result
 
 
 async def main() -> None:

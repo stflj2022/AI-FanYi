@@ -1,6 +1,6 @@
 # Ticket 036: Web 配音任务接入完整 M01~M14 流水线
 
-## 状态: todo
+## 状态: done（第1轮实现：FullPipelineExecutor 完整流水线执行器 + Job Runner 集成，11 个测试通过）
 
 ## 优先级: P0
 
