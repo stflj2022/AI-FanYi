@@ -11,15 +11,23 @@ interface ProjectCardProps {
 export function ProjectCard({ project, onEdit, onDelete, onView }: ProjectCardProps) {
   const statusColors = {
     created: 'bg-gray-100 text-gray-700',
+    pending: 'bg-gray-100 text-gray-700',
+    intake: 'bg-blue-100 text-blue-700',
     in_progress: 'bg-blue-100 text-blue-700',
+    processing: 'bg-blue-100 text-blue-700',
+    review: 'bg-yellow-100 text-yellow-700',
     completed: 'bg-green-100 text-green-700',
     failed: 'bg-red-100 text-red-700',
     archived: 'bg-yellow-100 text-yellow-700',
   }
 
-  const statusLabels = {
+  const statusLabels: Record<string, string> = {
     created: '已创建',
+    pending: '待处理',
+    intake: '录入中',
     in_progress: '进行中',
+    processing: '处理中',
+    review: '待审核',
     completed: '已完成',
     failed: '失败',
     archived: '已归档',

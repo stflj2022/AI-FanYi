@@ -102,8 +102,11 @@ export function ProjectList() {
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">所有状态</option>
-            <option value="created">已创建</option>
+            <option value="pending">待处理</option>
+            <option value="intake">录入中</option>
             <option value="in_progress">进行中</option>
+            <option value="processing">处理中</option>
+            <option value="review">待审核</option>
             <option value="completed">已完成</option>
             <option value="failed">失败</option>
             <option value="archived">已归档</option>
