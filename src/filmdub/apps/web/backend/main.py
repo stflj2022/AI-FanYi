@@ -21,6 +21,16 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
     print("🚀 Web Backend starting up...")
+    # 确保所有 core 数据表存在（translation_memory_entries 等，仅建缺失表）
+    try:
+        from filmdub.core.database import Base as CoreBase
+        from filmdub.core import models as core_models  # noqa: F401 注册模型
+        from filmdub.core.orchestrator_db import engine as orchestrator_engine
+        async with orchestrator_engine.begin() as conn:
+            await conn.run_sync(CoreBase.metadata.create_all)
+        print("✅ core 数据表已就绪")
+    except Exception as e:
+        print(f"⚠️ core 表初始化失败: {e}")
     # 启动 WebSocket 管理器
     await events.start_websocket_manager()
     yield
