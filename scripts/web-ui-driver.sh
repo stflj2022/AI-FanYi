@@ -58,7 +58,7 @@ zai_alive() {
     "https://api.z.ai/api/coding/paas/v4/chat/completions" \
     -H "Authorization: Bearer $ZAI_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"model":"glm-4.7","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' 2>/dev/null)
+    -d '{"messages":[{"role":"user","content":"ping"}],"max_tokens":1}' 2>/dev/null)
   [ "$code" = "200" ] || [ "$code" = "401" ]
 }
 
@@ -156,7 +156,7 @@ while true; do
   # CPU 和输出静默检测（监控逻辑已移到 pi 启动之后，见下）
 
   # 执行 pi 命令（Web UI 任务）
-  log "▶ pi 启动 (zai-coding-cn/glm-4.7)"
+  log "▶ pi 启动 (zai-coding-cn)"
 
   # 构建提示词
   cat > /tmp/pi-web-ui-prompt.txt <<'EOF'
@@ -189,7 +189,7 @@ while true; do
 EOF
 
   # 启动 pi（后台运行，支持零输出熔断监控）
-  pi --provider zai-coding-cn --model glm-4.7 < /tmp/pi-web-ui-prompt.txt >> "$LOG" 2>&1 &
+  pi --provider zai-coding-cn < /tmp/pi-web-ui-prompt.txt >> "$LOG" 2>&1 &
   pi_pid=$!
 
   # 零输出熔断：后台循环监控 pi 进程（输出+CPU 双静默 12 分钟则杀掉并重试）

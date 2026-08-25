@@ -1,6 +1,6 @@
 #!/bin/bash
 # pi-unattended.sh — AI-FanYi 无人值守驱动 v8
-# 策略: 只用 Zai glm-4.7（非高峰时段）+ 额度耗尽等待重置 + 临时 deepseek 开关
+# 策略: 只用 Zai（非高峰时段）+ 额度耗尽等待重置 + 临时 deepseek 开关
 #       + 零输出熔断 + 上下文冷启动 + pytest 独立验收 + flock 单例
 #       + 每8轮预防性换会话 + 开机自启(systemd) 适配
 set -u
@@ -49,7 +49,7 @@ zai_alive() {
   code=$(curl -sS -m 12 -o /dev/null -w "%{http_code}" \
     "https://api.z.ai/api/coding/paas/v4/chat/completions" \
     -H "Authorization: Bearer $ZAI_KEY" -H "Content-Type: application/json" \
-    -d '{"model":"glm-4.7","messages":[{"role":"user","content":"ping"}],"max_tokens":1}' 2>/dev/null)
+    -d '{"messages":[{"role":"user","content":"ping"}],"max_tokens":1}' 2>/dev/null)
   [ "$code" = "200" ]
 }
 
@@ -65,9 +65,9 @@ is_peak_hour() {
 # 临时 deepseek 开关：存在 TEMP_DEEPSEEK 标志文件 → 用 deepseek（绕过高峰/额度）
 current_provider() {
   if [ -f "$REPO/.claude/TEMP_DEEPSEEK" ]; then
-    echo "deepseek/deepseek-v4-flash"
+    echo "deepseek"
   else
-    echo "zai-coding-cn/glm-4.7"
+    echo "zai-coding-cn"
   fi
 }
 
@@ -78,7 +78,7 @@ run_pi() {
   echo "[$(date '+%F %T')] ▶ pi 启动 ($prov)" >> "$LOG"
   local mark; mark=$(stat -c %s "$LOG")
   echo "$mark" > "$MARK_FILE"
-  timeout 7200 pi --provider "${prov%%/*}" --model "${prov##*/}" "${cont[@]}" -p "$cont_prompt" < /dev/null >> "$LOG" 2>&1 &
+  timeout 7200 pi --provider "$prov" "${cont[@]}" -p "$cont_prompt" < /dev/null >> "$LOG" 2>&1 &
   local pid=$!
   local zeros=0 last_cpu=""
   while kill -0 "$pid" 2>/dev/null; do
@@ -147,7 +147,7 @@ while true; do
 
   # 决定本轮 provider（含非高峰/额度等待）
   CUR=$(current_provider)
-  if [ "$CUR" = "zai-coding-cn/glm-4.7" ]; then
+  if [ "$CUR" = "zai-coding-cn" ]; then
     if is_peak_hour; then
       log "⏰ 高峰时段(工作日14-18点)，睡 600s 等待非高峰"
       sleep 600; continue
