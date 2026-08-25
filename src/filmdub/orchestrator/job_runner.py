@@ -173,6 +173,11 @@ class JobRunner:
 
             job.status = JobStatus.COMPLETED
             job.completed_at = datetime.utcnow()
+            # 任务成功 → 项目置 COMPLETED（任务失败时下方置 FAILED）
+            if job.project_id:
+                project = await db.get(Project, job.project_id)
+                if project:
+                    project.status = ProjectStatus.COMPLETED
             # 记录输出 artifacts
             output_arts = self._collect_output_artifacts(job, result)
             # 保存 QA 评分到 job.config（供 qa-report 接口展示）
@@ -189,6 +194,11 @@ class JobRunner:
         except Exception as e:
             job.status = JobStatus.FAILED
             job.error_message = str(e)[:2000]
+            # 任务失败 → 项目置 FAILED
+            if job.project_id:
+                project = await db.get(Project, job.project_id)
+                if project:
+                    project.status = ProjectStatus.FAILED
             logger.error(f"Job {job.id} failed: {e}", exc_info=True)
         await db.commit()
 
