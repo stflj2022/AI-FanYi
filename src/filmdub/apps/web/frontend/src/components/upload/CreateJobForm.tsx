@@ -80,11 +80,11 @@ export function CreateJobForm({ uploadId, filename, onCreated }: CreateJobFormPr
         // 元数据获取失败时回退用上传会话 ID
       }
 
-      // 3. 创建配音任务（M01 媒体输入模块）
+      // 3. 创建配音任务（FULL_PIPELINE：自动走完整 M01~M14 流水线产出成品）
       const job = await jobAPI.createJob({
         project_id: projectId,
         name: jobName.trim(),
-        module_id: 'M01',
+        module_id: 'FULL_PIPELINE',
         input_artifacts: [mediaAssetId],
       });
 

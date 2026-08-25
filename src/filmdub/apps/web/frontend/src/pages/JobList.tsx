@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { JobCard } from '../components/job/JobCard';
+import { OutputVideo } from '../components/OutputVideo';
 import jobAPI from '../services/jobAPI';
 import type { JobStatus, JobResponse } from '../services/jobAPI';
 import {
@@ -23,6 +24,7 @@ export function JobList() {
   // 筛选状态
   const [statusFilter, setStatusFilter] = useState<JobStatus | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewJob, setViewJob] = useState<JobResponse | null>(null);
 
   // 加载任务列表
   const loadJobs = async () => {
@@ -184,15 +186,24 @@ export function JobList() {
         ) : (
           <div className="grid gap-4">
             {jobs.map((job) => (
-              <JobCard
-                key={job.id}
-                job={job}
-                onPause={() => handlePause(job.id)}
-                onResume={() => handleResume(job.id)}
-                onCancel={() => handleCancel(job.id)}
-                onRetry={() => handleRetry(job.id)}
-                onViewDetails={() => handleViewDetails(job.id)}
-              />
+              <div key={job.id} className="space-y-2">
+                <JobCard
+                  job={job}
+                  onPause={() => handlePause(job.id)}
+                  onResume={() => handleResume(job.id)}
+                  onCancel={() => handleCancel(job.id)}
+                  onRetry={() => handleRetry(job.id)}
+                  onViewDetails={() => handleViewDetails(job.id)}
+                />
+                {job.status === 'completed' && (
+                  <button
+                    onClick={() => setViewJob(job)}
+                    className="ml-4 px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition-colors"
+                  >
+                    ▶ 查看成品
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -222,6 +233,19 @@ export function JobList() {
           </div>
         )}
       </div>
+
+      {/* 成品查看 Modal */}
+      {viewJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setViewJob(null)}>
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">{viewJob.name} - 成品</h2>
+              <button onClick={() => setViewJob(null)} className="text-gray-500 hover:text-gray-700">✕ 关闭</button>
+            </div>
+            <OutputVideo jobId={viewJob.id} projectId={viewJob.project_id} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

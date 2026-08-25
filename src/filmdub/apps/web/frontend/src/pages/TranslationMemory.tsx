@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import apiClient from '../api/client'
+import apiClient from '../services/api'
 
 interface TranslationMemoryEntry {
   id: string

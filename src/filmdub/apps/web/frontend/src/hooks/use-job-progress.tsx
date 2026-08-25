@@ -25,10 +25,9 @@ export function useJobProgress(options: UseJobProgressOptions = {}) {
   const [progress, setProgress] = useState<JobProgress | null>(null)
   const [isConnected, setIsConnected] = useState(false)
 
-  // 构建 WebSocket URL
-  const wsUrl = token
-    ? `ws://localhost:8000/ws?token=${token}&project_id=${projectId || ''}`
-    : `ws://localhost:8000/ws?project_id=${projectId || ''}`
+  // 构建 WebSocket URL（同源，经 nginx 反代；本地免登录 token 为空）
+  const wsBase = window.location.origin.replace(/^http/, 'ws')
+  const wsUrl = `${wsBase}/api/v1/ws/jobs?token=${token ?? ''}&project_id=${projectId || ''}`
 
   // 处理 WebSocket 消息
   const handleMessage = useCallback((message: any) => {
